@@ -56,10 +56,29 @@ fun QrScannerDialog(
     var selectedTab by remember { mutableIntStateOf(0) }
     var rawInput by remember { mutableStateOf("") }
     val clipboardManager = LocalClipboardManager.current
+    val initialConnectionState = remember { connectionState }
+    var hasInitiatedConnect by remember { mutableStateOf(false) }
+    var hasSeenConnecting by remember { mutableStateOf(false) }
 
     androidx.compose.runtime.LaunchedEffect(connectionState) {
-        if (connectionState is TransportConnectionState.Connected) {
-            onDismiss()
+        if (connectionState is TransportConnectionState.Connecting) {
+            hasSeenConnecting = true
+        } else if (connectionState is TransportConnectionState.Connected) {
+            val isNewConnection = if (initialConnectionState is TransportConnectionState.Connected) {
+                hasInitiatedConnect && hasSeenConnecting
+            } else {
+                hasInitiatedConnect || hasSeenConnecting
+            }
+            if (isNewConnection) {
+                onDismiss()
+            }
+        }
+    }
+
+    androidx.compose.runtime.LaunchedEffect(errorMessage) {
+        if (errorMessage != null) {
+            hasInitiatedConnect = false
+            hasSeenConnecting = false
         }
     }
 
@@ -121,8 +140,11 @@ fun QrScannerDialog(
                     // Live Camera QR Scanner View
                     CameraQrScannerView(
                         onQrCodeScanned = { scannedCode ->
-                            rawInput = scannedCode
-                            onPair(scannedCode)
+                            if (!hasInitiatedConnect) {
+                                hasInitiatedConnect = true
+                                rawInput = scannedCode
+                                onPair(scannedCode)
+                            }
                         }
                     )
                 } else {
@@ -221,6 +243,7 @@ fun QrScannerDialog(
                 Button(
                     onClick = {
                         if (rawInput.isNotBlank()) {
+                            hasInitiatedConnect = true
                             onPair(rawInput.trim())
                         }
                     },

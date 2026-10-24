@@ -549,7 +549,7 @@ fun SettingsScreen(
                     }
 
                     if (isDesktopConnected) {
-                        Button(
+                        FilledTonalButton(
                             onClick = onStartFileSync,
                             modifier = Modifier
                                 .weight(1f)
@@ -557,9 +557,15 @@ fun SettingsScreen(
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                             shape = MaterialTheme.shapes.medium
                         ) {
-                            Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Smart File Sync", maxLines = 1)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Smart File Sync", maxLines = 1)
+                            }
                         }
                     }
                 }
