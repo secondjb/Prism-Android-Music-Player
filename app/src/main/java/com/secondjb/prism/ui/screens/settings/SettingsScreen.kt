@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,12 +50,15 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -68,12 +72,17 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.style.LineHeightStyle
@@ -83,6 +92,9 @@ import androidx.compose.ui.unit.dp
 import com.secondjb.prism.core.data.PairedDevice
 import com.secondjb.prism.core.data.PrismPreferences
 import com.secondjb.prism.core.data.PrismPreferencesRepository
+import com.secondjb.prism.core.update.UpdateChecker
+import com.secondjb.prism.core.update.UpdateResult
+import kotlinx.coroutines.launch
 
 /**
  * Categorized settings screen for Prism Android with feature parity to Prism Windows SettingsView.
@@ -160,7 +172,7 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text("Local Audio Library", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        Text("Local Audio Library", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                         Text("$totalTrackCount audio files indexed", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     OutlinedButton(
@@ -182,7 +194,7 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Included Music Folders", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        Text("Included Music Folders", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                         if (prefs.includedFolders.isEmpty()) {
                             Text(
                                 text = "All device audio",
@@ -242,7 +254,7 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Excluded Folders", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        Text("Excluded Folders", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     }
                     OutlinedButton(
                         onClick = {
@@ -289,7 +301,7 @@ fun SettingsScreen(
                 Spacer(Modifier.height(8.dp))
 
                 // Minimum Duration Filter
-                Text("Minimum Duration Filter", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text("Minimum Duration Filter", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(4.dp))
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -311,7 +323,7 @@ fun SettingsScreen(
                 Spacer(Modifier.height(8.dp))
 
                 // Enabled Formats
-                Text("Supported Audio Formats", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text("Supported Audio Formats", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(4.dp))
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -350,38 +362,50 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Gapless Playback", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(end = 12.dp))
+                    Text("Gapless Playback", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(end = 12.dp))
                     Switch(
                         checked = prefs.isGaplessEnabled,
                         onCheckedChange = { preferencesRepository.setGaplessEnabled(it) }
                     )
                 }
 
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
 
                 // ReplayGain Normalization Mode
-                Text("ReplayGain Normalization", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(2.dp))
+                Text("ReplayGain Normalization", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(4.dp))
 
-                Column {
-                    listOf(
-                        "track" to "Track Gain (Recommended)",
-                        "album" to "Album Gain",
-                        "off" to "Disabled"
-                    ).forEach { (mode, desc) ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { preferencesRepository.setReplayGainMode(mode) }
-                                .padding(vertical = 2.dp)
-                        ) {
-                            RadioButton(
-                                selected = prefs.replayGainMode == mode,
-                                onClick = { preferencesRepository.setReplayGainMode(mode) }
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(text = desc, style = MaterialTheme.typography.bodySmall)
+                @OptIn(ExperimentalMaterial3Api::class)
+                CompositionLocalProvider(
+                    LocalMinimumInteractiveComponentSize provides Dp.Unspecified
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        listOf(
+                            "track" to "Track Gain (Recommended)",
+                            "album" to "Album Gain",
+                            "off" to "Disabled"
+                        ).forEach { (mode, desc) ->
+                            val isSelected = prefs.replayGainMode == mode
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { preferencesRepository.setReplayGainMode(mode) }
+                                    .padding(vertical = 5.dp, horizontal = 2.dp)
+                            ) {
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = null
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    text = desc,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
@@ -389,7 +413,7 @@ fun SettingsScreen(
                 Spacer(Modifier.height(8.dp))
 
                 // Crossfade
-                Text("Crossfade", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text("Crossfade", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(4.dp))
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -421,7 +445,7 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Romanized Lyrics", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(end = 12.dp))
+                    Text("Romanized Lyrics", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(end = 12.dp))
                     Switch(
                         checked = prefs.isRomanizationEnabled,
                         onCheckedChange = { /* Persisted */ }
@@ -436,7 +460,7 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Auto-fetch Missing Lyrics (LRCLIB)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(end = 12.dp))
+                    Text("Auto-fetch Missing Lyrics (LRCLIB)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(end = 12.dp))
                     Switch(
                         checked = prefs.lrclibAutoFetch,
                         onCheckedChange = { preferencesRepository.setLrclibAutoFetch(it) }
@@ -459,7 +483,7 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Dynamic Album Artwork Palette", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(end = 12.dp))
+                    Text("Dynamic Album Artwork Palette", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(end = 12.dp))
                     Switch(
                         checked = prefs.isDynamicThemingEnabled,
                         onCheckedChange = { preferencesRepository.setDynamicThemingEnabled(it) }
@@ -526,7 +550,7 @@ fun SettingsScreen(
                 Spacer(Modifier.height(8.dp))
 
                 // Listening Stats & Analytics Synchronization
-                Text("Listening Stats & Sync", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text("Listening Stats & Sync", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(4.dp))
 
                 // Auto-sync switch
@@ -535,7 +559,7 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Auto-Sync Listening Stats", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f).padding(end = 12.dp))
+                    Text("Auto-Sync Listening Stats", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(end = 12.dp))
                     Switch(
                         checked = prefs.autoSyncStats,
                         onCheckedChange = { preferencesRepository.setAutoSyncStats(it) }
@@ -550,7 +574,7 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Prevent Double-Counting", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f).padding(end = 12.dp))
+                    Text("Prevent Double-Counting", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(end = 12.dp))
                     Switch(
                         checked = prefs.preventDoubleCounting,
                         onCheckedChange = { preferencesRepository.setPreventDoubleCounting(it) }
@@ -565,7 +589,7 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Record Listening Stats", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f).padding(end = 12.dp))
+                    Text("Record Listening Stats", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(end = 12.dp))
                     Switch(
                         checked = prefs.isStatsCollectionEnabled,
                         onCheckedChange = { preferencesRepository.setStatsCollectionEnabled(it) }
@@ -707,20 +731,142 @@ fun SettingsScreen(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                 )
             ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(28.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Surface(
+                            shape = MaterialTheme.shapes.medium,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Prism Companion for Android", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            Text("Version 0.1.0 • AndroidX Media3 ExoPlayer Engine", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 12.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                     )
-                    Column {
-                        Text("Prism Companion for Android", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                        Text("Version 0.1.0 • AndroidX Media3 ExoPlayer Engine", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                    // Check for updates on startup toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Check for updates on launch",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.weight(1f).padding(end = 12.dp)
+                        )
+                        Switch(
+                            checked = prefs.checkUpdatesOnStartup,
+                            onCheckedChange = { preferencesRepository.setCheckUpdatesOnStartup(it) }
+                        )
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    var updateCheckStatus by remember { mutableStateOf<UpdateResult?>(null) }
+                    var isCheckingUpdate by remember { mutableStateOf(false) }
+                    val checkScope = rememberCoroutineScope()
+                    val uriHandler = LocalUriHandler.current
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                if (!isCheckingUpdate) {
+                                    isCheckingUpdate = true
+                                    updateCheckStatus = null
+                                    checkScope.launch {
+                                        val res = UpdateChecker.checkForUpdates()
+                                        updateCheckStatus = res
+                                        isCheckingUpdate = false
+                                    }
+                                }
+                            },
+                            enabled = !isCheckingUpdate
+                        ) {
+                            if (isCheckingUpdate) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("Checking...")
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("Check for Updates")
+                            }
+                        }
+
+                        if (updateCheckStatus is UpdateResult.UpdateAvailable) {
+                            val available = updateCheckStatus as UpdateResult.UpdateAvailable
+                            Button(
+                                onClick = {
+                                    uriHandler.openUri(available.releaseUrl)
+                                }
+                            ) {
+                                Text("View ${available.latestVersion}")
+                            }
+                        }
+                    }
+
+                    updateCheckStatus?.let { status ->
+                        Spacer(Modifier.height(8.dp))
+                        when (status) {
+                            is UpdateResult.UpdateAvailable -> {
+                                Text(
+                                    text = "Update available: ${status.latestVersion}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            is UpdateResult.UpToDate -> {
+                                Text(
+                                    text = "Prism is up to date (v0.1.0)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            is UpdateResult.Error -> {
+                                Text(
+                                    text = "Update check failed: ${status.message}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -823,7 +969,11 @@ private fun SettingsCategoryCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(onClick = onToggleCollapse),
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onToggleCollapse
+                    ),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
