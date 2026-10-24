@@ -158,23 +158,29 @@ fun StatsScreen(
             }
         }
 
-        // 3. Top Summary Cards (Side by side)
+        // 3. Top Summary Cards (Side by side - Equal height and width)
         item {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Max),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // Card 1: Total Listening Time
                 ElevatedCard(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
                     shape = MaterialTheme.shapes.large,
                     colors = CardDefaults.elevatedCardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                     )
                 ) {
                     Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -194,40 +200,46 @@ fun StatsScreen(
                                 letterSpacing = 0.5.sp
                             )
                         }
-                        Text(
-                            text = formatStatsDuration(stats.totalListeningSeconds * 1000L),
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Black,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "${stats.totalTracksPlayed} plays logged",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = formatStatsDuration(stats.totalListeningSeconds * 1000L),
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Black,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "${stats.totalTracksPlayed} plays logged",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
 
                 // Card 2: Top Highlight
                 ElevatedCard(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
                     shape = MaterialTheme.shapes.large,
                     colors = CardDefaults.elevatedCardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                     )
                 ) {
                     Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.AutoAwesome,
+                                imageVector = Icons.Default.Person,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.tertiary,
                                 modifier = Modifier.size(15.dp)
@@ -240,21 +252,23 @@ fun StatsScreen(
                                 letterSpacing = 0.5.sp
                             )
                         }
-                        Text(
-                            text = stats.topArtist ?: "None yet",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = if (stats.topSong != null) "Song: ${stats.topSong}" else "Keep listening",
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = stats.topArtist ?: "None yet",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = if (stats.topSong != null) "Song: ${stats.topSong}" else "Keep listening",
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
@@ -262,14 +276,70 @@ fun StatsScreen(
 
         // 4. Metric & Category Controls Header
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Category Tabs
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    LeaderboardCategoryTab.values().forEach { tab ->
+                // Top row: Section title on the left, Time vs Plays toggle on the right
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "LEADERBOARDS",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.8.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    // Metric Toggle (Time vs Plays) - comfortably sized
+                    Surface(
+                        shape = PillShape,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        modifier = Modifier.padding(1.dp)
+                    ) {
+                        Row(modifier = Modifier.padding(2.dp)) {
+                            val isTime = uiState.leaderboardMetric == StatsMetric.TIME
+                            Surface(
+                                shape = PillShape,
+                                color = if (isTime) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                modifier = Modifier.clickable { onMetricChange(StatsMetric.TIME) }
+                            ) {
+                                Text(
+                                    text = "Time",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isTime) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                                )
+                            }
+                            Surface(
+                                shape = PillShape,
+                                color = if (!isTime) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                modifier = Modifier.clickable { onMetricChange(StatsMetric.PLAYS) }
+                            ) {
+                                Text(
+                                    text = "Plays",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (!isTime) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Bottom row: Category Tabs (All, Tracks, Artists, Albums)
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(LeaderboardCategoryTab.values()) { tab ->
                         val label = when (tab) {
                             LeaderboardCategoryTab.ALL -> "All"
                             LeaderboardCategoryTab.TRACKS -> "Tracks"
@@ -287,44 +357,7 @@ fun StatsScreen(
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
                                 color = if (isSel) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                            )
-                        }
-                    }
-                }
-
-                // Metric Toggle (Time vs Plays)
-                Surface(
-                    shape = PillShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    modifier = Modifier.padding(1.dp)
-                ) {
-                    Row(modifier = Modifier.padding(2.dp)) {
-                        val isTime = uiState.leaderboardMetric == StatsMetric.TIME
-                        Surface(
-                            shape = PillShape,
-                            color = if (isTime) MaterialTheme.colorScheme.primary else Color.Transparent,
-                            modifier = Modifier.clickable { onMetricChange(StatsMetric.TIME) }
-                        ) {
-                            Text(
-                                text = "Time",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isTime) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                            )
-                        }
-                        Surface(
-                            shape = PillShape,
-                            color = if (!isTime) MaterialTheme.colorScheme.primary else Color.Transparent,
-                            modifier = Modifier.clickable { onMetricChange(StatsMetric.PLAYS) }
-                        ) {
-                            Text(
-                                text = "Plays",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = if (!isTime) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                             )
                         }
                     }
