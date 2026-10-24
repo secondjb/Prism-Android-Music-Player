@@ -400,45 +400,7 @@ class MainActivity : ComponentActivity() {
 				}
 			}
 
-			// When Desktop Output is toggled on, only sync track if PC has a different track loaded
-			LaunchedEffect(isDesktopOutputEnabled) {
-				if (isDesktopConnected && isDesktopOutputEnabled) {
-					val localTrack = playbackEngine.playbackState.value.currentTrack
-					val remoteTrack = remotePlaybackState?.currentTrack
-					if (localTrack != null) {
-						val isAlreadySameTrack = remoteTrack != null && (
-							remoteTrack.title.equals(localTrack.title, ignoreCase = true) ||
-							remoteTrack.uri.substringAfterLast('/').substringAfterLast('\\').equals(
-								(localTrack.filePath ?: localTrack.uri).substringAfterLast('/').substringAfterLast('\\'),
-								ignoreCase = true
-							)
-						)
 
-						if (!isAlreadySameTrack) {
-							val filename = (localTrack.filePath ?: localTrack.uri).substringAfterLast('/').substringAfterLast('\\')
-							val queueFns = playbackEngine.playbackState.value.queue.take(150).map {
-								(it.filePath ?: it.uri).substringAfterLast('/').substringAfterLast('\\')
-							}
-							syncViewModel.sendPlayTrackCommand(
-								trackTitle = localTrack.title,
-								trackArtist = localTrack.artist,
-								trackFilename = filename,
-								trackUri = localTrack.uri,
-								queueFilenames = queueFns
-							)
-							val currentPos = playbackEngine.playbackState.value.positionMs
-							if (currentPos > 0) {
-								syncViewModel.sendRemoteCommand(CommandAction.SEEK, seekMs = currentPos)
-							}
-						}
-						if (playbackEngine.playbackState.value.isPlaying) {
-							syncViewModel.sendRemoteCommand(CommandAction.PLAY)
-						} else {
-							syncViewModel.sendRemoteCommand(CommandAction.PAUSE)
-						}
-					}
-				}
-			}
 
 			// Request audio permission on first launch
 			val permissionLauncher = rememberLauncherForActivityResult(

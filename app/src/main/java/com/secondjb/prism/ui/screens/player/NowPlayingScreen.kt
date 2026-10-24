@@ -56,6 +56,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
+import com.secondjb.prism.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -477,7 +479,7 @@ fun NowPlayingScreen(
                         )
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Mic,
+                            painter = painterResource(id = R.drawable.ic_karaoke_mic),
                             contentDescription = "Full Screen Lyrics",
                             modifier = Modifier.size(20.dp)
                         )
