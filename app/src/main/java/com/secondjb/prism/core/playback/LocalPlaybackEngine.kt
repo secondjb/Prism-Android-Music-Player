@@ -161,14 +161,24 @@ class LocalPlaybackEngine(
 
     override fun playTrack(track: Track, queue: List<Track>, startIndex: Int) {
         currentQueue = queue
-        val controller = mediaController ?: return
-
-        val mediaItems = queue.map { it.toMediaItem() }
         val targetIndex = if (startIndex in queue.indices) startIndex else queue.indexOf(track).coerceAtLeast(0)
+        val mediaItems = queue.map { it.toMediaItem() }
 
-        controller.setMediaItems(mediaItems, targetIndex, 0L)
-        controller.prepare()
-        controller.play()
+        val controller = mediaController
+        if (controller == null) {
+            controllerFuture?.addListener({
+                try {
+                    val ctrl = controllerFuture?.get() ?: return@addListener
+                    ctrl.setMediaItems(mediaItems, targetIndex, 0L)
+                    ctrl.prepare()
+                    ctrl.play()
+                } catch (e: Exception) {}
+            }, MoreExecutors.directExecutor())
+        } else {
+            controller.setMediaItems(mediaItems, targetIndex, 0L)
+            controller.prepare()
+            controller.play()
+        }
 
         _playbackState.update {
             it.copy(
