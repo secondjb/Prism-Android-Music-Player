@@ -46,6 +46,8 @@ import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Waves
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledTonalButton
@@ -94,6 +96,8 @@ fun SettingsScreen(
     onConnectToPairedDevice: (PairedDevice) -> Unit = {},
     onDeletePairedDevice: (PairedDevice) -> Unit = {},
     onStartFileSync: () -> Unit = {},
+    onSyncStatsNow: () -> Unit = {},
+    onClearStatsHistory: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val prefs by preferencesRepository.preferences.collectAsState()
@@ -560,6 +564,97 @@ fun SettingsScreen(
                                 Text("Smart File Sync", maxLines = 1)
                             }
                         }
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                Spacer(Modifier.height(14.dp))
+
+                // Listening Stats & Analytics Synchronization
+                Text("Listening Stats & Sync", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text("Keep listening history, play counts, and leaderboards identical across PC and phone", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(12.dp))
+
+                // Auto-sync switch
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                        Text("Auto-Sync Listening Stats", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Text("Exchange listening events bidirectionally when companion connects", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = prefs.autoSyncStats,
+                        onCheckedChange = { preferencesRepository.setAutoSyncStats(it) }
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // Prevent double-counting switch
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                        Text("Prevent Double-Counting", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Text("Suppress phone play logging when desktop is actively outputting music", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = prefs.preventDoubleCounting,
+                        onCheckedChange = { preferencesRepository.setPreventDoubleCounting(it) }
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // Record stats switch
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                        Text("Record Listening Stats", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Text("Log local listening time and play counts for charts and insights", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = prefs.isStatsCollectionEnabled,
+                        onCheckedChange = { preferencesRepository.setStatsCollectionEnabled(it) }
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // Action buttons: Sync Stats Now & Clear History
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onSyncStatsNow,
+                        enabled = isDesktopConnected,
+                        modifier = Modifier.weight(1f),
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Sync Stats Now", maxLines = 1)
+                    }
+
+                    OutlinedButton(
+                        onClick = onClearStatsHistory,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Clear Stats", maxLines = 1)
                     }
                 }
 

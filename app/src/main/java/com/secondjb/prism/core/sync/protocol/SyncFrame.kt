@@ -101,7 +101,23 @@ sealed class SyncFrame {
         val isCompanionEnabled: Boolean,
         val starredDeviceId: String? = null
     ) : SyncFrame()
+
+    @Serializable
+    @SerialName("stats_sync")
+    data class StatsSync(
+        val events: List<SyncListeningEventItem>
+    ) : SyncFrame()
 }
+
+@Serializable
+data class SyncListeningEventItem(
+    @SerialName("song_title") val songTitle: String,
+    @SerialName("artist_name") val artistName: String,
+    @SerialName("album_name") val albumName: String? = null,
+    @SerialName("genre") val genre: String? = null,
+    @SerialName("duration_ms") val durationMs: Long,
+    @SerialName("played_at") val playedAt: String
+)
 
 @Serializable
 data class ManifestTrackEntry(

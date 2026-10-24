@@ -68,6 +68,7 @@ class SyncViewModel(
     val discoveryManager: NsdDiscoveryManager? = null,
     private val localTracksProvider: (suspend () -> List<Track>)? = null,
     private val preferencesRepository: PrismPreferencesRepository? = null,
+    private val statsRepository: com.secondjb.prism.core.stats.ListeningStatsRepository? = null,
     private val cacheDir: File? = null,
     private val context: Context? = null
 ) : ViewModel() {
@@ -239,6 +240,19 @@ class SyncViewModel(
                                     )
                                 }
                             }
+
+                            // Automatically synchronize listening stats if enabled
+                            if (preferencesRepository?.preferences?.value?.autoSyncStats != false) {
+                                statsRepository?.let { repo ->
+                                    viewModelScope.launch(Dispatchers.IO) {
+                                        val localEvents = repo.fetchAllEventsForSync()
+                                        if (localEvents.isNotEmpty()) {
+                                            Log.i("PrismSync", "Auto-syncing ${localEvents.size} listening events to desktop companion")
+                                            transport.sendFrame(SyncFrame.StatsSync(localEvents))
+                                        }
+                                    }
+                                }
+                            }
                         } else {
                             _lastPairingError.value = "Pairing rejected by desktop: invalid token"
                         }
@@ -262,6 +276,14 @@ class SyncViewModel(
                         _isLocalOutputEnabled.value = frame.isCompanionEnabled
                         if (frame.starredDeviceId != null) {
                             _starredDeviceId.value = frame.starredDeviceId
+                        }
+                    }
+                    is SyncFrame.StatsSync -> {
+                        statsRepository?.let { repo ->
+                            viewModelScope.launch(Dispatchers.IO) {
+                                val inserted = repo.insertSyncedEvents(frame.events)
+                                Log.i("PrismSync", "Received and synced ${inserted} new listening events from desktop companion")
+                            }
                         }
                     }
                     else -> {}
@@ -738,6 +760,17 @@ class SyncViewModel(
                 }
             } catch (e: Exception) {
                 Log.e("PrismSync", "Failed to send track to desktop: ${e.message}")
+            }
+        }
+    }
+
+        fun syncStatsNow() {
+        val repo = statsRepository ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val localEvents = repo.fetchAllEventsForSync()
+            if (localEvents.isNotEmpty()) {
+                Log.i("PrismSync", "Manual sync: sending ${localEvents.size} events to desktop companion")
+                transport.sendFrame(SyncFrame.StatsSync(localEvents))
             }
         }
     }

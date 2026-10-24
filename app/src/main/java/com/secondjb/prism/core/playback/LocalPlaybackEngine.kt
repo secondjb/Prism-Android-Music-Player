@@ -3,6 +3,7 @@ package com.secondjb.prism.core.playback
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -45,7 +46,12 @@ class LocalPlaybackEngine(
     val customQueueIds = mutableSetOf<String>()
     private var positionTickerJob: Job? = null
 
+    var isRemoteOnlyActive: Boolean = false
+    var preventDoubleCounting: Boolean = true
+    var isStatsCollectionEnabled: Boolean = true
+
     // Listening stats accumulation
+    private var lastPlayTickRealtime = 0L
     private var activeListeningMs = 0L
     private var currentScrobbleTrack: Track? = null
     private var hasLoggedCurrentTrack = false
@@ -78,8 +84,10 @@ class LocalPlaybackEngine(
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _playbackState.update { it.copy(isPlaying = isPlaying) }
                 if (isPlaying) {
+                    lastPlayTickRealtime = SystemClock.elapsedRealtime()
                     startPositionTicker()
                 } else {
+                    lastPlayTickRealtime = 0L
                     stopPositionTicker()
                     syncFromController(controller)
                 }
@@ -87,7 +95,10 @@ class LocalPlaybackEngine(
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 // If previous track had accumulated listening time, check if it reached threshold
-                commitActiveListeningEvent()
+                val prevTrack = currentScrobbleTrack
+                val prevMs = activeListeningMs
+                val wasAutoTransition = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO
+                commitActiveListeningEvent(prevTrack, prevMs, isCompleted = wasAutoTransition)
 
                 val currentMediaId = mediaItem?.mediaId
                 val trackIndex = currentQueue.indexOfFirst { it.id == currentMediaId }
@@ -95,7 +106,7 @@ class LocalPlaybackEngine(
 
                 currentScrobbleTrack = track
                 activeListeningMs = 0L
-                hasLoggedCurrentTrack = false
+                lastPlayTickRealtime = if (controller.isPlaying) SystemClock.elapsedRealtime() else 0L
 
                 _playbackState.update {
                     it.copy(
@@ -111,6 +122,9 @@ class LocalPlaybackEngine(
                 val duration = controller.duration.coerceAtLeast(0L)
                 _playbackState.update { it.copy(durationMs = duration) }
                 if (playbackStateInt == Player.STATE_ENDED) {
+                    commitActiveListeningEvent(currentScrobbleTrack, activeListeningMs, isCompleted = true)
+                    activeListeningMs = 0L
+                    lastPlayTickRealtime = 0L
                     _playbackState.update { it.copy(isPlaying = false) }
                 }
             }
@@ -162,22 +176,33 @@ class LocalPlaybackEngine(
             while (isActive) {
                 val controller = mediaController
                 if (controller != null && controller.isPlaying) {
+                    val now = SystemClock.elapsedRealtime()
+                    if (lastPlayTickRealtime > 0L) {
+                        val delta = (now - lastPlayTickRealtime).coerceAtLeast(0L)
+                        if (delta in 1..2000) {
+                            activeListeningMs += delta
+                        }
+                    }
+                    lastPlayTickRealtime = now
+
                     val pos = controller.currentPosition.coerceAtLeast(0L)
                     val dur = controller.duration.coerceAtLeast(0L)
                     _playbackState.update { it.copy(positionMs = pos, durationMs = dur) }
-
-                    // Accumulate listening time for stats
-                    activeListeningMs += 250L
-                    checkThresholdAndLogEvent()
+                } else {
+                    lastPlayTickRealtime = 0L
                 }
                 delay(250)
             }
         }
     }
 
-    private fun checkThresholdAndLogEvent() {
-        val track = currentScrobbleTrack ?: return
-        if (hasLoggedCurrentTrack || statsRepository == null) return
+    private fun commitActiveListeningEvent(track: Track?, ms: Long, isCompleted: Boolean = false) {
+        if (track == null || statsRepository == null) return
+        if (!isStatsCollectionEnabled) return
+        if (isRemoteOnlyActive && preventDoubleCounting) {
+            // Audio rendered by desktop companion; desktop logs this playback session. Prevent double counting.
+            return
+        }
 
         val durSecs = track.durationSecs
         val threshold = if (durSecs > 0) {
@@ -186,17 +211,12 @@ class LocalPlaybackEngine(
             15000L
         }
 
-        if (activeListeningMs >= threshold) {
-            hasLoggedCurrentTrack = true
+        if (ms >= threshold) {
+            val durationToLog = if (isCompleted && durSecs > 0) durSecs * 1000L else ms
             scope.launch {
-                val durationToLog = if (durSecs > 0) durSecs * 1000L else activeListeningMs
                 statsRepository.logListeningEvent(track, durationToLog)
             }
         }
-    }
-
-    private fun commitActiveListeningEvent() {
-        checkThresholdAndLogEvent()
     }
 
     private fun stopPositionTicker() {
@@ -213,10 +233,14 @@ class LocalPlaybackEngine(
     }
 
     private fun loadTrackInternal(track: Track, queue: List<Track>, startIndex: Int, playWhenReady: Boolean) {
+        val prevTrack = currentScrobbleTrack
+        val prevMs = activeListeningMs
+        commitActiveListeningEvent(prevTrack, prevMs, isCompleted = false)
+
         currentQueue = queue
         currentScrobbleTrack = track
         activeListeningMs = 0L
-        hasLoggedCurrentTrack = false
+        lastPlayTickRealtime = 0L
         val targetIndex = if (startIndex != -1 && startIndex in queue.indices) {
             startIndex
         } else {
@@ -272,7 +296,6 @@ class LocalPlaybackEngine(
     }
 
     override fun pause() {
-        commitActiveListeningEvent()
         mediaController?.pause()
     }
 
@@ -368,6 +391,13 @@ class LocalPlaybackEngine(
     }
 
     fun release() {
+        val prevTrack = currentScrobbleTrack
+        val prevMs = activeListeningMs
+        commitActiveListeningEvent(prevTrack, prevMs, isCompleted = false)
+        currentScrobbleTrack = null
+        activeListeningMs = 0L
+        lastPlayTickRealtime = 0L
+
         stopPositionTicker()
         mediaController?.release()
         mediaController = null

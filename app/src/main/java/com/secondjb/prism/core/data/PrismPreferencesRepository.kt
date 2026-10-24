@@ -43,7 +43,12 @@ data class PrismPreferences(
 
     // Theme & Appearance
     val isDynamicThemingEnabled: Boolean = true,
-    val darkThemeMode: String = "system" // "system", "dark", "light"
+    val darkThemeMode: String = "system", // "system", "dark", "light"
+
+    // Listening Stats & Companion Sync
+    val autoSyncStats: Boolean = true,
+    val preventDoubleCounting: Boolean = true,
+    val isStatsCollectionEnabled: Boolean = true
 )
 
 class PrismPreferencesRepository(context: Context) {
@@ -68,7 +73,10 @@ class PrismPreferencesRepository(context: Context) {
             isRomanizationEnabled = prefs.getBoolean(KEY_ROMANIZATION, true),
             isWavySeekbarEnabled = prefs.getBoolean(KEY_WAVY_SEEKBAR, true),
             isDynamicThemingEnabled = prefs.getBoolean(KEY_DYNAMIC_THEME, true),
-            darkThemeMode = prefs.getString(KEY_DARK_THEME_MODE, "system") ?: "system"
+            darkThemeMode = prefs.getString(KEY_DARK_THEME_MODE, "system") ?: "system",
+            autoSyncStats = prefs.getBoolean(KEY_AUTO_SYNC_STATS, true),
+            preventDoubleCounting = prefs.getBoolean(KEY_PREVENT_DOUBLE_COUNTING, true),
+            isStatsCollectionEnabled = prefs.getBoolean(KEY_STATS_COLLECTION_ENABLED, true)
         )
     }
 
@@ -179,6 +187,21 @@ class PrismPreferencesRepository(context: Context) {
         _preferences.value = _preferences.value.copy(darkThemeMode = mode)
     }
 
+    fun setAutoSyncStats(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AUTO_SYNC_STATS, enabled).apply()
+        _preferences.value = _preferences.value.copy(autoSyncStats = enabled)
+    }
+
+    fun setPreventDoubleCounting(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_PREVENT_DOUBLE_COUNTING, enabled).apply()
+        _preferences.value = _preferences.value.copy(preventDoubleCounting = enabled)
+    }
+
+    fun setStatsCollectionEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_STATS_COLLECTION_ENABLED, enabled).apply()
+        _preferences.value = _preferences.value.copy(isStatsCollectionEnabled = enabled)
+    }
+
     companion object {
         private const val PREFS_NAME = "prism_user_preferences"
         private const val KEY_MIN_DURATION = "key_min_duration"
@@ -196,5 +219,8 @@ class PrismPreferencesRepository(context: Context) {
         private const val KEY_DYNAMIC_THEME = "key_dynamic_theme"
         private const val KEY_DARK_THEME_MODE = "key_dark_theme_mode"
         private const val KEY_PAIRED_DEVICES = "key_paired_devices"
+        private const val KEY_AUTO_SYNC_STATS = "key_auto_sync_stats"
+        private const val KEY_PREVENT_DOUBLE_COUNTING = "key_prevent_double_counting"
+        private const val KEY_STATS_COLLECTION_ENABLED = "key_stats_collection_enabled"
     }
 }

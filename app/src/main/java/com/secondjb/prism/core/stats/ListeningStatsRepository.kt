@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import com.secondjb.prism.core.sync.protocol.SyncListeningEventItem
 import com.secondjb.prism.domain.model.Track
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -246,18 +247,7 @@ class ListeningStatsRepository(context: Context) {
         metric: StatsMetric = StatsMetric.TIME,
         libraryTracks: List<Track> = emptyList()
     ): AggregatedStats = withContext(Dispatchers.IO) {
-        var events = fetchListeningEvents(range)
-        if (events.isEmpty() && range == StatsFilterRange.ALL_TIME) {
-            seedMockEventsIfEmpty(libraryTracks)
-            events = fetchListeningEvents(range)
-        } else if (events.isEmpty()) {
-            // Check if all-time is also empty, seed if so
-            val allEvents = fetchListeningEvents(StatsFilterRange.ALL_TIME)
-            if (allEvents.isEmpty()) {
-                seedMockEventsIfEmpty(libraryTracks)
-                events = fetchListeningEvents(range)
-            }
-        }
+        val events = fetchListeningEvents(range)
 
         if (events.isEmpty()) {
             return@withContext AggregatedStats()
@@ -384,6 +374,95 @@ class ListeningStatsRepository(context: Context) {
             topAlbumsList = topAlbums,
             listeningHabitsHours = habits.toList()
         )
+    }
+
+    /**
+     * Inserts listening events received from companion desktop sync with deduplication.
+     * Matches the exact SQLite WHERE NOT EXISTS logic of Prism Windows insert_synced_events.
+     */
+    suspend fun insertSyncedEvents(events: List<SyncListeningEventItem>): Int = withContext(Dispatchers.IO) {
+        var inserted = 0
+        try {
+            val db = dbHelper.writableDatabase
+            db.beginTransaction()
+            try {
+                for (ev in events) {
+                    val cursor = db.rawQuery(
+                        """
+                        SELECT 1 FROM listening_events 
+                        WHERE song_title = ? AND artist_name = ? AND duration_ms = ? AND played_at = ?
+                        """.trimIndent(),
+                        arrayOf(ev.songTitle, ev.artistName, ev.durationMs.toString(), ev.playedAt)
+                    )
+                    val exists = cursor.use { it.moveToFirst() }
+                    if (!exists) {
+                        val values = ContentValues().apply {
+                            put("song_title", ev.songTitle)
+                            put("artist_name", ev.artistName)
+                            put("album_name", ev.albumName)
+                            put("genre", ev.genre)
+                            put("duration_ms", ev.durationMs)
+                            put("played_at", ev.playedAt)
+                        }
+                        db.insert("listening_events", null, values)
+                        inserted++
+                    }
+                }
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
+            if (inserted > 0) {
+                _statsUpdateTrigger.value = System.currentTimeMillis()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        inserted
+    }
+
+    /**
+     * Fetches up to 500 recent events formatted for P2P sync to desktop companion.
+     */
+    suspend fun fetchAllEventsForSync(limit: Int = 500): List<SyncListeningEventItem> = withContext(Dispatchers.IO) {
+        val list = mutableListOf<SyncListeningEventItem>()
+        try {
+            val db = dbHelper.readableDatabase
+            val cursor = db.query(
+                "listening_events",
+                arrayOf("song_title", "artist_name", "album_name", "genre", "duration_ms", "played_at"),
+                null,
+                null,
+                null,
+                null,
+                "played_at DESC",
+                limit.toString()
+            )
+            cursor.use { c ->
+                val titleCol = c.getColumnIndexOrThrow("song_title")
+                val artistCol = c.getColumnIndexOrThrow("artist_name")
+                val albumCol = c.getColumnIndexOrThrow("album_name")
+                val genreCol = c.getColumnIndexOrThrow("genre")
+                val durCol = c.getColumnIndexOrThrow("duration_ms")
+                val dateCol = c.getColumnIndexOrThrow("played_at")
+
+                while (c.moveToNext()) {
+                    list.add(
+                        SyncListeningEventItem(
+                            songTitle = c.getString(titleCol),
+                            artistName = c.getString(artistCol),
+                            albumName = if (c.isNull(albumCol)) null else c.getString(albumCol),
+                            genre = if (c.isNull(genreCol)) null else c.getString(genreCol),
+                            durationMs = c.getLong(durCol),
+                            playedAt = c.getString(dateCol)
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        list
     }
 
     suspend fun clearHistory() = withContext(Dispatchers.IO) {

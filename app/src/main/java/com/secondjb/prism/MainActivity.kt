@@ -93,6 +93,7 @@ class MainActivity : ComponentActivity() {
 					discoveryManager = discoveryManager,
 					localTracksProvider = { repository.loadAllTracks() },
 					preferencesRepository = preferencesRepository,
+					statsRepository = statsRepository,
 					cacheDir = context.cacheDir,
 					context = context
 				)
@@ -127,6 +128,12 @@ class MainActivity : ComponentActivity() {
 			}
 
 			val isRemoteOnlyActive = isDesktopConnected && isDesktopOutputEnabled && !isLocalOutputEnabled
+
+			LaunchedEffect(isRemoteOnlyActive, userPreferences.preventDoubleCounting, userPreferences.isStatsCollectionEnabled) {
+				playbackEngine.isRemoteOnlyActive = isRemoteOnlyActive
+				playbackEngine.preventDoubleCounting = userPreferences.preventDoubleCounting
+				playbackEngine.isStatsCollectionEnabled = userPreferences.isStatsCollectionEnabled
+			}
 
 			// Immediately pause local audio when local output is toggled off; restore and resync when toggled on
 			LaunchedEffect(isLocalOutputEnabled) {
@@ -498,6 +505,12 @@ class MainActivity : ComponentActivity() {
 						onOpenSmartFileSync = {
 							syncViewModel.requestManifestDiff()
 							showSmartFileSyncSheet = true
+						},
+						onSyncStatsNow = {
+							syncViewModel.syncStatsNow()
+						},
+						onClearStatsHistory = {
+							scope.launch { statsRepository.clearHistory() }
 						}
 					)
 
@@ -697,7 +710,9 @@ fun PrismAppRoot(
 	pairedDevices: List<com.secondjb.prism.core.data.PairedDevice> = emptyList(),
 	onConnectToPairedDevice: (com.secondjb.prism.core.data.PairedDevice) -> Unit = {},
 	onDeletePairedDevice: (com.secondjb.prism.core.data.PairedDevice) -> Unit = {},
-	onOpenSmartFileSync: () -> Unit = {}
+	onOpenSmartFileSync: () -> Unit = {},
+	onSyncStatsNow: () -> Unit = {},
+	onClearStatsHistory: () -> Unit = {}
 ) {
 	val navController = rememberNavController()
 	val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -842,7 +857,9 @@ fun PrismAppRoot(
 						pairedDevices = pairedDevices,
 						onConnectToPairedDevice = onConnectToPairedDevice,
 						onDeletePairedDevice = onDeletePairedDevice,
-						onStartFileSync = onOpenSmartFileSync
+						onStartFileSync = onOpenSmartFileSync,
+						onSyncStatsNow = onSyncStatsNow,
+						onClearStatsHistory = onClearStatsHistory
 					)
 				}
 			}
