@@ -276,7 +276,7 @@ class MainActivity : ComponentActivity() {
 				val filename = (track.filePath ?: track.uri).substringAfterLast('/').substringAfterLast('\\')
 
 				if (isDesktopConnected) {
-					val queueFns = queue.take(150).map {
+					val queueFns = queue.take(500).map {
 						(it.filePath ?: it.uri).substringAfterLast('/').substringAfterLast('\\')
 					}
 					syncViewModel.sendPlayTrackCommand(
@@ -368,6 +368,20 @@ class MainActivity : ComponentActivity() {
 				}
 				if (localActive) {
 					playbackEngine.setRepeatMode(effectivePlaybackState.repeatMode.next())
+				}
+			}
+
+			val handlePlayNext: (Track) -> Unit = { track ->
+				playbackEngine.playNext(track)
+				if (isDesktopConnected) {
+					syncViewModel.sendPlayNextCommand(track)
+				}
+			}
+
+			val handleAddToQueue: (Track) -> Unit = { track ->
+				playbackEngine.addToQueue(track)
+				if (isDesktopConnected) {
+					syncViewModel.sendAddToQueueCommand(track)
 				}
 			}
 
@@ -477,6 +491,8 @@ class MainActivity : ComponentActivity() {
 						playbackState = effectivePlaybackState,
 						playbackEngine = playbackEngine,
 						onPlayTrack = handlePlayTrack,
+						onPlayNext = handlePlayNext,
+						onAddToQueue = handleAddToQueue,
 						onTogglePlayPause = handleTogglePlayPause,
 						onSkipNext = handleSkipNext,
 						onSkipPrevious = handleSkipPrevious,
@@ -696,6 +712,8 @@ fun PrismAppRoot(
 	playbackState: PlaybackState,
 	playbackEngine: PlaybackController,
 	onPlayTrack: (Track, List<Track>) -> Unit,
+	onPlayNext: (Track) -> Unit = { playbackEngine.playNext(it) },
+	onAddToQueue: (Track) -> Unit = { playbackEngine.addToQueue(it) },
 	onTogglePlayPause: () -> Unit = { playbackEngine.togglePlayPause() },
 	onSkipNext: () -> Unit = { playbackEngine.skipNext() },
 	onSkipPrevious: () -> Unit = { playbackEngine.skipPrevious() },
@@ -832,8 +850,8 @@ fun PrismAppRoot(
 						onAddTrackToPlaylist = libraryViewModel::addTrackToPlaylist,
 						onRemoveTrackFromPlaylist = libraryViewModel::removeTrackFromPlaylist,
 						onToggleLikeTrack = libraryViewModel::toggleLikeTrack,
-						onPlayNext = { playbackEngine.playNext(it) },
-						onAddToQueue = { playbackEngine.addToQueue(it) },
+						onPlayNext = onPlayNext,
+						onAddToQueue = onAddToQueue,
 						onGoToQueue = onExpandNowPlaying,
 						onGoToAlbum = { albumName ->
 							libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ALBUMS)

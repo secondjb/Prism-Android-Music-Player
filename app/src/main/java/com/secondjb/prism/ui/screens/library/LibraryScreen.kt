@@ -1,6 +1,19 @@
 package com.secondjb.prism.ui.screens.library
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.BookmarkAdd
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -101,9 +114,20 @@ fun LibraryScreen(
     var trackForPlaylistDialog by remember { mutableStateOf<Track?>(null) }
     var actionTrack by remember { mutableStateOf<Track?>(null) }
     var actionTrackIsInPlaylist by remember { mutableStateOf(false) }
+    var selectedTrackIds by remember { mutableStateOf(emptySet<String>()) }
+    var showMultiSelectMenu by remember { mutableStateOf(false) }
+    var showBatchAddToPlaylistDialog by remember { mutableStateOf(false) }
+
+    // Intercept back gesture if in multi-select mode
+    BackHandler(enabled = selectedTrackIds.isNotEmpty()) {
+        selectedTrackIds = emptySet()
+    }
 
     // If viewing a single playlist detail
     if (uiState.activePlaylist != null) {
+        BackHandler {
+            onOpenPlaylist(null)
+        }
         PlaylistDetailScreen(
             playlist = uiState.activePlaylist,
             tracks = uiState.activePlaylistTracks,
@@ -197,6 +221,32 @@ fun LibraryScreen(
             )
         }
 
+        val chips = remember { LibraryFilterChip.entries.toList() }
+        val coroutineScope = rememberCoroutineScope()
+        val pagerState = rememberPagerState(
+            initialPage = chips.indexOf(uiState.selectedChip).coerceAtLeast(0),
+            pageCount = { chips.size }
+        )
+
+        // Sync pager swipes with uiState filter chip
+        androidx.compose.runtime.LaunchedEffect(pagerState.currentPage) {
+            val newChip = chips[pagerState.currentPage]
+            if (uiState.selectedChip != newChip) {
+                onFilterSelect(newChip)
+            }
+            if (newChip != LibraryFilterChip.ALL_SONGS && selectedTrackIds.isNotEmpty()) {
+                selectedTrackIds = emptySet()
+            }
+        }
+
+        // Sync external filter chip selection to pager
+        androidx.compose.runtime.LaunchedEffect(uiState.selectedChip) {
+            val targetPage = chips.indexOf(uiState.selectedChip)
+            if (targetPage >= 0 && pagerState.currentPage != targetPage) {
+                pagerState.animateScrollToPage(targetPage)
+            }
+        }
+
         // Material 3 Filter Chips Row
         LazyRow(
             modifier = Modifier
@@ -205,10 +255,17 @@ fun LibraryScreen(
             contentPadding = PaddingValues(horizontal = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(LibraryFilterChip.entries.toTypedArray()) { chip ->
+            items(chips) { chip ->
                 FilterChip(
                     selected = uiState.selectedChip == chip,
-                    onClick = { onFilterSelect(chip) },
+                    onClick = {
+                        coroutineScope.launch {
+                            val idx = chips.indexOf(chip)
+                            if (idx >= 0) {
+                                pagerState.animateScrollToPage(idx)
+                            }
+                        }
+                    },
                     label = { Text(chip.label) },
                     shape = PillShape,
                     colors = FilterChipDefaults.filterChipColors(
@@ -219,45 +276,155 @@ fun LibraryScreen(
             }
         }
 
-        // Controls bar: count & Grid/List view toggle
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            val countText = when (uiState.selectedChip) {
-                LibraryFilterChip.ALL_SONGS -> "${uiState.filteredTracks.size} songs"
-                LibraryFilterChip.PLAYLISTS -> "${uiState.filteredPlaylists.size} playlists"
-                LibraryFilterChip.ALBUMS -> "${uiState.filteredAlbums.size} albums"
-                LibraryFilterChip.ARTISTS -> "${uiState.filteredArtists.size} artists"
-            }
-            Text(
-                text = countText,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        // Controls bar: normal count & view toggle OR multi-select toolbar
+        if (selectedTrackIds.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "${selectedTrackIds.size} selected",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
 
-            if (uiState.selectedChip == LibraryFilterChip.ALL_SONGS || uiState.selectedChip == LibraryFilterChip.PLAYLISTS) {
-                IconButton(onClick = onToggleViewMode, modifier = Modifier.size(36.dp)) {
-                    Icon(
-                        imageVector = if (uiState.isGridView) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
-                        contentDescription = "Toggle Grid/List",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    TextButton(
+                        onClick = {
+                            selectedTrackIds = uiState.filteredTracks.map { it.id }.toSet()
+                        },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text("Select All", style = MaterialTheme.typography.labelMedium)
+                    }
+
+                    TextButton(
+                        onClick = {
+                            selectedTrackIds = emptySet()
+                        },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text("Deselect", style = MaterialTheme.typography.labelMedium)
+                    }
+
+                    Box {
+                        IconButton(
+                            onClick = { showMultiSelectMenu = true },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.MoreVert,
+                                contentDescription = "Batch Actions",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = showMultiSelectMenu,
+                            onDismissRequest = { showMultiSelectMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Play Next") },
+                                leadingIcon = {
+                                    Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null, modifier = Modifier.size(20.dp))
+                                },
+                                onClick = {
+                                    showMultiSelectMenu = false
+                                    val selectedTracks = uiState.filteredTracks.filter { selectedTrackIds.contains(it.id) }
+                                    selectedTracks.reversed().forEach { track ->
+                                        onPlayNext(track)
+                                    }
+                                    selectedTrackIds = emptySet()
+                                }
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("Add to Queue") },
+                                leadingIcon = {
+                                    Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null, modifier = Modifier.size(20.dp))
+                                },
+                                onClick = {
+                                    showMultiSelectMenu = false
+                                    val selectedTracks = uiState.filteredTracks.filter { selectedTrackIds.contains(it.id) }
+                                    selectedTracks.forEach { track ->
+                                        onAddToQueue(track)
+                                    }
+                                    selectedTrackIds = emptySet()
+                                }
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("Add to Playlist") },
+                                leadingIcon = {
+                                    Icon(Icons.Default.BookmarkAdd, contentDescription = null, modifier = Modifier.size(20.dp))
+                                },
+                                onClick = {
+                                    showMultiSelectMenu = false
+                                    showBatchAddToPlaylistDialog = true
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val countText = when (uiState.selectedChip) {
+                    LibraryFilterChip.ALL_SONGS -> "${uiState.filteredTracks.size} songs"
+                    LibraryFilterChip.PLAYLISTS -> "${uiState.filteredPlaylists.size} playlists"
+                    LibraryFilterChip.ALBUMS -> "${uiState.filteredAlbums.size} albums"
+                    LibraryFilterChip.ARTISTS -> "${uiState.filteredArtists.size} artists"
+                }
+                Text(
+                    text = countText,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (uiState.selectedChip == LibraryFilterChip.ALL_SONGS || uiState.selectedChip == LibraryFilterChip.PLAYLISTS) {
+                    IconButton(onClick = onToggleViewMode, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            imageVector = if (uiState.isGridView) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
+                            contentDescription = "Toggle Grid/List",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
 
-        // Content Area based on selected filter
-        Box(modifier = Modifier.fillMaxSize()) {
-            when (uiState.selectedChip) {
+        // Full screen swipeable content area across all tabs
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize()
+        ) { page ->
+            when (chips[page]) {
                 LibraryFilterChip.ALL_SONGS -> {
                     if (uiState.isGridView) {
                         TrackGridView(
                             tracks = uiState.filteredTracks,
                             pinnedIds = uiState.pinnedIds,
+                            selectedTrackIds = selectedTrackIds,
+                            onToggleSelectTrack = { id ->
+                                selectedTrackIds = if (selectedTrackIds.contains(id)) {
+                                    selectedTrackIds - id
+                                } else {
+                                    selectedTrackIds + id
+                                }
+                            },
                             onTogglePin = onTogglePin,
                             onTrackClick = onTrackClick
                         )
@@ -266,6 +433,14 @@ fun LibraryScreen(
                             tracks = uiState.filteredTracks,
                             pinnedIds = uiState.pinnedIds,
                             likedTrackIds = uiState.likedTrackIds,
+                            selectedTrackIds = selectedTrackIds,
+                            onToggleSelectTrack = { id ->
+                                selectedTrackIds = if (selectedTrackIds.contains(id)) {
+                                    selectedTrackIds - id
+                                } else {
+                                    selectedTrackIds + id
+                                }
+                            },
                             onTogglePin = onTogglePin,
                             onToggleLike = onToggleLikeTrack,
                             onAddToPlaylist = { trackForPlaylistDialog = it },
@@ -368,6 +543,25 @@ fun LibraryScreen(
             onGoToQueue = onGoToQueue,
             onGoToAlbum = onGoToAlbum,
             onGoToArtist = onGoToArtist
+        )
+    }
+
+    if (showBatchAddToPlaylistDialog) {
+        val selectedTracks = uiState.filteredTracks.filter { selectedTrackIds.contains(it.id) }
+        BatchAddToPlaylistDialog(
+            tracksCount = selectedTracks.size,
+            playlists = uiState.playlists,
+            onDismiss = { showBatchAddToPlaylistDialog = false },
+            onSelectPlaylist = { pl ->
+                selectedTracks.forEach { track ->
+                    onAddTrackToPlaylist(pl.id, track.id)
+                }
+                showBatchAddToPlaylistDialog = false
+                selectedTrackIds = emptySet()
+            },
+            onCreateNewPlaylist = { name ->
+                onCreatePlaylist(name)
+            }
         )
     }
 }
@@ -608,7 +802,7 @@ private fun AddToPlaylistDialog(
                                     modifier = Modifier.padding(12.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.PlaylistAdd, contentDescription = null, modifier = Modifier.size(20.dp))
+                                    Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null, modifier = Modifier.size(20.dp))
                                     Spacer(Modifier.width(10.dp))
                                     Text(text = pl.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                                 }
@@ -645,11 +839,14 @@ private fun AddToPlaylistDialog(
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TrackListView(
     tracks: List<Track>,
     pinnedIds: Set<String>,
     likedTrackIds: Set<String> = emptySet(),
+    selectedTrackIds: Set<String> = emptySet(),
+    onToggleSelectTrack: (String) -> Unit = {},
     onTogglePin: (String) -> Unit,
     onToggleLike: (String) -> Unit = {},
     onAddToPlaylist: (Track) -> Unit = {},
@@ -668,12 +865,39 @@ private fun TrackListView(
         items(sortedTracks, key = { it.id }) { track ->
             val isPinned = pinnedIds.contains(track.id)
             val isLiked = likedTrackIds.contains(track.id)
+            val isSelected = selectedTrackIds.contains(track.id)
+            val isMultiSelectMode = selectedTrackIds.isNotEmpty()
+
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onTrackClick(track, tracks) },
+                    .then(
+                        if (isSelected) {
+                            Modifier.border(
+                                width = 2.dp,
+                                color = MaterialTheme.colorScheme.primary,
+                                shape = MaterialTheme.shapes.medium
+                            )
+                        } else Modifier
+                    )
+                    .combinedClickable(
+                        onClick = {
+                            if (isMultiSelectMode) {
+                                onToggleSelectTrack(track.id)
+                            } else {
+                                onTrackClick(track, tracks)
+                            }
+                        },
+                        onLongClick = {
+                            onToggleSelectTrack(track.id)
+                        }
+                    ),
                 shape = MaterialTheme.shapes.medium,
-                color = if (isPinned) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer
+                color = when {
+                    isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                    isPinned -> MaterialTheme.colorScheme.surfaceContainerHigh
+                    else -> MaterialTheme.colorScheme.surfaceContainer
+                }
             ) {
                 Row(
                     modifier = Modifier
@@ -748,10 +972,13 @@ private fun TrackListView(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TrackGridView(
     tracks: List<Track>,
     pinnedIds: Set<String>,
+    selectedTrackIds: Set<String> = emptySet(),
+    onToggleSelectTrack: (String) -> Unit = {},
     onTogglePin: (String) -> Unit,
     onMoreClick: (Track) -> Unit = {},
     onTrackClick: (Track, List<Track>) -> Unit
@@ -769,13 +996,40 @@ private fun TrackGridView(
     ) {
         items(sortedTracks, key = { it.id }) { track ->
             val isPinned = pinnedIds.contains(track.id)
+            val isSelected = selectedTrackIds.contains(track.id)
+            val isMultiSelectMode = selectedTrackIds.isNotEmpty()
+
             ElevatedCard(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onTrackClick(track, tracks) },
+                    .then(
+                        if (isSelected) {
+                            Modifier.border(
+                                width = 2.dp,
+                                color = MaterialTheme.colorScheme.primary,
+                                shape = MaterialTheme.shapes.large
+                            )
+                        } else Modifier
+                    )
+                    .combinedClickable(
+                        onClick = {
+                            if (isMultiSelectMode) {
+                                onToggleSelectTrack(track.id)
+                            } else {
+                                onTrackClick(track, tracks)
+                            }
+                        },
+                        onLongClick = {
+                            onToggleSelectTrack(track.id)
+                        }
+                    ),
                 shape = MaterialTheme.shapes.large,
                 colors = CardDefaults.elevatedCardColors(
-                    containerColor = if (isPinned) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer
+                    containerColor = when {
+                        isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                        isPinned -> MaterialTheme.colorScheme.surfaceContainerHigh
+                        else -> MaterialTheme.colorScheme.surfaceContainer
+                    }
                 )
             ) {
                 Column(modifier = Modifier.padding(10.dp)) {
@@ -1043,4 +1297,89 @@ private fun formatDuration(durationMs: Long): String {
     val minutes = totalSecs / 60
     val seconds = totalSecs % 60
     return "%d:%02d".format(minutes, seconds)
+}
+
+
+@Composable
+private fun BatchAddToPlaylistDialog(
+    tracksCount: Int,
+    playlists: List<Playlist>,
+    onDismiss: () -> Unit,
+    onSelectPlaylist: (Playlist) -> Unit,
+    onCreateNewPlaylist: (String) -> Unit
+) {
+    var isCreatingNew by remember { mutableStateOf(false) }
+    var newName by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add to Playlist") },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "Add $tracksCount songs to playlist",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(12.dp))
+
+                if (isCreatingNew) {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        label = { Text("New Playlist Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    LazyColumn(modifier = Modifier.height(200.dp)) {
+                        items(playlists) { pl ->
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onSelectPlaylist(pl) }
+                                    .padding(vertical = 4.dp),
+                                shape = MaterialTheme.shapes.small,
+                                color = MaterialTheme.colorScheme.surfaceContainer
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null, modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(text = pl.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (isCreatingNew) {
+                TextButton(
+                    onClick = {
+                        if (newName.isNotBlank()) {
+                            onCreateNewPlaylist(newName.trim())
+                            isCreatingNew = false
+                            newName = ""
+                        }
+                    }
+                ) {
+                    Text("Create")
+                }
+            } else {
+                TextButton(onClick = { isCreatingNew = true }) {
+                    Text("New Playlist")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }

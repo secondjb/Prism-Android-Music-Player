@@ -508,6 +508,52 @@ class SyncViewModel(
         }
     }
 
+    fun sendPlayNextCommand(track: Track) {
+        val filename = (track.filePath ?: track.uri).substringAfterLast('/').substringAfterLast('\\')
+        _remotePlaybackState.update { state ->
+            if (state == null) null
+            else {
+                val currentQ = state.queue.toMutableList()
+                val currentIdx = currentQ.indexOfFirst { it.id == state.currentTrack?.id }
+                val insertIdx = if (currentIdx != -1) currentIdx + 1 else 0
+                currentQ.add(insertIdx.coerceIn(0, currentQ.size), track)
+                state.copy(queue = currentQ)
+            }
+        }
+        viewModelScope.launch {
+            val command = SyncFrame.PlaybackCommand(
+                action = CommandAction.PLAY_NEXT,
+                trackTitle = track.title,
+                trackArtist = track.artist,
+                trackFilename = filename,
+                trackUri = track.uri
+            )
+            transport.sendFrame(command)
+        }
+    }
+
+    fun sendAddToQueueCommand(track: Track) {
+        val filename = (track.filePath ?: track.uri).substringAfterLast('/').substringAfterLast('\\')
+        _remotePlaybackState.update { state ->
+            if (state == null) null
+            else {
+                val currentQ = state.queue.toMutableList()
+                currentQ.add(track)
+                state.copy(queue = currentQ)
+            }
+        }
+        viewModelScope.launch {
+            val command = SyncFrame.PlaybackCommand(
+                action = CommandAction.ADD_TO_QUEUE,
+                trackTitle = track.title,
+                trackArtist = track.artist,
+                trackFilename = filename,
+                trackUri = track.uri
+            )
+            transport.sendFrame(command)
+        }
+    }
+
     fun findLocalMatch(remoteTrack: Track): Track? {
         return cachedLocalTracks.firstOrNull { local ->
             val sameTitle = local.title.equals(remoteTrack.title, ignoreCase = true)
