@@ -107,6 +107,13 @@ sealed class SyncFrame {
     data class StatsSync(
         val events: List<SyncListeningEventItem>
     ) : SyncFrame()
+
+    @Serializable
+    @SerialName("enc")
+    data class Encrypted(
+        val n: String,
+        val d: String
+    ) : SyncFrame()
 }
 
 @Serializable
