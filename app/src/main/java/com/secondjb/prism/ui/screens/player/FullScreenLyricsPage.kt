@@ -87,6 +87,24 @@ import kotlinx.coroutines.delay
  * - Auto-fades controls after idle, reappears instantly on tap or scroll.
  * - Status bars and navigation bars padding for unobstructed touch targets.
  */
+/**
+ * Ternary display mode for Romanization and Translation lines in lyrics.
+ * OFF: Subline hidden.
+ * BELOW: Shown as secondary subline underneath the main line.
+ * REPLACE: Replaces the main lyric text.
+ */
+enum class LyricDisplayMode {
+    OFF,
+    BELOW,
+    REPLACE;
+
+    fun next(): LyricDisplayMode = when (this) {
+        OFF -> BELOW
+        BELOW -> REPLACE
+        REPLACE -> OFF
+    }
+}
+
 @Composable
 fun FullScreenLyricsPage(
     track: Track,
@@ -104,8 +122,8 @@ fun FullScreenLyricsPage(
     }
 
     var showControls by remember { mutableStateOf(true) }
-    var isRomanizationVisible by remember { mutableStateOf(true) }
-    var isTranslationVisible by remember { mutableStateOf(true) }
+    var romanizationMode by remember { mutableStateOf(LyricDisplayMode.OFF) }
+    var translationMode by remember { mutableStateOf(LyricDisplayMode.OFF) }
     var fontScale by remember { mutableFloatStateOf(1.0f) }
 
     val listState = rememberLazyListState()
@@ -231,8 +249,8 @@ fun FullScreenLyricsPage(
                         currentPosMs = playbackState.positionMs,
                         alpha = targetAlpha,
                         fontScale = fontScale,
-                        showRomanization = isRomanizationVisible,
-                        showTranslation = isTranslationVisible,
+                        romanizationMode = romanizationMode,
+                        translationMode = translationMode,
                         onClick = {
                             onSeek(line.timestampMs)
                             isUserScrolled = false
@@ -337,34 +355,46 @@ fun FullScreenLyricsPage(
                             )
                         }
 
-                        // Romanization Toggle
+                        // Romanization Toggle (Ternary: OFF -> BELOW -> REPLACE -> OFF)
+                        val romanizationTint = when (romanizationMode) {
+                            LyricDisplayMode.OFF -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                            LyricDisplayMode.BELOW -> MaterialTheme.colorScheme.secondary
+                            LyricDisplayMode.REPLACE -> MaterialTheme.colorScheme.primary
+                        }
+
                         IconButton(
                             onClick = {
                                 resetControlsTimer()
-                                isRomanizationVisible = !isRomanizationVisible
+                                romanizationMode = romanizationMode.next()
                             },
                             modifier = Modifier.size(38.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Language,
-                                contentDescription = "Toggle Romanization",
-                                tint = if (isRomanizationVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                                contentDescription = "Romanization (${romanizationMode.name.lowercase()})",
+                                tint = romanizationTint,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
 
-                        // Translation Toggle
+                        // Translation Toggle (Ternary: OFF -> BELOW -> REPLACE -> OFF)
+                        val translationTint = when (translationMode) {
+                            LyricDisplayMode.OFF -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                            LyricDisplayMode.BELOW -> MaterialTheme.colorScheme.secondary
+                            LyricDisplayMode.REPLACE -> MaterialTheme.colorScheme.primary
+                        }
+
                         IconButton(
                             onClick = {
                                 resetControlsTimer()
-                                isTranslationVisible = !isTranslationVisible
+                                translationMode = translationMode.next()
                             },
                             modifier = Modifier.size(38.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Translate,
-                                contentDescription = "Toggle Translation",
-                                tint = if (isTranslationVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                                contentDescription = "Translation (${translationMode.name.lowercase()})",
+                                tint = translationTint,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -528,14 +558,27 @@ private fun LyricLineRow(
     currentPosMs: Long,
     alpha: Float,
     fontScale: Float,
-    showRomanization: Boolean,
-    showTranslation: Boolean,
+    romanizationMode: LyricDisplayMode,
+    translationMode: LyricDisplayMode,
     onClick: () -> Unit
 ) {
     val activeBaseSize = (28f * fontScale).sp
     val inactiveBaseSize = (22f * fontScale).sp
     val activeLineHeight = (36f * fontScale).sp
     val inactiveLineHeight = (30f * fontScale).sp
+
+    val hasTranslation = !line.translation.isNullOrBlank()
+    val hasRomanized = !line.romanized.isNullOrBlank()
+
+    // Priority: Translation overrides romanization if both are set to replace and track supports it
+    val isTranslationReplacing = translationMode == LyricDisplayMode.REPLACE && hasTranslation
+    val isRomanizationReplacing = !isTranslationReplacing && romanizationMode == LyricDisplayMode.REPLACE && hasRomanized
+
+    val displayText = when {
+        isTranslationReplacing -> line.translation!!
+        isRomanizationReplacing -> line.romanized!!
+        else -> line.text
+    }
 
     Column(
         modifier = Modifier
@@ -544,8 +587,8 @@ private fun LyricLineRow(
             .padding(vertical = 4.dp),
         horizontalAlignment = Alignment.Start
     ) {
-        // Main Text with Word-by-Word Syllable Highlighting
-        if (isActive && line.hasSyllables) {
+        // Main Text: If original text with word-by-word syllable timings, render syllable animation
+        if (isActive && line.hasSyllables && !isTranslationReplacing && !isRomanizationReplacing) {
             val annotated = buildAnnotatedString {
                 for (syl in line.syllables) {
                     val isPastSyl = currentPosMs >= syl.timeMs + syl.durationMs
@@ -576,7 +619,7 @@ private fun LyricLineRow(
             )
         } else {
             Text(
-                text = line.text,
+                text = displayText,
                 fontSize = if (isActive) activeBaseSize else inactiveBaseSize,
                 fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
                 color = if (isActive) Color.White else Color.White.copy(alpha = alpha),
@@ -584,11 +627,12 @@ private fun LyricLineRow(
             )
         }
 
-        // Romanization Subline (Phonetic pronunciation)
-        if (showRomanization && !line.romanized.isNullOrBlank()) {
+        // Romanization Subline (Phonetic pronunciation): shown when in BELOW mode, or if REPLACE was overridden by translation
+        val showRomanizationBelow = (romanizationMode == LyricDisplayMode.BELOW || (romanizationMode == LyricDisplayMode.REPLACE && isTranslationReplacing)) && hasRomanized
+        if (showRomanizationBelow) {
             Spacer(Modifier.height(3.dp))
             Text(
-                text = line.romanized,
+                text = line.romanized!!,
                 fontSize = ((if (isActive) 15f else 13f) * fontScale).sp,
                 fontWeight = FontWeight.Normal,
                 color = if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.35f),
@@ -596,11 +640,12 @@ private fun LyricLineRow(
             )
         }
 
-        // Translation Subline
-        if (showTranslation && !line.translation.isNullOrBlank()) {
+        // Translation Subline: shown when in BELOW mode
+        val showTranslationBelow = translationMode == LyricDisplayMode.BELOW && hasTranslation
+        if (showTranslationBelow) {
             Spacer(Modifier.height(2.dp))
             Text(
-                text = line.translation,
+                text = line.translation!!,
                 fontSize = ((if (isActive) 15f else 13f) * fontScale).sp,
                 fontWeight = FontWeight.Normal,
                 color = if (isActive) MaterialTheme.colorScheme.secondary.copy(alpha = 0.90f) else Color.White.copy(alpha = 0.35f),

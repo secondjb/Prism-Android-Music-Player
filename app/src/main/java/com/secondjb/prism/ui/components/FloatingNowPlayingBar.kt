@@ -11,6 +11,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -144,8 +145,11 @@ fun FloatingNowPlayingBar(
                                     }
                                 )
                             }
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable(onClick = onBarClick),
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = onBarClick
+                            ),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // Artwork Thumbnail
