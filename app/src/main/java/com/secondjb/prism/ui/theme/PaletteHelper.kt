@@ -60,8 +60,23 @@ fun extractPaletteFromBitmap(bitmap: Bitmap): PrismAlbumPalette {
     } else {
         candidatePrimary
     }
-    val secondaryColor = darkVibrant ?: muted ?: dominant.adjustLuminance(0.7f)
-    val tertiaryColor = lightVibrant ?: muted ?: primaryColor.adjustLuminance(1.2f)
+
+    val (h, s, l) = primaryColor.toHsl()
+
+    // Harmonious tonal palette: derive secondary and tertiary from the primary seed hue
+    // Secondary: same hue family (subtle 8° shift), slightly calmer saturation and tone
+    val secondaryColor = hslToColor(
+        h = (h + 8f) % 360f,
+        s = (s * 0.70f).coerceIn(0.25f, 0.65f),
+        l = (l * 0.90f).coerceIn(0.35f, 0.60f)
+    )
+
+    // Tertiary: analogous tonal shift (22° shift), harmonious accent
+    val tertiaryColor = hslToColor(
+        h = (h + 22f) % 360f,
+        s = (s * 0.85f).coerceIn(0.30f, 0.75f),
+        l = (l * 1.05f).coerceIn(0.40f, 0.70f)
+    )
 
     return PrismAlbumPalette(
         primary = primaryColor,

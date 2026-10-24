@@ -102,18 +102,32 @@ fun FullScreenLyricsPage(
 
     val listState = rememberLazyListState()
 
-    // When the user starts scrolling, show all buttons immediately!
+    var lastInteractionTime by remember { mutableStateOf(System.currentTimeMillis()) }
+
+    fun resetControlsTimer() {
+        lastInteractionTime = System.currentTimeMillis()
+        showControls = true
+    }
+
+    // When the user starts scrolling, show all buttons immediately and keep them open!
     LaunchedEffect(listState.isScrollInProgress) {
         if (listState.isScrollInProgress) {
-            showControls = true
+            resetControlsTimer()
         }
     }
 
-    // Auto-fade controls after 4 seconds idle
-    LaunchedEffect(showControls) {
-        if (showControls) {
-            delay(4000L)
-            showControls = false
+    // Auto-fade controls only after 7.5 seconds of complete inactivity (no scrolling, tapping, or scrubbing)
+    LaunchedEffect(showControls, lastInteractionTime, listState.isScrollInProgress) {
+        if (showControls && !listState.isScrollInProgress) {
+            while (true) {
+                val elapsed = System.currentTimeMillis() - lastInteractionTime
+                val remaining = 7500L - elapsed
+                if (remaining <= 0) {
+                    showControls = false
+                    break
+                }
+                delay(remaining)
+            }
         }
     }
 
@@ -143,7 +157,7 @@ fun FullScreenLyricsPage(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = {
-                        showControls = !showControls
+                        if (!showControls) resetControlsTimer() else showControls = false
                     }
                 )
             }
@@ -197,7 +211,7 @@ fun FullScreenLyricsPage(
                         showTranslation = isTranslationVisible,
                         onClick = {
                             onSeek(line.timestampMs)
-                            showControls = true
+                            resetControlsTimer()
                         }
                     )
                 }
@@ -213,21 +227,17 @@ fun FullScreenLyricsPage(
                 .align(Alignment.TopCenter)
                 .zIndex(10f)
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                Color.Black.copy(alpha = 0.75f),
-                                Color.Black.copy(alpha = 0.40f),
-                                Color.Transparent
-                            )
-                        )
-                    )
-                    .statusBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+            androidx.compose.material3.Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xFF121217).copy(alpha = 0.95f),
+                shadowElevation = 8.dp
             ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -278,6 +288,7 @@ fun FullScreenLyricsPage(
                         // Font Size Cycle Toggle
                         IconButton(
                             onClick = {
+                                resetControlsTimer()
                                 fontScale = when (fontScale) {
                                     1.0f -> 1.15f
                                     1.15f -> 1.30f
@@ -299,7 +310,10 @@ fun FullScreenLyricsPage(
 
                         // Romanization Toggle
                         IconButton(
-                            onClick = { isRomanizationVisible = !isRomanizationVisible },
+                            onClick = {
+                                resetControlsTimer()
+                                isRomanizationVisible = !isRomanizationVisible
+                            },
                             modifier = Modifier
                                 .size(40.dp)
                                 .clip(CircleShape)
@@ -315,7 +329,10 @@ fun FullScreenLyricsPage(
 
                         // Translation Toggle
                         IconButton(
-                            onClick = { isTranslationVisible = !isTranslationVisible },
+                            onClick = {
+                                resetControlsTimer()
+                                isTranslationVisible = !isTranslationVisible
+                            },
                             modifier = Modifier
                                 .size(40.dp)
                                 .clip(CircleShape)
@@ -330,6 +347,7 @@ fun FullScreenLyricsPage(
                         }
                     }
                 }
+            }
             }
         }
 
@@ -366,7 +384,7 @@ fun FullScreenLyricsPage(
                         positionMs = playbackState.positionMs,
                         durationMs = playbackState.durationMs,
                         isPlaying = playbackState.isPlaying,
-                        onSeek = onSeek,
+                        onSeek = { resetControlsTimer(); onSeek(it) },
                         isTranslucent = true,
                         trackKey = track.id,
                         primaryColor = MaterialTheme.colorScheme.primary,
@@ -383,7 +401,7 @@ fun FullScreenLyricsPage(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(
-                            onClick = onSkipPrevious,
+                            onClick = { resetControlsTimer(); onSkipPrevious() },
                             modifier = Modifier
                                 .size(50.dp)
                                 .clip(CircleShape)
@@ -398,7 +416,7 @@ fun FullScreenLyricsPage(
                         }
 
                         FilledIconButton(
-                            onClick = onTogglePlayPause,
+                            onClick = { resetControlsTimer(); onTogglePlayPause() },
                             modifier = Modifier.size(64.dp),
                             shape = CircleShape,
                             colors = IconButtonDefaults.filledIconButtonColors(
@@ -414,7 +432,7 @@ fun FullScreenLyricsPage(
                         }
 
                         IconButton(
-                            onClick = onSkipNext,
+                            onClick = { resetControlsTimer(); onSkipNext() },
                             modifier = Modifier
                                 .size(50.dp)
                                 .clip(CircleShape)

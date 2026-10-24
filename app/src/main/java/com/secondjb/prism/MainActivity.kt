@@ -29,11 +29,15 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -110,6 +114,8 @@ class MainActivity : ComponentActivity() {
 			val pairingError by syncViewModel.lastPairingError.collectAsState()
 			val discoveredDevices by syncViewModel.discoveredDevices.collectAsState()
 			val pairedDevices by syncViewModel.pairedDevices.collectAsState()
+			val starredDeviceId by syncViewModel.starredDeviceId.collectAsState()
+			val scope = rememberCoroutineScope()
 
 			// Effective playback state prefers remote companion state when desktop output is active
 			val effectivePlaybackState = if (isDesktopConnected && isDesktopOutputEnabled && remotePlaybackState != null) {
@@ -167,6 +173,7 @@ class MainActivity : ComponentActivity() {
 			LaunchedEffect(
 				remotePlaybackState?.currentTrack?.title,
 				remotePlaybackState?.isPlaying,
+				remotePlaybackState?.positionMs,
 				isRemoteOnlyActive,
 				isDesktopConnected
 			) {
@@ -175,6 +182,12 @@ class MainActivity : ComponentActivity() {
 					val remoteTrack = remote.currentTrack ?: return@LaunchedEffect
 					val localMatch = syncViewModel.findLocalMatch(remoteTrack)
 					val playableUri = localMatch?.uri ?: syncViewModel.getAllLocalTracks().firstOrNull()?.uri ?: remoteTrack.uri
+
+					com.secondjb.prism.core.service.MediaSessionBridge.isRemotePlaying = remote.isPlaying
+					com.secondjb.prism.core.service.MediaSessionBridge.remotePositionMs = remote.positionMs
+					com.secondjb.prism.core.service.MediaSessionBridge.remoteDurationMs = remote.durationMs
+					com.secondjb.prism.core.service.MediaSessionBridge.onStateChanged?.invoke()
+
 					playbackEngine.syncRemoteMetadata(
 						remoteTrack = remoteTrack,
 						playableUri = playableUri,
@@ -183,6 +196,8 @@ class MainActivity : ComponentActivity() {
 						serverName = connectedServerName?.ifBlank { "Prism Desktop" } ?: "Prism Desktop"
 					)
 				} else if (isLocalOutputEnabled) {
+					com.secondjb.prism.core.service.MediaSessionBridge.isRemoteActive = false
+					com.secondjb.prism.core.service.MediaSessionBridge.onStateChanged?.invoke()
 					playbackEngine.restoreLocalOutput()
 				}
 			}
@@ -453,6 +468,8 @@ class MainActivity : ComponentActivity() {
 							connectedEndpointInfo = connectedEndpoint?.let { "ws://${it.host}:${it.port}" },
 							availableDiscoveredDevices = discoveredDevices,
 							pairedDevices = pairedDevices,
+							starredDeviceId = starredDeviceId,
+							onSetStarredDevice = { syncViewModel.setStarredDevice(it) },
 							onToggleDesktopOutput = { syncViewModel.toggleDesktopOutput(it) },
 							onToggleLocalOutput = { syncViewModel.toggleLocalOutput(it) },
 							onConnectToDevice = { syncViewModel.connectToDevice(it) },
@@ -499,47 +516,69 @@ class MainActivity : ComponentActivity() {
 							event = event,
 							onPlayLocally = {
 								syncViewModel.toggleLocalOutput(true)
-								val localMatch = syncViewModel.findLocalMatch(
-									Track(
-										id = "local_direct",
-										uri = "",
-										title = event.title,
-										artist = event.artist,
-										album = "",
-										durationMs = 0L,
-										format = "FLAC"
+								scope.launch {
+									val tracks = repository.loadAllTracks()
+									val match = tracks.firstOrNull {
+										it.title.equals(event.title, ignoreCase = true) ||
+										(it.filePath ?: it.uri).endsWith(event.filename, ignoreCase = true)
+									} ?: syncViewModel.findLocalMatch(
+										Track(
+											id = "local_direct",
+											uri = "",
+											title = event.title,
+											artist = event.artist,
+											album = "",
+											durationMs = 0L,
+											format = "FLAC"
+										)
 									)
-								)
-								if (localMatch != null) {
-									playbackEngine.playTrack(localMatch, syncViewModel.getAllLocalTracks())
+									if (match != null) {
+										playbackEngine.playTrack(match, tracks.ifEmpty { syncViewModel.getAllLocalTracks() })
+									}
 								}
 								syncViewModel.clearTrackNotFoundPrompt()
 							},
 							onSendToDesktop = {
-								val localMatch = syncViewModel.findLocalMatch(
-									Track(
-										id = "local_direct",
-										uri = "",
-										title = event.title,
-										artist = event.artist,
-										album = "",
-										durationMs = 0L,
-										format = "FLAC"
-									)
-								)
-								if (localMatch != null) {
-									syncViewModel.sendSingleTrackToDesktop(localMatch) {
-										syncViewModel.sendPlayTrackCommand(
-											trackTitle = event.title,
-											trackArtist = event.artist,
-											trackFilename = event.filename,
-											trackUri = localMatch.uri
-										)
+								scope.launch {
+									val tracks = repository.loadAllTracks()
+									val match = tracks.firstOrNull {
+										it.title.equals(event.title, ignoreCase = true) ||
+										(it.filePath ?: it.uri).endsWith(event.filename, ignoreCase = true)
+									}
+									if (match != null) {
+										android.widget.Toast.makeText(context, "Sending ${match.title} to PC...", android.widget.Toast.LENGTH_SHORT).show()
+										syncViewModel.sendSingleTrackToDesktop(match) {
+											android.widget.Toast.makeText(context, "Transferred ${match.title} to PC", android.widget.Toast.LENGTH_SHORT).show()
+											syncViewModel.sendPlayTrackCommand(
+												trackTitle = event.title,
+												trackArtist = event.artist,
+												trackFilename = event.filename,
+												trackUri = match.uri
+											)
+										}
 									}
 								}
 								syncViewModel.clearTrackNotFoundPrompt()
 							},
 							onStreamToDesktop = {
+								scope.launch {
+									val tracks = repository.loadAllTracks()
+									val match = tracks.firstOrNull {
+										it.title.equals(event.title, ignoreCase = true) ||
+										(it.filePath ?: it.uri).endsWith(event.filename, ignoreCase = true)
+									}
+									if (match != null) {
+										android.widget.Toast.makeText(context, "Streaming ${match.title} to PC...", android.widget.Toast.LENGTH_SHORT).show()
+										syncViewModel.sendSingleTrackToDesktop(match) {
+											syncViewModel.sendPlayTrackCommand(
+												trackTitle = match.title,
+												trackArtist = match.artist,
+												trackFilename = event.filename,
+												trackUri = match.uri
+											)
+										}
+									}
+								}
 								syncViewModel.clearTrackNotFoundPrompt()
 							},
 							onDismiss = {
@@ -587,114 +626,121 @@ fun PrismAppRoot(
 	Scaffold(
 		modifier = Modifier.fillMaxSize(),
 		bottomBar = {
-			Column {
-				// Spotify-style Floating Now Playing Bar
-				FloatingNowPlayingBar(
-					playbackState = playbackState,
-					onTogglePlayPause = onTogglePlayPause,
-					onSkipNext = onSkipNext,
-					onSkipPrevious = onSkipPrevious,
-					onBarClick = onExpandNowPlaying,
-					isRemoteActive = isRemoteActive,
-					remoteDeviceName = remoteDeviceName
-				)
-
-				NavigationBar {
-					Screen.bottomNavItems.forEach { screen ->
-						val isSelected = currentDestination?.route == screen.route
-						NavigationBarItem(
-							selected = isSelected,
-							onClick = {
-								navController.navigate(screen.route) {
-									popUpTo(navController.graph.findStartDestination().id) {
-										saveState = true
-									}
-									launchSingleTop = true
-									restoreState = true
+			NavigationBar {
+				Screen.bottomNavItems.forEach { screen ->
+					val isSelected = currentDestination?.route == screen.route
+					NavigationBarItem(
+						selected = isSelected,
+						onClick = {
+							navController.navigate(screen.route) {
+								popUpTo(navController.graph.findStartDestination().id) {
+									saveState = true
 								}
-							},
-							icon = {
-								Icon(
-									imageVector = if (isSelected) screen.selectedIcon else screen.unselectedIcon,
-									contentDescription = screen.title
-								)
-							},
-							label = {
-								Text(
-									text = screen.title,
-									fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal
-								)
-							},
-							colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
-								selectedIconColor = MaterialTheme.colorScheme.primary,
-								selectedTextColor = MaterialTheme.colorScheme.primary,
-								indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-								unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-								unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+								launchSingleTop = true
+								restoreState = true
+							}
+						},
+						icon = {
+							Icon(
+								imageVector = if (isSelected) screen.selectedIcon else screen.unselectedIcon,
+								contentDescription = screen.title
 							)
+						},
+						label = {
+							Text(
+								text = screen.title,
+								fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal
+							)
+						},
+						colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+							selectedIconColor = MaterialTheme.colorScheme.primary,
+							selectedTextColor = MaterialTheme.colorScheme.primary,
+							indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+							unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+							unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
 						)
-					}
+					)
 				}
 			}
 		}
 	) { innerPadding ->
-		NavHost(
-			navController = navController,
-			startDestination = Screen.Main.route,
-			modifier = Modifier.padding(innerPadding)
+		Box(
+			modifier = Modifier
+				.fillMaxSize()
+				.padding(bottom = innerPadding.calculateBottomPadding())
 		) {
-			composable(Screen.Main.route) {
-				MainScreen(
-					uiState = mainState,
-					onTrackClick = onPlayTrack,
-					onShuffleAllClick = onShuffleAll,
-					onSelectStatsRange = { mainViewModel.setStatsRange(it) }
-				)
+			NavHost(
+				navController = navController,
+				startDestination = Screen.Main.route,
+				modifier = Modifier.fillMaxSize()
+			) {
+				composable(Screen.Main.route) {
+					MainScreen(
+						uiState = mainState,
+						onTrackClick = onPlayTrack,
+						onShuffleAllClick = onShuffleAll,
+						onSelectStatsRange = { mainViewModel.setStatsRange(it) }
+					)
+				}
+
+				composable(Screen.Library.route) {
+					LibraryScreen(
+						uiState = libraryState,
+						onFilterSelect = libraryViewModel::setFilterChip,
+						onToggleViewMode = libraryViewModel::toggleViewMode,
+						onSearchChange = libraryViewModel::setSearchQuery,
+						onToggleSearch = libraryViewModel::toggleSearchActive,
+						onTogglePin = libraryViewModel::togglePin,
+						onCreatePlaylist = libraryViewModel::createPlaylist,
+						onTrackClick = onPlayTrack,
+						onOpenPlaylist = libraryViewModel::openPlaylist,
+						onDeletePlaylist = libraryViewModel::deletePlaylist,
+						onAddTrackToPlaylist = libraryViewModel::addTrackToPlaylist,
+						onRemoveTrackFromPlaylist = libraryViewModel::removeTrackFromPlaylist,
+						onToggleLikeTrack = libraryViewModel::toggleLikeTrack,
+						onPlayNext = { playbackEngine.playNext(it) },
+						onAddToQueue = { playbackEngine.addToQueue(it) },
+						onGoToQueue = onExpandNowPlaying,
+						onGoToAlbum = { albumName ->
+							libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ALBUMS)
+							libraryViewModel.setSearchQuery(albumName)
+						},
+						onGoToArtist = { artistName ->
+							libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ARTISTS)
+							libraryViewModel.setSearchQuery(artistName)
+						}
+					)
+				}
+
+				composable(Screen.Settings.route) {
+					SettingsScreen(
+						preferencesRepository = preferencesRepository,
+						totalTrackCount = libraryState.tracks.size,
+						onRescanLibrary = onRescanLibrary,
+						onScanQrClick = onOpenQrPairing,
+						connectedDeviceName = connectedDeviceName,
+						isDesktopConnected = isDesktopConnected,
+						pairedDevices = pairedDevices,
+						onConnectToPairedDevice = onConnectToPairedDevice,
+						onDeletePairedDevice = onDeletePairedDevice,
+						onStartFileSync = onOpenSmartFileSync
+					)
+				}
 			}
 
-			composable(Screen.Library.route) {
-				LibraryScreen(
-					uiState = libraryState,
-					onFilterSelect = libraryViewModel::setFilterChip,
-					onToggleViewMode = libraryViewModel::toggleViewMode,
-					onSearchChange = libraryViewModel::setSearchQuery,
-					onToggleSearch = libraryViewModel::toggleSearchActive,
-					onTogglePin = libraryViewModel::togglePin,
-					onCreatePlaylist = libraryViewModel::createPlaylist,
-					onTrackClick = onPlayTrack,
-					onOpenPlaylist = libraryViewModel::openPlaylist,
-					onDeletePlaylist = libraryViewModel::deletePlaylist,
-					onAddTrackToPlaylist = libraryViewModel::addTrackToPlaylist,
-					onRemoveTrackFromPlaylist = libraryViewModel::removeTrackFromPlaylist,
-					onToggleLikeTrack = libraryViewModel::toggleLikeTrack,
-					onPlayNext = { playbackEngine.playNext(it) },
-					onAddToQueue = { playbackEngine.addToQueue(it) },
-					onGoToQueue = onExpandNowPlaying,
-					onGoToAlbum = { albumName ->
-						libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ALBUMS)
-						libraryViewModel.setSearchQuery(albumName)
-					},
-					onGoToArtist = { artistName ->
-						libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ARTISTS)
-						libraryViewModel.setSearchQuery(artistName)
-					}
-				)
-			}
-
-			composable(Screen.Settings.route) {
-				SettingsScreen(
-					preferencesRepository = preferencesRepository,
-					totalTrackCount = libraryState.tracks.size,
-					onRescanLibrary = onRescanLibrary,
-					onScanQrClick = onOpenQrPairing,
-					connectedDeviceName = connectedDeviceName,
-					isDesktopConnected = isDesktopConnected,
-					pairedDevices = pairedDevices,
-					onConnectToPairedDevice = onConnectToPairedDevice,
-					onDeletePairedDevice = onDeletePairedDevice,
-					onStartFileSync = onOpenSmartFileSync
-				)
-			}
+			// Spotify-style Floating Now Playing Bar floating seamlessly above the navigation bar
+			FloatingNowPlayingBar(
+				playbackState = playbackState,
+				onTogglePlayPause = onTogglePlayPause,
+				onSkipNext = onSkipNext,
+				onSkipPrevious = onSkipPrevious,
+				onBarClick = onExpandNowPlaying,
+				isRemoteActive = isRemoteActive,
+				remoteDeviceName = remoteDeviceName,
+				modifier = Modifier
+					.align(Alignment.BottomCenter)
+					.padding(bottom = 6.dp)
+			)
 		}
 	}
 }

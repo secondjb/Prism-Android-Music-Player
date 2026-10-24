@@ -80,6 +80,9 @@ class SyncViewModel(
     private val _isLocalOutputEnabled = MutableStateFlow(true)
     val isLocalOutputEnabled: StateFlow<Boolean> = _isLocalOutputEnabled.asStateFlow()
 
+    private val _starredDeviceId = MutableStateFlow("desktop")
+    val starredDeviceId: StateFlow<String> = _starredDeviceId.asStateFlow()
+
     private val _connectedServerName = MutableStateFlow<String?>("Windows PC")
     val connectedServerName: StateFlow<String?> = _connectedServerName.asStateFlow()
 
@@ -226,6 +229,13 @@ class SyncViewModel(
                     is SyncFrame.FileChunk -> {
                         handleIncomingFileChunk(frame)
                     }
+                    is SyncFrame.OutputRoutingSync -> {
+                        _isDesktopOutputEnabled.value = frame.isDesktopEnabled
+                        _isLocalOutputEnabled.value = frame.isCompanionEnabled
+                        if (frame.starredDeviceId != null) {
+                            _starredDeviceId.value = frame.starredDeviceId
+                        }
+                    }
                     else -> {}
                 }
             }
@@ -303,6 +313,7 @@ class SyncViewModel(
         } else {
             sendRemoteCommand(CommandAction.PLAY)
         }
+        sendOutputRoutingSync()
     }
 
     fun toggleLocalOutput(enabled: Boolean) {
@@ -310,6 +321,28 @@ class SyncViewModel(
             return
         }
         _isLocalOutputEnabled.value = enabled
+        sendOutputRoutingSync()
+    }
+
+    fun setStarredDevice(deviceId: String) {
+        _starredDeviceId.value = deviceId
+        sendOutputRoutingSync()
+    }
+
+    private fun sendOutputRoutingSync() {
+        viewModelScope.launch {
+            try {
+                transport.sendFrame(
+                    SyncFrame.OutputRoutingSync(
+                        isDesktopEnabled = _isDesktopOutputEnabled.value,
+                        isCompanionEnabled = _isLocalOutputEnabled.value,
+                        starredDeviceId = _starredDeviceId.value
+                    )
+                )
+            } catch (e: Exception) {
+                Log.w("PrismSync", "Failed to send output routing sync: ${e.message}")
+            }
+        }
     }
 
     fun pairWithQrCode(rawCode: String, onConnected: () -> Unit = {}) {

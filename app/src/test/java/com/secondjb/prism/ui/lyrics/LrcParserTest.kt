@@ -88,4 +88,32 @@ class LrcParserTest {
         assertEquals("Translated Lyric", parsed[0].translation)
         assertEquals("Next Lyric", parsed[1].text)
     }
+
+    @Test
+    fun testParseTtmlXmlLyrics() {
+        val ttml = """
+            <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">
+                <body>
+                    <div>
+                        <p begin="0:12.369" end="0:15.921">
+                            <span begin="0:12.369">Dear</span> <span begin="0:12.541">my</span> <span begin="0:13.091">crazy</span> <span begin="0:14.388">soulmate</span>
+                        </p>
+                        <p begin="0:16.238" end="0:18.962">
+                            <span begin="0:16.238">결국에</span>
+                        </p>
+                    </div>
+                </body>
+            </tt>
+        """.trimIndent()
+
+        val parsed = LrcParser.parse(ttml)
+        assertEquals(2, parsed.size)
+        assertEquals(12369L, parsed[0].timestampMs)
+        assertEquals("Dear my crazy soulmate", parsed[0].text)
+        assertTrue(parsed[0].hasSyllables)
+        assertEquals(4, parsed[0].syllables.size)
+
+        assertEquals(16238L, parsed[1].timestampMs)
+        assertEquals("결국에", parsed[1].text)
+    }
 }

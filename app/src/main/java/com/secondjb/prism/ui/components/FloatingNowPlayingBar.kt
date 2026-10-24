@@ -183,13 +183,13 @@ fun FloatingNowPlayingBar(
                                     Icon(
                                         imageVector = Icons.Default.Devices,
                                         contentDescription = "Playing on $remoteDeviceName",
-                                        tint = Color(0xFF4CAF50),
+                                        tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(13.dp)
                                     )
                                     Text(
                                         text = "Playing on $remoteDeviceName",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = Color(0xFF4CAF50),
+                                        color = MaterialTheme.colorScheme.primary,
                                         fontWeight = FontWeight.SemiBold,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis

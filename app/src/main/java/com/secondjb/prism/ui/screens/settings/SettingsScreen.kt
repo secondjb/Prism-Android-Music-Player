@@ -1,5 +1,9 @@
 package com.secondjb.prism.ui.screens.settings
 
+import android.net.Uri
+import android.provider.DocumentsContract
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
@@ -96,6 +100,24 @@ fun SettingsScreen(
     var collapsedTheme by remember { mutableStateOf(false) }
     var collapsedSync by remember { mutableStateOf(false) }
 
+    var isSelectingIncludeFolder by remember { mutableStateOf(true) }
+    val openDocumentTreeLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val docId = DocumentsContract.getTreeDocumentId(uri)
+            val folderPath = if (docId.contains(':')) docId.substringAfter(':') else (uri.lastPathSegment ?: docId)
+            if (folderPath.isNotBlank()) {
+                if (isSelectingIncludeFolder) {
+                    preferencesRepository.addIncludedFolder(folderPath)
+                } else {
+                    preferencesRepository.addExcludedFolder(folderPath)
+                }
+                onRescanLibrary()
+            }
+        }
+    }
+
     var showAddFolderDialog by remember { mutableStateOf<Pair<Boolean, String>?>(null) } // (isIncluded, customText)
 
     LazyColumn(
@@ -158,7 +180,10 @@ fun SettingsScreen(
                         )
                     }
                     OutlinedButton(
-                        onClick = { showAddFolderDialog = Pair(true, "") },
+                        onClick = {
+                            isSelectingIncludeFolder = true
+                            openDocumentTreeLauncher.launch(null)
+                        },
                         shape = MaterialTheme.shapes.small
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
@@ -213,7 +238,10 @@ fun SettingsScreen(
                         )
                     }
                     OutlinedButton(
-                        onClick = { showAddFolderDialog = Pair(false, "") },
+                        onClick = {
+                            isSelectingIncludeFolder = false
+                            openDocumentTreeLauncher.launch(null)
+                        },
                         shape = MaterialTheme.shapes.small
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
@@ -492,23 +520,29 @@ fun SettingsScreen(
                 ) {
                     FilledTonalButton(
                         onClick = onScanQrClick,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                         shape = MaterialTheme.shapes.medium
                     ) {
                         Icon(Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Scan QR")
+                        Spacer(Modifier.width(6.dp))
+                        Text("Scan QR", maxLines = 1)
                     }
 
                     if (isDesktopConnected) {
                         Button(
                             onClick = onStartFileSync,
-                            modifier = Modifier.weight(1.2f),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                             shape = MaterialTheme.shapes.medium
                         ) {
                             Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Smart File Sync")
+                            Spacer(Modifier.width(6.dp))
+                            Text("Smart File Sync", maxLines = 1)
                         }
                     }
                 }
@@ -541,7 +575,7 @@ fun SettingsScreen(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(12.dp),
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
@@ -588,18 +622,29 @@ fun SettingsScreen(
                                         }
                                     }
 
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
                                         if (!isConnected) {
-                                            TextButton(onClick = { onConnectToPairedDevice(device) }) {
-                                                Text("Connect")
+                                            OutlinedButton(
+                                                onClick = { onConnectToPairedDevice(device) },
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                                modifier = Modifier.height(34.dp),
+                                                shape = MaterialTheme.shapes.small
+                                            ) {
+                                                Text("Connect", style = MaterialTheme.typography.labelMedium)
                                             }
                                         }
-                                        IconButton(onClick = { onDeletePairedDevice(device) }) {
+                                        IconButton(
+                                            onClick = { onDeletePairedDevice(device) },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
                                             Icon(
                                                 imageVector = Icons.Default.Delete,
                                                 contentDescription = "Delete Pairing",
-                                                tint = MaterialTheme.colorScheme.error,
-                                                modifier = Modifier.size(20.dp)
+                                                tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                                                modifier = Modifier.size(18.dp)
                                             )
                                         }
                                     }

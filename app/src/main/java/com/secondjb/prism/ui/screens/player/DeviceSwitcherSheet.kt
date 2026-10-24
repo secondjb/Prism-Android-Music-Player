@@ -20,7 +20,9 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -53,6 +55,8 @@ fun DeviceSwitcherSheet(
     connectedEndpointInfo: String?,
     availableDiscoveredDevices: List<DeviceNode> = emptyList(),
     pairedDevices: List<PairedDevice> = emptyList(),
+    starredDeviceId: String = "desktop",
+    onSetStarredDevice: (String) -> Unit = {},
     onToggleDesktopOutput: (Boolean) -> Unit,
     onToggleLocalOutput: (Boolean) -> Unit,
     onConnectToDevice: (DeviceNode) -> Unit = {},
@@ -85,18 +89,11 @@ fun DeviceSwitcherSheet(
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(26.dp)
                 )
-                Column {
-                    Text(
-                        text = "Audio Output Devices",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Select output devices (enable both for multi-room sync):",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Text(
+                    text = "Audio Output Devices",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
             }
 
             // Multi-room synchronization alert banner
@@ -129,6 +126,7 @@ fun DeviceSwitcherSheet(
 
             // 1. Currently Connected Windows PC Output
             val desktopActive = isDesktopConnected && isDesktopOutputEnabled
+            val isDesktopStarred = starredDeviceId == "desktop"
             Surface(
                 shape = MaterialTheme.shapes.medium,
                 color = if (desktopActive) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.surfaceContainer,
@@ -190,6 +188,19 @@ fun DeviceSwitcherSheet(
                         )
                     }
 
+                    // Star button to designate as queue authority
+                    IconButton(
+                        onClick = { onSetStarredDevice("desktop") },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isDesktopStarred) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                            contentDescription = if (isDesktopStarred) "Starred queue authority" else "Set as queue authority",
+                            tint = if (isDesktopStarred) Color(0xFFFFB300) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
                     Checkbox(
                         checked = desktopActive,
                         onCheckedChange = { onToggleDesktopOutput(it) },
@@ -202,6 +213,7 @@ fun DeviceSwitcherSheet(
             }
 
             // 2. This Phone Device Row
+            val isLocalStarred = starredDeviceId == "local" || starredDeviceId == "phone"
             Surface(
                 shape = MaterialTheme.shapes.medium,
                 color = if (isLocalOutputEnabled) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.surfaceContainer,
@@ -228,10 +240,18 @@ fun DeviceSwitcherSheet(
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
-                        Text(
-                            text = "Local Speakers / Connected Headphones",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+
+                    // Star button to designate as queue authority
+                    IconButton(
+                        onClick = { onSetStarredDevice("local") },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isLocalStarred) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                            contentDescription = if (isLocalStarred) "Starred queue authority" else "Set as queue authority",
+                            tint = if (isLocalStarred) Color(0xFFFFB300) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            modifier = Modifier.size(22.dp)
                         )
                     }
 

@@ -91,6 +91,14 @@ sealed class SyncFrame {
         val sizeBytes: Long,
         val isLast: Boolean
     ) : SyncFrame()
+
+    @Serializable
+    @SerialName("routing_sync")
+    data class OutputRoutingSync(
+        val isDesktopEnabled: Boolean,
+        val isCompanionEnabled: Boolean,
+        val starredDeviceId: String? = null
+    ) : SyncFrame()
 }
 
 @Serializable
