@@ -1,5 +1,6 @@
 package com.secondjb.prism.core.sync.transport
 
+import android.util.Log
 import com.secondjb.prism.core.sync.protocol.SyncFrame
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,7 +36,7 @@ class LanWebSocketSyncTransport(
     private val _incomingFrames = MutableSharedFlow<SyncFrame>(extraBufferCapacity = 64)
     override val incomingFrames: SharedFlow<SyncFrame> = _incomingFrames.asSharedFlow()
 
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; isLenient = true }
     private val client = OkHttpClient.Builder()
         .pingInterval(10, TimeUnit.SECONDS)
         .connectTimeout(5, TimeUnit.SECONDS)
@@ -48,12 +49,13 @@ class LanWebSocketSyncTransport(
         disconnect()
 
         val url = "ws://${endpoint.host}:${endpoint.port}/prism-sync"
+        Log.i("PrismSync", "Initiating WebSocket connection to $url with token: ${endpoint.authToken?.take(6)}...")
         _connectionState.value = TransportConnectionState.Connecting(url)
 
         val request = Request.Builder()
             .url(url)
             .apply {
-                if (endpoint.authToken != null) {
+                if (!endpoint.authToken.isNullOrBlank()) {
                     addHeader("X-Prism-Auth-Token", endpoint.authToken)
                 }
             }
@@ -61,6 +63,7 @@ class LanWebSocketSyncTransport(
 
         activeWebSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                Log.i("PrismSync", "WebSocket opened successfully to $url (HTTP ${response.code})")
                 _connectionState.value = TransportConnectionState.Connected(
                     peerName = "Prism Desktop (${endpoint.host})",
                     endpoint = url
@@ -78,20 +81,24 @@ class LanWebSocketSyncTransport(
             override fun onMessage(webSocket: WebSocket, text: String) {
                 try {
                     val frame = json.decodeFromString<SyncFrame>(text)
+                    Log.d("PrismSync", "Received sync frame: ${frame::class.simpleName}")
                     scope.launch {
                         _incomingFrames.emit(frame)
                     }
                 } catch (e: Exception) {
-                    // Ignore non-protocol frames
+                    Log.e("PrismSync", "Failed to deserialize frame: ${e.message}", e)
                 }
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                Log.w("PrismSync", "WebSocket closed ($code: $reason)")
                 _connectionState.value = TransportConnectionState.Disconnected
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                _connectionState.value = TransportConnectionState.Error(t.message ?: "Connection failed")
+                val msg = t.message ?: "Connection failed"
+                Log.e("PrismSync", "WebSocket failure connecting to $url: $msg (HTTP ${response?.code})", t)
+                _connectionState.value = TransportConnectionState.Error(msg)
             }
         })
     }

@@ -57,6 +57,12 @@ fun QrScannerDialog(
     var rawInput by remember { mutableStateOf("") }
     val clipboardManager = LocalClipboardManager.current
 
+    androidx.compose.runtime.LaunchedEffect(connectionState) {
+        if (connectionState is TransportConnectionState.Connected) {
+            onDismiss()
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {

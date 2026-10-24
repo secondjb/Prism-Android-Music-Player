@@ -79,4 +79,16 @@ class SyncProtocolTest {
         val decodedSwap = json.decodeFromString<SyncFrame>(encodedSwap)
         assertEquals(swap, decodedSwap)
     }
+
+    @Test
+    fun testDecodeRealStateSync() {
+        val file = java.io.File("../real_state_sync.json")
+        if (file.exists()) {
+            val content = file.readText()
+            val frame = json.decodeFromString<SyncFrame>(content)
+            assertTrue(frame is SyncFrame.StateSync)
+            val stateSync = frame as SyncFrame.StateSync
+            assertNotNull(stateSync.playbackState)
+        }
+    }
 }

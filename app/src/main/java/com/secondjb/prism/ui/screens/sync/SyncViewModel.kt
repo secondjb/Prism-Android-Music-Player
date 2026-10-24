@@ -1,5 +1,6 @@
 package com.secondjb.prism.ui.screens.sync
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.secondjb.prism.core.sync.discovery.NsdDiscoveryManager
@@ -39,6 +40,23 @@ class SyncViewModel(
     init {
         discoveryManager?.startDiscovery()
         observeIncomingFrames()
+        observeConnectionState()
+    }
+
+    private fun observeConnectionState() {
+        viewModelScope.launch {
+            transport.connectionState.collect { state ->
+                when (state) {
+                    is TransportConnectionState.Connected -> {
+                        _lastPairingError.value = null
+                    }
+                    is TransportConnectionState.Error -> {
+                        _lastPairingError.value = state.message
+                    }
+                    else -> {}
+                }
+            }
+        }
     }
 
     private fun observeIncomingFrames() {
@@ -46,14 +64,20 @@ class SyncViewModel(
             transport.incomingFrames.collect { frame ->
                 when (frame) {
                     is SyncFrame.StateSync -> {
+                        Log.i("PrismSync", "Received StateSync! Current track: ${frame.playbackState.currentTrack?.title}")
                         _remotePlaybackState.value = frame.playbackState
+                        _activeDeviceId.value = "remote"
                     }
                     is SyncFrame.SwapDeviceTarget -> {
                         _activeDeviceId.value = frame.targetDeviceId
                     }
                     is SyncFrame.HandshakeResponse -> {
+                        Log.i("PrismSync", "HandshakeResponse: isApproved=${frame.isApproved}")
                         if (frame.isApproved) {
                             _activeDeviceId.value = "remote"
+                            _lastPairingError.value = null
+                        } else {
+                            _lastPairingError.value = "Pairing rejected by desktop: invalid token"
                         }
                     }
                     else -> {}
@@ -68,16 +92,12 @@ class SyncViewModel(
             _lastPairingError.value = null
             viewModelScope.launch {
                 transport.connect(pairing.endpoint)
-                    .onSuccess {
-                        _activeDeviceId.value = "remote"
-                        onConnected()
-                    }
                     .onFailure { err ->
-                        _lastPairingError.value = "Connection failed: ${err.message}"
+                        _lastPairingError.value = "Connection setup failed: ${err.message}"
                     }
             }
         }.onFailure { err ->
-            _lastPairingError.value = "Invalid QR code format: ${err.message}"
+            _lastPairingError.value = "Invalid pairing code: ${err.message}"
         }
     }
 
@@ -85,9 +105,6 @@ class SyncViewModel(
         viewModelScope.launch {
             val endpoint = ConnectionEndpoint(host = device.ipAddress, port = device.port)
             transport.connect(endpoint)
-                .onSuccess {
-                    _activeDeviceId.value = device.id
-                }
                 .onFailure { err ->
                     _lastPairingError.value = "Failed to connect to ${device.name}: ${err.message}"
                 }

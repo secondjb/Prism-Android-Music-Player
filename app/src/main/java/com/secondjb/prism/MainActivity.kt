@@ -251,9 +251,7 @@ class MainActivity : ComponentActivity() {
 							connectionState = connectionState,
 							errorMessage = pairingError,
 							onPair = { rawQr ->
-								syncViewModel.pairWithQrCode(rawQr) {
-									showQrPairingDialog = false
-								}
+								syncViewModel.pairWithQrCode(rawQr)
 							},
 							onDismiss = {
 								syncViewModel.clearPairingError()
