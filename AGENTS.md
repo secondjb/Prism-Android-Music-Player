@@ -16,7 +16,8 @@
   * [`ui/screens/player/DeviceSwitcherSheet.kt`](app/src/main/java/com/secondjb/prism/ui/screens/player/DeviceSwitcherSheet.kt): Local vs Desktop audio routing switcher.
   * [`ui/screens/player/QueueBottomSheet.kt`](app/src/main/java/com/secondjb/prism/ui/screens/player/QueueBottomSheet.kt): Queue inspection, drag reordering, and track removal.
 * **Library & Multi-Selection**:
-  * [`ui/screens/library/LibraryScreen.kt`](app/src/main/java/com/secondjb/prism/ui/screens/library/LibraryScreen.kt): Multi-tab library view (Playlists, Artists, Songs, Albums) supporting full-screen horizontal swiping across tabs. Includes long-press multi-selection with outline badge, select all, deselect, and 3-dot batch queue actions.
+  * [`ui/screens/library/LibraryScreen.kt`](app/src/main/java/com/secondjb/prism/ui/screens/library/LibraryScreen.kt): Multi-tab library view (Playlists, Artists, Songs, Albums) supporting full-screen horizontal swiping across tabs. Includes long-press multi-selection with outline badge, select all, deselect, 3-dot batch queue actions, and unified fast-scroller integration.
+  * [`ui/components/FastScrollbar.kt`](app/src/main/java/com/secondjb/prism/ui/components/FastScrollbar.kt): Themed fast-scroller scrollbar supporting both `LazyListState` and `LazyGridState`. Appears on scroll/drag, allows dragging handle for rapid navigation, displays dynamic section letter bubble, and auto-dismisses after 3 seconds of inactivity.
   * [`ui/screens/library/LibraryViewModel.kt`](app/src/main/java/com/secondjb/prism/ui/screens/library/LibraryViewModel.kt): Library state, playlist management, and search filtering.
 * **Lyrics System**:
   * [`ui/components/lyrics/ModernLyricsView.kt`](app/src/main/java/com/secondjb/prism/ui/components/lyrics/ModernLyricsView.kt): Preview lyrics card anchored beneath the player controls on the Now Playing screen. Ensures title text is white and legible over dynamic artwork gradients.
