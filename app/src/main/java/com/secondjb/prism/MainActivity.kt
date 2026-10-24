@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
@@ -29,6 +30,9 @@ import androidx.navigation.compose.rememberNavController
 import com.secondjb.prism.core.data.MediaStoreAudioRepository
 import com.secondjb.prism.core.playback.LocalPlaybackEngine
 import com.secondjb.prism.core.util.AudioPermissionManager
+import com.secondjb.prism.domain.model.PlaybackState
+import com.secondjb.prism.domain.playback.PlaybackController
+import com.secondjb.prism.ui.components.FloatingNowPlayingBar
 import com.secondjb.prism.ui.navigation.Screen
 import com.secondjb.prism.ui.screens.library.LibraryScreen
 import com.secondjb.prism.ui.screens.library.LibraryViewModel
@@ -82,6 +86,8 @@ class MainActivity : ComponentActivity() {
 				PrismAppRoot(
 					mainViewModel = mainViewModel,
 					libraryViewModel = libraryViewModel,
+					playbackState = playbackState,
+					playbackEngine = playbackEngine,
 					onPlayTrack = { track, queue ->
 						playbackEngine.playTrack(track, queue)
 					},
@@ -102,6 +108,8 @@ class MainActivity : ComponentActivity() {
 fun PrismAppRoot(
 	mainViewModel: MainViewModel,
 	libraryViewModel: LibraryViewModel,
+	playbackState: PlaybackState,
+	playbackEngine: PlaybackController,
 	onPlayTrack: (com.secondjb.prism.domain.model.Track, List<com.secondjb.prism.domain.model.Track>) -> Unit,
 	onShuffleAll: () -> Unit
 ) {
@@ -115,28 +123,41 @@ fun PrismAppRoot(
 	Scaffold(
 		modifier = Modifier.fillMaxSize(),
 		bottomBar = {
-			NavigationBar {
-				Screen.bottomNavItems.forEach { screen ->
-					val isSelected = currentDestination?.route == screen.route
-					NavigationBarItem(
-						selected = isSelected,
-						onClick = {
-							navController.navigate(screen.route) {
-								popUpTo(navController.graph.findStartDestination().id) {
-									saveState = true
+			Column {
+				// Spotify-style Floating Now Playing Bar
+				FloatingNowPlayingBar(
+					playbackState = playbackState,
+					onTogglePlayPause = { playbackEngine.togglePlayPause() },
+					onSkipNext = { playbackEngine.skipNext() },
+					onSkipPrevious = { playbackEngine.skipPrevious() },
+					onBarClick = {
+						// FullScreen Player trigger (Phase 5)
+					}
+				)
+
+				NavigationBar {
+					Screen.bottomNavItems.forEach { screen ->
+						val isSelected = currentDestination?.route == screen.route
+						NavigationBarItem(
+							selected = isSelected,
+							onClick = {
+								navController.navigate(screen.route) {
+									popUpTo(navController.graph.findStartDestination().id) {
+										saveState = true
+									}
+									launchSingleTop = true
+									restoreState = true
 								}
-								launchSingleTop = true
-								restoreState = true
-							}
-						},
-						icon = {
-							Icon(
-								imageVector = if (isSelected) screen.selectedIcon else screen.unselectedIcon,
-								contentDescription = screen.title
-							)
-						},
-						label = { Text(screen.title) }
-					)
+							},
+							icon = {
+								Icon(
+									imageVector = if (isSelected) screen.selectedIcon else screen.unselectedIcon,
+									contentDescription = screen.title
+								)
+							},
+							label = { Text(screen.title) }
+						)
+					}
 				}
 			}
 		}
