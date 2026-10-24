@@ -82,7 +82,7 @@ fun ModernLyricsView(
                 Text(
                     text = "No lyrics available for this track",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    color = Color.White.copy(alpha = 0.75f),
                     fontFamily = FontFamily.SansSerif
                 )
             }
@@ -141,6 +141,7 @@ fun ModernLyricsView(
                         text = "Lyrics",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
+                        color = Color.White,
                         fontFamily = FontFamily.SansSerif
                     )
                 }

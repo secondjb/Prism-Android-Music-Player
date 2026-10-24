@@ -85,7 +85,7 @@ import com.secondjb.prism.ui.theme.PillShape
  * Supports swipe-down dismissal, fluid blurred artwork backdrop, LastWave wavy seekbar,
  * audio quality badges, device handover modal, queue sheet, and synced lyrics.
  */
-import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.outlined.Timer
 import com.secondjb.prism.core.playback.SleepTimerState
 import com.secondjb.prism.ui.screens.player.SleepTimerModal
 
@@ -462,7 +462,7 @@ fun NowPlayingScreen(
                         )
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Timer,
+                            imageVector = Icons.Outlined.Timer,
                             contentDescription = "Sleep Timer",
                             modifier = Modifier.size(20.dp)
                         )
