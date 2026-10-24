@@ -2,6 +2,7 @@ package com.secondjb.prism.ui.theme
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.util.LruCache
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.material3.ColorScheme
@@ -184,13 +185,20 @@ fun animateColorScheme(target: ColorScheme): ColorScheme {
     )
 }
 
+private val paletteCache = LruCache<String, PrismAlbumPalette>(64)
+
 /**
  * Composable hook to asynchronously load artwork and extract its palette via Coil and AndroidX Palette.
+ * Retains the active palette during track changes to prevent flashing back to the default theme colors.
  */
 @Composable
 fun rememberAlbumPalette(artworkData: Any?): PrismAlbumPalette? {
     val context = LocalContext.current
-    var palette by remember(artworkData) { mutableStateOf<PrismAlbumPalette?>(null) }
+    val cacheKey = artworkData?.toString()
+
+    // Initialize with cached palette if available, or keep current state across track skips
+    val initialCached = cacheKey?.let { paletteCache.get(it) }
+    var palette by remember { mutableStateOf<PrismAlbumPalette?>(initialCached) }
 
     LaunchedEffect(artworkData) {
         if (artworkData == null) {
@@ -198,6 +206,15 @@ fun rememberAlbumPalette(artworkData: Any?): PrismAlbumPalette? {
             return@LaunchedEffect
         }
 
+        val key = artworkData.toString()
+        val cached = paletteCache.get(key)
+        if (cached != null) {
+            palette = cached
+            return@LaunchedEffect
+        }
+
+        // NOTE: We intentionally retain the previous palette while decoding/extracting
+        // the new artwork on Dispatchers.IO. This eliminates the split-second flash back to default colors.
         withContext(Dispatchers.IO) {
             try {
                 val imageLoader = ImageLoader(context)
@@ -211,12 +228,13 @@ fun rememberAlbumPalette(artworkData: Any?): PrismAlbumPalette? {
                 if (result is SuccessResult) {
                     val bitmap = result.drawable.toBitmap(128, 128)
                     val extracted = extractPaletteFromBitmap(bitmap)
+                    paletteCache.put(key, extracted)
                     withContext(Dispatchers.Main) {
                         palette = extracted
                     }
                 }
             } catch (e: Exception) {
-                // Keep previous or fallback
+                // Keep previous palette on error
             }
         }
     }
