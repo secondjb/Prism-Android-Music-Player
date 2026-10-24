@@ -1,6 +1,7 @@
 plugins {
 	alias(libs.plugins.android.application)
 	alias(libs.plugins.kotlin.compose)
+	alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -46,11 +47,26 @@ dependencies {
 	implementation(libs.androidx.core.ktx)
 	implementation(libs.androidx.lifecycle.runtime.ktx)
 
+	// Audio & Media
 	implementation(libs.androidx.media3.exoplayer)
 	implementation(libs.androidx.media3.session)
-	implementation(libs.coil.compose)
 
+	// Image loading & Dynamic Theming
+	implementation(libs.coil.compose)
+	implementation(libs.androidx.palette.ktx)
+
+	// Navigation & Persistence
+	implementation(libs.androidx.navigation.compose)
+	implementation(libs.androidx.datastore.preferences)
+
+	// Serialization, Networking & QR
+	implementation(libs.kotlinx.serialization.json)
+	implementation(libs.okhttp)
+	implementation(libs.zxing.core)
+
+	// Testing
 	testImplementation(libs.junit)
+	testImplementation(libs.kotlinx.coroutines.test)
 	androidTestImplementation(platform(libs.androidx.compose.bom))
 	androidTestImplementation(libs.androidx.compose.ui.test.junit4)
 	androidTestImplementation(libs.androidx.espresso.core)
