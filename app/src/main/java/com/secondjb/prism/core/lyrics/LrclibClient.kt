@@ -34,7 +34,7 @@ object LrclibClient {
             val url = URL("$BASE_URL?$params")
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "GET"
-            conn.setRequestProperty("User-Agent", "Prism-Music-Player-Android/1.0.0")
+            conn.setRequestProperty("User-Agent", "Prism-Music-Player-Android/0.1.0")
             conn.connectTimeout = 4000
             conn.readTimeout = 4000
 

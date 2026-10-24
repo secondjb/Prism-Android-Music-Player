@@ -17,7 +17,7 @@ sealed class SyncFrame {
     data class HandshakeRequest(
         val clientToken: String,
         val deviceName: String,
-        val clientVersion: String = "1.0.0"
+        val clientVersion: String = "0.1.0"
     ) : SyncFrame()
 
     @Serializable

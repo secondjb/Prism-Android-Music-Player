@@ -12,8 +12,8 @@ android {
 		applicationId = "com.secondjb.prism"
 		minSdk = 26
 		targetSdk = 36
-		versionCode = 8
-		versionName = "1.7"
+		versionCode = 1
+		versionName = "0.1.0"
 
 		testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 	}

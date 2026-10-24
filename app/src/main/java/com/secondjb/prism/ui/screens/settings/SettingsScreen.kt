@@ -773,7 +773,7 @@ fun SettingsScreen(
                     )
                     Column {
                         Text("Prism Companion for Android", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                        Text("Version 1.0.0 • AndroidX Media3 ExoPlayer Engine", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Version 0.1.0 • AndroidX Media3 ExoPlayer Engine", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
