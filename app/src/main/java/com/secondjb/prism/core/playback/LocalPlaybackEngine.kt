@@ -440,16 +440,11 @@ class LocalPlaybackEngine(
             controller.prepare()
         }
 
-        if (isPlaying && !controller.isPlaying) {
-            controller.play()
-        } else if (!isPlaying && controller.isPlaying) {
-            controller.pause()
-        }
-
-        val drift = Math.abs(controller.currentPosition - positionMs)
-        if (drift > 2000L) {
-            controller.seekTo(positionMs)
-        }
+        // Note: Do NOT call controller.play(), controller.pause(), or controller.seekTo() here.
+        // In remote-only mode, ForwardingPlayer intercepts those methods and routes them back to
+        // the desktop companion (MediaSessionBridge.onRemoteSeek / onRemotePlay), causing a feedback loop
+        // that glitches, rewinds, and stutters PC playback on connection.
+        // MediaSession already queries MediaSessionBridge directly for isPlaying, remotePositionMs, and duration.
     }
 
     fun restoreLocalOutput() {

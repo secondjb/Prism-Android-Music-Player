@@ -222,7 +222,13 @@ class SyncViewModel(
                             if (frame.serverDeviceName.isNotBlank()) {
                                 _connectedServerName.value = frame.serverDeviceName
                             }
-                            _isDesktopOutputEnabled.value = true
+                            if (_starredDeviceId.value == "desktop") {
+                                _isDesktopOutputEnabled.value = true
+                                _isLocalOutputEnabled.value = false
+                            } else {
+                                _isDesktopOutputEnabled.value = false
+                                _isLocalOutputEnabled.value = true
+                            }
 
                             // Persist paired device for seamless automatic reconnection
                             preferencesRepository?.let { repo ->

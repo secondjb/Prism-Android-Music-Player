@@ -71,5 +71,11 @@
 
 ---
 
-## 🚀 Rule for Agents: Commit, Push & Install
-👉 **Always build the debug APK, verify regression tests, install to the connected phone (`41ab1f9a`), and push changes to `origin/master` before ending your turn.**
+## 🚀 Rule for Agents: Commit, Push, Install & Windows Sync
+👉 **Before ending your turn, always execute:**
+1. **Android**: Build debug APK, verify regression tests (`Run-Regression-Tests.bat`), install to connected phone (`41ab1f9a`), and push changes to `origin/master`.
+2. **Windows (if touched)**: Whenever you edit anything to do with the Windows app (`prism-windows`), push to remote and pull down the updates in the standalone Desktop replica:
+   ```bash
+   git -C prism-windows push origin master
+   git -C "C:\Users\b1a7e\Desktop\Prism Music Player" pull origin master
+   ```
