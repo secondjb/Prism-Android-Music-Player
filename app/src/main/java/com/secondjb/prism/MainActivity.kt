@@ -193,7 +193,6 @@ class MainActivity : ComponentActivity() {
 			LaunchedEffect(
 				remotePlaybackState?.currentTrack?.title,
 				remotePlaybackState?.isPlaying,
-				remotePlaybackState?.positionMs,
 				isRemoteOnlyActive,
 				isDesktopConnected
 			) {
@@ -253,7 +252,7 @@ class MainActivity : ComponentActivity() {
 					}
 
 					val drift = Math.abs(remote.positionMs - localState.positionMs)
-					if (drift > 450L) {
+					if (drift > 1000L) {
 						playbackEngine.seekTo(remote.positionMs)
 					}
 				}
@@ -376,25 +375,36 @@ class MainActivity : ComponentActivity() {
 				}
 			}
 
-			// When Desktop Output is toggled on, instantly sync the local playing track and position to PC
+			// When Desktop Output is toggled on, only sync track if PC has a different track loaded
 			LaunchedEffect(isDesktopOutputEnabled) {
 				if (isDesktopConnected && isDesktopOutputEnabled) {
 					val localTrack = playbackEngine.playbackState.value.currentTrack
+					val remoteTrack = remotePlaybackState?.currentTrack
 					if (localTrack != null) {
-						val filename = (localTrack.filePath ?: localTrack.uri).substringAfterLast('/').substringAfterLast('\\')
-						val queueFns = playbackEngine.playbackState.value.queue.take(150).map {
-							(it.filePath ?: it.uri).substringAfterLast('/').substringAfterLast('\\')
-						}
-						syncViewModel.sendPlayTrackCommand(
-							trackTitle = localTrack.title,
-							trackArtist = localTrack.artist,
-							trackFilename = filename,
-							trackUri = localTrack.uri,
-							queueFilenames = queueFns
+						val isAlreadySameTrack = remoteTrack != null && (
+							remoteTrack.title.equals(localTrack.title, ignoreCase = true) ||
+							remoteTrack.uri.substringAfterLast('/').substringAfterLast('\\').equals(
+								(localTrack.filePath ?: localTrack.uri).substringAfterLast('/').substringAfterLast('\\'),
+								ignoreCase = true
+							)
 						)
-						val currentPos = playbackEngine.playbackState.value.positionMs
-						if (currentPos > 0) {
-							syncViewModel.sendRemoteCommand(CommandAction.SEEK, seekMs = currentPos)
+
+						if (!isAlreadySameTrack) {
+							val filename = (localTrack.filePath ?: localTrack.uri).substringAfterLast('/').substringAfterLast('\\')
+							val queueFns = playbackEngine.playbackState.value.queue.take(150).map {
+								(it.filePath ?: it.uri).substringAfterLast('/').substringAfterLast('\\')
+							}
+							syncViewModel.sendPlayTrackCommand(
+								trackTitle = localTrack.title,
+								trackArtist = localTrack.artist,
+								trackFilename = filename,
+								trackUri = localTrack.uri,
+								queueFilenames = queueFns
+							)
+							val currentPos = playbackEngine.playbackState.value.positionMs
+							if (currentPos > 0) {
+								syncViewModel.sendRemoteCommand(CommandAction.SEEK, seekMs = currentPos)
+							}
 						}
 						if (playbackEngine.playbackState.value.isPlaying) {
 							syncViewModel.sendRemoteCommand(CommandAction.PLAY)
@@ -733,7 +743,7 @@ fun PrismAppRoot(
 				.fillMaxSize()
 				.statusBarsPadding()
 				.padding(
-					top = innerPadding.calculateTopPadding() + 6.dp,
+					top = 4.dp,
 					bottom = innerPadding.calculateBottomPadding()
 				)
 		) {

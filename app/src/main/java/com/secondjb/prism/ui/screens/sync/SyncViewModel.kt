@@ -160,6 +160,7 @@ class SyncViewModel(
                     val elapsed = SystemClock.elapsedRealtime() - lastSyncRealtime
                     val interpolatedPos = (basePositionMs + elapsed).coerceAtMost(currentRemote.durationMs)
                     _remotePlaybackState.update { it?.copy(positionMs = interpolatedPos) }
+                    com.secondjb.prism.core.service.MediaSessionBridge.remotePositionMs = interpolatedPos
                 }
             }
         }

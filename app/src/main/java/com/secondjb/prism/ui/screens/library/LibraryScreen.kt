@@ -151,7 +151,7 @@ fun LibraryScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(top = 16.dp)
+            .padding(top = 4.dp)
     ) {
         // Top Header
         Row(
@@ -390,7 +390,7 @@ private fun PlaylistDetailScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(top = 16.dp)
+            .padding(top = 4.dp)
     ) {
         // Header Row
         Row(
