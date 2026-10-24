@@ -52,4 +52,40 @@ class LrcParserTest {
         assertEquals("Line one without timestamps", parsed[0].text)
         assertEquals("Line two without timestamps", parsed[1].text)
     }
+
+    @Test
+    fun testParseInlineTranslationWithDoubleSlash() {
+        val lrc = """
+            [00:04.50]Dancing in the shadows // Bailando en las sombras
+            [00:09.20]君が好きだと叫びたい // I want to shout I love you
+            [00:15.00]<00:15.00>Word <00:15.50>tag // Tagged translation
+        """.trimIndent()
+
+        val parsed = LrcParser.parse(lrc)
+        assertEquals(3, parsed.size)
+
+        assertEquals("Dancing in the shadows", parsed[0].text)
+        assertEquals("Bailando en las sombras", parsed[0].translation)
+
+        assertEquals("君が好きだと叫びたい", parsed[1].text)
+        assertEquals("I want to shout I love you", parsed[1].translation)
+
+        assertEquals("Word tag", parsed[2].text)
+        assertEquals("Tagged translation", parsed[2].translation)
+    }
+
+    @Test
+    fun testAdjacentLinesTranslationPair() {
+        val lrc = """
+            [00:04.50]Original Lyric
+            [00:04.50]// Translated Lyric
+            [00:10.00]Next Lyric
+        """.trimIndent()
+
+        val parsed = LrcParser.parse(lrc)
+        assertEquals(2, parsed.size)
+        assertEquals("Original Lyric", parsed[0].text)
+        assertEquals("Translated Lyric", parsed[0].translation)
+        assertEquals("Next Lyric", parsed[1].text)
+    }
 }

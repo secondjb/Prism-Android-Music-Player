@@ -163,27 +163,48 @@ fun ModernLyricsView(
                         label = "lyricAlpha"
                     )
 
-                    Text(
-                        text = line.text,
-                        style = if (isActive) {
-                            MaterialTheme.typography.titleLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = if (isFullScreen) 24.sp else 20.sp
-                            )
-                        } else {
-                            MaterialTheme.typography.bodyLarge.copy(
-                                fontWeight = FontWeight.Normal,
-                                fontSize = if (isFullScreen) 18.sp else 16.sp
-                            )
-                        },
-                        color = textColor,
-                        textAlign = TextAlign.Start,
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .alpha(alpha)
                             .clickable { onSeek(line.timestampMs) }
-                            .padding(vertical = 4.dp)
-                    )
+                            .padding(vertical = 4.dp),
+                        horizontalAlignment = Alignment.Start
+                    ) {
+                        Text(
+                            text = line.text,
+                            style = if (isActive) {
+                                MaterialTheme.typography.titleLarge.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = if (isFullScreen) 24.sp else 20.sp
+                                )
+                            } else {
+                                MaterialTheme.typography.bodyLarge.copy(
+                                    fontWeight = FontWeight.Normal,
+                                    fontSize = if (isFullScreen) 18.sp else 16.sp
+                                )
+                            },
+                            color = textColor,
+                            textAlign = TextAlign.Start,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (!line.romanized.isNullOrBlank()) {
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = line.romanized,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = if (isActive) 0.85f else 0.45f)
+                            )
+                        }
+                        if (!line.translation.isNullOrBlank()) {
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = line.translation,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (isActive) 0.90f else 0.50f)
+                            )
+                        }
+                    }
                 }
             }
         }

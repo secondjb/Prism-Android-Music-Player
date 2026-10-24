@@ -484,6 +484,8 @@ fun NowPlayingScreen(
     if (showSleepTimer) {
         SleepTimerModal(
             timerState = sleepTimerState,
+            currentQueue = playbackState.queue,
+            currentQueueIndex = playbackState.queueIndex,
             onStartMinutes = onStartSleepTimerMinutes,
             onStartTracks = onStartSleepTimerTracks,
             onCancelTimer = onCancelSleepTimer,

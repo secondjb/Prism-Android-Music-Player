@@ -20,6 +20,7 @@ data class LyricLine(
 object LrcParser {
     private val LRC_LINE_REGEX = Regex("""\[(\d{1,2}):(\d{2})(?:[.:](\d{2,3}))?](.*)""")
     private val INLINE_WORD_TAG_REGEX = Regex("""<(\d{1,2}):(\d{2})(?:[.:](\d{2,3}))?>([^<]*)""")
+    private val INLINE_TRANSLATION_REGEX = Regex("""^(.+?)(?:\s*(?://|／／)\s*|\s+[/|／]\s+)(.+)$""")
 
     fun parse(content: String): List<LyricLine> {
         if (content.isBlank()) return emptyList()
@@ -57,13 +58,42 @@ object LrcParser {
         tempLines.sortBy { it.first }
 
         val result = mutableListOf<LyricLine>()
-        for (i in tempLines.indices) {
+        var i = 0
+        while (i < tempLines.size) {
             val (timeMs, rawText) = tempLines[i]
             val nextTimeMs = if (i < tempLines.lastIndex) tempLines[i + 1].first else timeMs + 4000L
             val lineDurationMs = (nextTimeMs - timeMs).coerceIn(1200L, 15000L)
 
+            // Split out any inline translation (delimited by //, /, or |)
+            val inlineSepMatch = INLINE_TRANSLATION_REGEX.find(rawText)
+            var (primaryBody, inlineTranslation) = if (inlineSepMatch != null) {
+                val prim = inlineSepMatch.groupValues[1].trim()
+                val trans = inlineSepMatch.groupValues[2].replace(INLINE_WORD_TAG_REGEX, "").trim()
+                prim to (if (trans.isNotBlank()) trans else null)
+            } else {
+                rawText to null
+            }
+
+            // Also check for adjacent lines within 150ms as a translation pair (e.g. CJK + English)
+            if (inlineTranslation == null && i < tempLines.lastIndex) {
+                val nextEntry = tempLines[i + 1]
+                if (Math.abs(nextEntry.first - timeMs) <= 150L && nextEntry.second.trim() != rawText.trim()) {
+                    var trans = nextEntry.second
+                        .replace(INLINE_WORD_TAG_REGEX, "")
+                        .replace(Regex("""\[\d{1,2}:\d{2}(?:[.:]\d{2,3})?]"""), "")
+                        .trim()
+                    if (trans.startsWith("//") || trans.startsWith("／／")) {
+                        trans = trans.removePrefix("//").removePrefix("／／").trim()
+                    }
+                    if (trans.isNotBlank()) {
+                        inlineTranslation = trans
+                        i++ // consume translation line
+                    }
+                }
+            }
+
             // Check if line contains word-level inline tags like <00:12.34>Word
-            val inlineMatches = INLINE_WORD_TAG_REGEX.findAll(rawText).toList()
+            val inlineMatches = INLINE_WORD_TAG_REGEX.findAll(primaryBody).toList()
             val syllables = if (inlineMatches.isNotEmpty()) {
                 val sylList = mutableListOf<LyricSyllable>()
                 for (j in inlineMatches.indices) {
@@ -97,13 +127,13 @@ object LrcParser {
                 sylList
             } else {
                 // Musical vocal inference (adapted from Prism Windows lyricsParser)
-                inferLineSyllables(rawText, timeMs, lineDurationMs)
+                inferLineSyllables(primaryBody, timeMs, lineDurationMs)
             }
 
             val cleanText = if (inlineMatches.isNotEmpty()) {
                 syllables.joinToString("") { it.text }.trim()
             } else {
-                rawText
+                primaryBody
             }
 
             val romanized = romanizeText(cleanText)
@@ -114,10 +144,12 @@ object LrcParser {
                     durationMs = lineDurationMs,
                     text = cleanText,
                     romanized = romanized,
+                    translation = inlineTranslation,
                     syllables = syllables,
                     hasSyllables = syllables.isNotEmpty()
                 )
             )
+            i++
         }
 
         return result

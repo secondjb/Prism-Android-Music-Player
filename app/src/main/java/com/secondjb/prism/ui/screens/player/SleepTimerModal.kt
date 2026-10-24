@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -51,12 +52,15 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.secondjb.prism.core.playback.SleepTimerMode
 import com.secondjb.prism.core.playback.SleepTimerState
+import com.secondjb.prism.domain.model.Track
 import com.secondjb.prism.ui.theme.PillShape
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SleepTimerModal(
     timerState: SleepTimerState,
+    currentQueue: List<Track> = emptyList(),
+    currentQueueIndex: Int = -1,
     onStartMinutes: (Int, Boolean, Boolean) -> Unit,
     onStartTracks: (Int, Boolean, Boolean) -> Unit,
     onCancelTimer: () -> Unit,
@@ -70,6 +74,33 @@ fun SleepTimerModal(
 
     var customMinutesInput by remember { mutableStateOf("30") }
     var customTracksInput by remember { mutableStateOf("3") }
+
+    fun estimateTrackDuration(count: Int): String {
+        if (count <= 0) return "0m"
+        var totalSecs = 0L
+        if (currentQueue.isNotEmpty() && currentQueueIndex >= 0) {
+            val remaining = currentQueue.drop(currentQueueIndex + 1).take(count)
+            if (remaining.isNotEmpty()) {
+                totalSecs = remaining.sumOf { it.durationSecs }
+                if (remaining.size < count) {
+                    val missing = count - remaining.size
+                    totalSecs += missing * 210L // default ~3.5 mins per track
+                }
+            } else {
+                totalSecs = count * 210L
+            }
+        } else {
+            totalSecs = count * 210L
+        }
+        val mins = (totalSecs + 30) / 60
+        return if (mins < 60) {
+            "~${mins}m"
+        } else {
+            val hrs = mins / 60
+            val rem = mins % 60
+            if (rem == 0L) "~${hrs}h" else "~${hrs}h ${rem}m"
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -234,9 +265,16 @@ fun SleepTimerModal(
                                 onDismiss()
                             },
                             modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Text("${mins}m")
+                            Text(
+                                text = "${mins}m",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                softWrap = false
+                            )
                         }
                     }
                 }
@@ -249,11 +287,21 @@ fun SleepTimerModal(
                 ) {
                     OutlinedTextField(
                         value = customMinutesInput,
-                        onValueChange = { customMinutesInput = it.filter { ch -> ch.isDigit() } },
-                        label = { Text("Custom minutes") },
+                        onValueChange = { if (it.length <= 4) customMinutesInput = it.filter { ch -> ch.isDigit() } },
+                        placeholder = { Text("Mins", maxLines = 1) },
+                        trailingIcon = {
+                            Text(
+                                text = "min",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(end = 12.dp)
+                            )
+                        },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .width(115.dp)
+                            .height(52.dp),
                         shape = RoundedCornerShape(12.dp)
                     )
                     Button(
@@ -262,9 +310,12 @@ fun SleepTimerModal(
                             onStartMinutes(mins, finishLastSong, playToEndOfQueue)
                             onDismiss()
                         },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("Set Custom")
+                        Text("Set Custom", maxLines = 1)
                     }
                 }
             } else {
@@ -285,14 +336,34 @@ fun SleepTimerModal(
                                 onDismiss()
                             },
                             modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 2.dp, vertical = 6.dp),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Text("$count trk")
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = "$count ${if (count == 1) "trk" else "trks"}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                                Text(
+                                    text = estimateTrackDuration(count),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
                         }
                     }
                 }
 
                 // Custom Track Input
+                val parsedCount = customTracksInput.toIntOrNull()?.coerceIn(1, 100) ?: 3
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -300,22 +371,34 @@ fun SleepTimerModal(
                 ) {
                     OutlinedTextField(
                         value = customTracksInput,
-                        onValueChange = { customTracksInput = it.filter { ch -> ch.isDigit() } },
-                        label = { Text("Custom tracks") },
+                        onValueChange = { if (it.length <= 3) customTracksInput = it.filter { ch -> ch.isDigit() } },
+                        placeholder = { Text("Tracks", maxLines = 1) },
+                        trailingIcon = {
+                            Text(
+                                text = "trk",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(end = 12.dp)
+                            )
+                        },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .width(115.dp)
+                            .height(52.dp),
                         shape = RoundedCornerShape(12.dp)
                     )
                     Button(
                         onClick = {
-                            val count = customTracksInput.toIntOrNull()?.coerceIn(1, 100) ?: 3
-                            onStartTracks(count, finishLastSong, playToEndOfQueue)
+                            onStartTracks(parsedCount, finishLastSong, playToEndOfQueue)
                             onDismiss()
                         },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("Set Custom")
+                        Text("Set (${estimateTrackDuration(parsedCount)})", maxLines = 1)
                     }
                 }
             }
@@ -325,26 +408,23 @@ fun SleepTimerModal(
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
             )
 
-            // Switch 1: Finish Last Song Before Stopping
+            // Switch 1: Finish Last Song Before Stopping (Title only)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { finishLastSong = !finishLastSong },
+                    .clickable { finishLastSong = !finishLastSong }
+                    .padding(vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-                    Text(
-                        text = "Finish last song before stopping",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = "Wait until the currently playing song ends even if the timer expires mid-song",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Text(
+                    text = "Finish last song before stopping",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 16.dp)
+                )
                 Switch(
                     checked = finishLastSong,
                     onCheckedChange = { finishLastSong = it },
@@ -355,26 +435,23 @@ fun SleepTimerModal(
                 )
             }
 
-            // Switch 2: Play to End of Custom Queue
+            // Switch 2: Play to End of Custom Queue (Title only)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { playToEndOfQueue = !playToEndOfQueue },
+                    .clickable { playToEndOfQueue = !playToEndOfQueue }
+                    .padding(vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-                    Text(
-                        text = "Play to end of custom queue",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = "Automatically stops playback once user-queued songs finish playing",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Text(
+                    text = "Play to end of custom queue",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 16.dp)
+                )
                 Switch(
                     checked = playToEndOfQueue,
                     onCheckedChange = { playToEndOfQueue = it },
