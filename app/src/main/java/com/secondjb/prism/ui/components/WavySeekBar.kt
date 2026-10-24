@@ -160,7 +160,13 @@ fun WavySeekBar(
 
     var dragPositionMs by remember(trackKey) { mutableStateOf<Float?>(null) }
     var lastSeekValue by remember(trackKey) { mutableStateOf<Float?>(null) }
-    var showRemainingTime by rememberSaveable { mutableStateOf(true) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val sharedPrefs = remember(context) {
+        context.getSharedPreferences("prism_ui_prefs", android.content.Context.MODE_PRIVATE)
+    }
+    var showRemainingTime by remember {
+        mutableStateOf(sharedPrefs.getBoolean("show_remaining_time", true))
+    }
 
     LaunchedEffect(isInteracting, trackKey) {
         if (!isInteracting) {
@@ -525,7 +531,11 @@ fun WavySeekBar(
                         } else "--:--",
                         style = if (isTranslucent) MaterialTheme.typography.labelSmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium) else MaterialTheme.typography.labelMedium,
                         color = textColor,
-                        modifier = Modifier.clickable { showRemainingTime = !showRemainingTime }
+                        modifier = Modifier.clickable {
+                            val next = !showRemainingTime
+                            showRemainingTime = next
+                            sharedPrefs.edit().putBoolean("show_remaining_time", next).apply()
+                        }
                     )
                 }
             }

@@ -110,6 +110,9 @@ class LocalPlaybackEngine(
             override fun onPlaybackStateChanged(playbackStateInt: Int) {
                 val duration = controller.duration.coerceAtLeast(0L)
                 _playbackState.update { it.copy(durationMs = duration) }
+                if (playbackStateInt == Player.STATE_ENDED) {
+                    _playbackState.update { it.copy(isPlaying = false) }
+                }
             }
 
             override fun onRepeatModeChanged(repeatModeInt: Int) {

@@ -53,7 +53,7 @@ class SleepTimerManager(
         }
     }
 
-    private fun handlePlaybackStateUpdate(state: PlaybackState) {
+    fun handlePlaybackStateUpdate(state: PlaybackState) {
         val currentTrack = state.currentTrack ?: return
         val currentTrackId = currentTrack.id
 
@@ -61,8 +61,8 @@ class SleepTimerManager(
         if (current.isActive) {
             // If waiting for last song to finish or about to expire on track count:
             if (current.waitingForLastSongToFinish || (current.mode == SleepTimerMode.TRACKS && current.remainingTracks <= 1)) {
-                // If song is within 600ms of finishing, stop playback before transition leaks audio
-                if (state.durationMs > 0 && state.positionMs >= state.durationMs - 600L) {
+                // If song is within 1200ms of finishing, stop playback before transition leaks audio
+                if (state.durationMs > 0 && state.positionMs >= (state.durationMs - 1200L).coerceAtLeast(0L)) {
                     stopPlayback()
                     return
                 }

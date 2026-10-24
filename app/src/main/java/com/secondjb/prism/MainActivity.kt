@@ -155,6 +155,9 @@ class MainActivity : ComponentActivity() {
 					if (isDesktopConnected && isDesktopOutputEnabled) {
 						syncViewModel.sendRemoteCommand(CommandAction.PAUSE)
 					}
+					if (isLocalOutputEnabled) {
+						playbackEngine.pause()
+					}
 				}
 				sleepTimerManager.onStartSleepTimerCallback = { mode, value ->
 					if (isDesktopConnected) {
@@ -435,6 +438,11 @@ class MainActivity : ComponentActivity() {
 				onDispose {
 					playbackEngine.release()
 				}
+			}
+
+			// Feed effective playback state to sleepTimerManager so both local and remote tracks count down and pause properly
+			LaunchedEffect(effectivePlaybackState.currentTrack?.id, effectivePlaybackState.positionMs, effectivePlaybackState.isPlaying, effectivePlaybackState.durationMs) {
+				sleepTimerManager.handlePlaybackStateUpdate(effectivePlaybackState)
 			}
 
 			// Retain last valid artwork URI so dynamic theme colors never flash or revert to default
