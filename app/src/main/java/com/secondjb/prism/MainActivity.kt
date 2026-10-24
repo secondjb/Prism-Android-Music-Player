@@ -40,6 +40,9 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.secondjb.prism.core.data.MediaStoreAudioRepository
 import com.secondjb.prism.core.playback.LocalPlaybackEngine
+import com.secondjb.prism.core.sync.discovery.NsdDiscoveryManager
+import com.secondjb.prism.core.sync.protocol.CommandAction
+import com.secondjb.prism.core.sync.transport.TransportConnectionState
 import com.secondjb.prism.core.util.AudioPermissionManager
 import com.secondjb.prism.domain.model.DemoDataProvider
 import com.secondjb.prism.domain.model.PlaybackState
@@ -53,6 +56,8 @@ import com.secondjb.prism.ui.screens.main.MainScreen
 import com.secondjb.prism.ui.screens.main.MainViewModel
 import com.secondjb.prism.ui.screens.player.NowPlayingScreen
 import com.secondjb.prism.ui.screens.settings.SettingsScreen
+import com.secondjb.prism.ui.screens.sync.QrScannerDialog
+import com.secondjb.prism.ui.screens.sync.SyncViewModel
 import com.secondjb.prism.ui.theme.PrismDynamicThemeProvider
 import com.secondjb.prism.ui.theme.PrismTheme
 
@@ -66,18 +71,34 @@ class MainActivity : ComponentActivity() {
 			val context = LocalContext.current
 			val repository = remember { MediaStoreAudioRepository(context) }
 			val playbackEngine = remember { LocalPlaybackEngine(context) }
+			val discoveryManager = remember { NsdDiscoveryManager(context) }
+			val syncViewModel = remember { SyncViewModel(discoveryManager = discoveryManager) }
 
 			val mainViewModel = remember { MainViewModel(repository) }
 			val libraryViewModel = remember { LibraryViewModel(repository) }
 
-			val playbackState by playbackEngine.playbackState.collectAsState()
+			val localPlaybackState by playbackEngine.playbackState.collectAsState()
+			val remotePlaybackState by syncViewModel.remotePlaybackState.collectAsState()
+			val activeDeviceId by syncViewModel.activeDeviceId.collectAsState()
+
+			// Effective playback state switches between local engine and remote companion state!
+			val effectivePlaybackState = if (activeDeviceId != "local" && remotePlaybackState != null) {
+				remotePlaybackState!!
+			} else {
+				localPlaybackState
+			}
+
 			var isNowPlayingExpanded by remember { mutableStateOf(false) }
+			var showQrPairingDialog by remember { mutableStateOf(false) }
+
+			val connectionState by syncViewModel.connectionState.collectAsState()
+			val pairingError by syncViewModel.lastPairingError.collectAsState()
+			val discoveredDevices by syncViewModel.discoveredDevices.collectAsState()
 
 			// Fallback demo tracks if device library is empty initially
 			LaunchedEffect(Unit) {
 				val tracks = repository.loadAllTracks()
 				if (tracks.isEmpty()) {
-					// Preload first demo track so the player is immediately testable
 					val demoTrack = DemoDataProvider.demoTracks.first()
 					playbackEngine.playTrack(demoTrack, DemoDataProvider.demoTracks)
 					playbackEngine.pause()
@@ -108,16 +129,20 @@ class MainActivity : ComponentActivity() {
 
 			// Dynamic Palette Provider adapts all screens to active album art!
 			PrismDynamicThemeProvider(
-				artworkData = playbackState.currentTrack?.artworkUri
+				artworkData = effectivePlaybackState.currentTrack?.artworkUri
 			) {
 				Box(modifier = Modifier.fillMaxSize()) {
 					PrismAppRoot(
 						mainViewModel = mainViewModel,
 						libraryViewModel = libraryViewModel,
-						playbackState = playbackState,
+						playbackState = effectivePlaybackState,
 						playbackEngine = playbackEngine,
 						onPlayTrack = { track, queue ->
-							playbackEngine.playTrack(track, queue)
+							if (activeDeviceId == "local") {
+								playbackEngine.playTrack(track, queue)
+							} else {
+								syncViewModel.sendRemoteCommand(CommandAction.PLAY)
+							}
 						},
 						onShuffleAll = {
 							val tracks = libraryViewModel.uiState.value.tracks.ifEmpty { DemoDataProvider.demoTracks }
@@ -126,6 +151,9 @@ class MainActivity : ComponentActivity() {
 						},
 						onExpandNowPlaying = {
 							isNowPlayingExpanded = true
+						},
+						onOpenQrPairing = {
+							showQrPairingDialog = true
 						}
 					)
 
@@ -136,28 +164,81 @@ class MainActivity : ComponentActivity() {
 
 					// Full-Screen Now Playing View (PixelPlayer & LastWave inspired)
 					AnimatedVisibility(
-						visible = isNowPlayingExpanded && playbackState.currentTrack != null,
+						visible = isNowPlayingExpanded && effectivePlaybackState.currentTrack != null,
 						enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
 						exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
 					) {
 						NowPlayingScreen(
-							playbackState = playbackState,
-							onTogglePlayPause = { playbackEngine.togglePlayPause() },
-							onSeek = { playbackEngine.seekTo(it) },
-							onSkipNext = { playbackEngine.skipNext() },
-							onSkipPrevious = { playbackEngine.skipPrevious() },
-							onToggleShuffle = { playbackEngine.toggleShuffle() },
-							onCycleRepeatMode = { playbackEngine.setRepeatMode(playbackState.repeatMode.next()) },
+							playbackState = effectivePlaybackState,
+							onTogglePlayPause = {
+								if (activeDeviceId == "local") {
+									playbackEngine.togglePlayPause()
+								} else {
+									syncViewModel.sendRemoteCommand(CommandAction.TOGGLE_PLAY_PAUSE)
+								}
+							},
+							onSeek = { pos ->
+								if (activeDeviceId == "local") {
+									playbackEngine.seekTo(pos)
+								} else {
+									syncViewModel.sendRemoteCommand(CommandAction.SEEK, seekMs = pos)
+								}
+							},
+							onSkipNext = {
+								if (activeDeviceId == "local") {
+									playbackEngine.skipNext()
+								} else {
+									syncViewModel.sendRemoteCommand(CommandAction.SKIP_NEXT)
+								}
+							},
+							onSkipPrevious = {
+								if (activeDeviceId == "local") {
+									playbackEngine.skipPrevious()
+								} else {
+									syncViewModel.sendRemoteCommand(CommandAction.SKIP_PREVIOUS)
+								}
+							},
+							onToggleShuffle = {
+								if (activeDeviceId == "local") {
+									playbackEngine.toggleShuffle()
+								} else {
+									syncViewModel.sendRemoteCommand(CommandAction.TOGGLE_SHUFFLE)
+								}
+							},
+							onCycleRepeatMode = {
+								if (activeDeviceId == "local") {
+									playbackEngine.setRepeatMode(effectivePlaybackState.repeatMode.next())
+								} else {
+									syncViewModel.sendRemoteCommand(CommandAction.SET_REPEAT)
+								}
+							},
 							onDismiss = { isNowPlayingExpanded = false },
 							onSelectQueueIndex = { index ->
-								if (index in playbackState.queue.indices) {
-									playbackEngine.playTrack(playbackState.queue[index], playbackState.queue, index)
+								if (index in effectivePlaybackState.queue.indices) {
+									playbackEngine.playTrack(effectivePlaybackState.queue[index], effectivePlaybackState.queue, index)
 								}
 							},
 							onRemoveQueueIndex = { playbackEngine.removeFromQueue(it) },
 							onClearQueue = { playbackEngine.clearQueue() },
 							onPairQrClick = {
-								isNowPlayingExpanded = false
+								showQrPairingDialog = true
+							}
+						)
+					}
+
+					// Offline QR Code Scanner & Pairing Dialog
+					if (showQrPairingDialog) {
+						QrScannerDialog(
+							connectionState = connectionState,
+							errorMessage = pairingError,
+							onPair = { rawQr ->
+								syncViewModel.pairWithQrCode(rawQr) {
+									showQrPairingDialog = false
+								}
+							},
+							onDismiss = {
+								syncViewModel.clearPairingError()
+								showQrPairingDialog = false
 							}
 						)
 					}
@@ -175,7 +256,8 @@ fun PrismAppRoot(
 	playbackEngine: PlaybackController,
 	onPlayTrack: (Track, List<Track>) -> Unit,
 	onShuffleAll: () -> Unit,
-	onExpandNowPlaying: () -> Unit
+	onExpandNowPlaying: () -> Unit,
+	onOpenQrPairing: () -> Unit
 ) {
 	val navController = rememberNavController()
 	val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -251,7 +333,9 @@ fun PrismAppRoot(
 			}
 
 			composable(Screen.Settings.route) {
-				SettingsScreen()
+				SettingsScreen(
+					onScanQrClick = onOpenQrPairing
+				)
 			}
 		}
 	}
