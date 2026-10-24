@@ -189,7 +189,8 @@ class LocalPlaybackEngine(
         if (activeListeningMs >= threshold) {
             hasLoggedCurrentTrack = true
             scope.launch {
-                statsRepository.logListeningEvent(track, activeListeningMs)
+                val durationToLog = if (durSecs > 0) durSecs * 1000L else activeListeningMs
+                statsRepository.logListeningEvent(track, durationToLog)
             }
         }
     }
@@ -213,6 +214,9 @@ class LocalPlaybackEngine(
 
     private fun loadTrackInternal(track: Track, queue: List<Track>, startIndex: Int, playWhenReady: Boolean) {
         currentQueue = queue
+        currentScrobbleTrack = track
+        activeListeningMs = 0L
+        hasLoggedCurrentTrack = false
         val targetIndex = if (startIndex != -1 && startIndex in queue.indices) {
             startIndex
         } else {
@@ -268,6 +272,7 @@ class LocalPlaybackEngine(
     }
 
     override fun pause() {
+        commitActiveListeningEvent()
         mediaController?.pause()
     }
 

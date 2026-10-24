@@ -20,14 +20,19 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Equalizer
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -36,16 +41,27 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.secondjb.prism.core.stats.StatsFilterRange
 import com.secondjb.prism.domain.model.Track
 import com.secondjb.prism.ui.theme.PillShape
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
+
+private fun formatMainDuration(totalSeconds: Long): String {
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    return when {
+        hours > 0 -> "${hours}h ${minutes}m"
+        minutes > 0 -> "${minutes}m"
+        else -> "${totalSeconds}s"
+    }
+}
 
 @Composable
 fun MainScreen(
@@ -53,6 +69,7 @@ fun MainScreen(
     onTrackClick: (Track, List<Track>) -> Unit,
     onShuffleAllClick: () -> Unit,
     onSelectStatsRange: (StatsFilterRange) -> Unit = {},
+    onOpenStatsClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -150,11 +167,15 @@ fun MainScreen(
             }
         }
 
-        // Listening Stats Card
+        // Listening Stats Interactive Preview Card
         item {
             val stats = uiState.stats
+            val aggregated = uiState.aggregatedStats
             ElevatedCard(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(MaterialTheme.shapes.large)
+                    .clickable { onOpenStatsClick() },
                 shape = MaterialTheme.shapes.large,
                 colors = CardDefaults.elevatedCardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainer
@@ -164,6 +185,7 @@ fun MainScreen(
                     modifier = Modifier.padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
+                    // Header row with Title and Arrow Button
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -173,15 +195,45 @@ fun MainScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Equalizer,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                            Column {
+                                Text(
+                                    text = "Listening Stats",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Tap to view full insights",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        // Arrow button indicating there's more
+                        FilledTonalIconButton(
+                            onClick = onOpenStatsClick,
+                            shape = CircleShape,
+                            modifier = Modifier.size(36.dp)
+                        ) {
                             Icon(
-                                imageVector = Icons.Default.Equalizer,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                text = "Listening Stats",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = "Open full listening stats page",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
@@ -192,10 +244,10 @@ fun MainScreen(
                     ) {
                         items(StatsFilterRange.values()) { range ->
                             val label = when (range) {
-                                StatsFilterRange.TODAY -> "Today"
-                                StatsFilterRange.SEVEN_DAYS -> "7 Days"
-                                StatsFilterRange.THIRTY_DAYS -> "30 Days"
                                 StatsFilterRange.ALL_TIME -> "All Time"
+                                StatsFilterRange.THIRTY_DAYS -> "30 Days"
+                                StatsFilterRange.SEVEN_DAYS -> "7 Days"
+                                StatsFilterRange.TODAY -> "Today"
                             }
                             val isSelected = uiState.selectedRange == range
                             FilterChip(
@@ -211,6 +263,7 @@ fun MainScreen(
                         }
                     }
 
+                    // Key Summary Metrics Row
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -221,7 +274,7 @@ fun MainScreen(
                         )
                         StatMetric(
                             label = "Listening Time",
-                            value = "${stats.totalListeningSeconds / 3600}h ${(stats.totalListeningSeconds % 3600) / 60}m"
+                            value = formatMainDuration(stats.totalListeningSeconds)
                         )
                         StatMetric(
                             label = "Hi-Res / FLAC",
@@ -229,7 +282,8 @@ fun MainScreen(
                         )
                     }
 
-                    if (stats.topArtist != null || uiState.aggregatedStats.topSong != null) {
+                    // Top Highlight Preview
+                    if (stats.topArtist != null || aggregated.topSong != null) {
                         Surface(
                             shape = MaterialTheme.shapes.medium,
                             color = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -254,7 +308,7 @@ fun MainScreen(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 }
-                                if (uiState.aggregatedStats.topSong != null) {
+                                if (aggregated.topSong != null) {
                                     Column(
                                         modifier = Modifier.weight(1f),
                                         horizontalAlignment = Alignment.End
@@ -265,7 +319,7 @@ fun MainScreen(
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                         Text(
-                                            text = uiState.aggregatedStats.topSong ?: "",
+                                            text = aggregated.topSong,
                                             style = MaterialTheme.typography.bodyMedium,
                                             fontWeight = FontWeight.SemiBold,
                                             maxLines = 1,
@@ -292,6 +346,88 @@ fun MainScreen(
                                 }
                             }
                         }
+                    }
+
+                    // #1 Top Song Preview Row (Live sample)
+                    val topTrack = aggregated.topSongsList.firstOrNull()
+                    if (topTrack != null) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color.White.copy(alpha = 0.04f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f).padding(end = 8.dp)
+                                ) {
+                                    // Gold medal #1
+                                    Box(
+                                        modifier = Modifier
+                                            .size(22.dp)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(0x33FACC15)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "1",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = Color(0xFFFACC15)
+                                        )
+                                    }
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = topTrack.name,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = topTrack.subtitle ?: "Unknown Artist",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = "${topTrack.count} plays",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+
+                    // Bottom hint pill
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "View full leaderboards & charts",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
                 }
             }

@@ -11,8 +11,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
+import kotlin.random.Random
 
 /**
  * Listening event representing a played song, interoperable with Prism Windows listening_stats.db.
@@ -31,14 +34,21 @@ data class StatTopItem(
     val name: String,
     val count: Int,
     val listenedMs: Long,
-    val subtitle: String? = null
+    val subtitle: String? = null,
+    val artworkUri: String? = null,
+    val album: String? = null
 )
 
 enum class StatsFilterRange {
-    TODAY,
-    SEVEN_DAYS,
+    ALL_TIME,
     THIRTY_DAYS,
-    ALL_TIME
+    SEVEN_DAYS,
+    TODAY
+}
+
+enum class StatsMetric {
+    TIME,
+    PLAYS
 }
 
 data class AggregatedStats(
@@ -48,7 +58,9 @@ data class AggregatedStats(
     val topAlbum: String? = null,
     val topSong: String? = null,
     val topArtistsList: List<StatTopItem> = emptyList(),
-    val topSongsList: List<StatTopItem> = emptyList()
+    val topSongsList: List<StatTopItem> = emptyList(),
+    val topAlbumsList: List<StatTopItem> = emptyList(),
+    val listeningHabitsHours: List<Int> = List(24) { 0 }
 )
 
 class ListeningStatsDatabaseHelper(context: Context) :
@@ -77,7 +89,9 @@ class ListeningStatsDatabaseHelper(context: Context) :
 
 class ListeningStatsRepository(context: Context) {
     private val dbHelper = ListeningStatsDatabaseHelper(context.applicationContext)
-    private val isoFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+    private val isoFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).apply {
+        timeZone = TimeZone.getTimeZone("UTC")
+    }
 
     private val _statsUpdateTrigger = MutableStateFlow(0L)
     val statsUpdateTrigger: StateFlow<Long> = _statsUpdateTrigger.asStateFlow()
@@ -149,59 +163,228 @@ class ListeningStatsRepository(context: Context) {
             list
         }
 
-    suspend fun getAggregatedStats(range: StatsFilterRange = StatsFilterRange.ALL_TIME): AggregatedStats =
-        withContext(Dispatchers.IO) {
-            val events = fetchListeningEvents(range)
-            if (events.isEmpty()) {
-                return@withContext AggregatedStats()
-            }
+    /**
+     * Seeds realistic listening history based on the user's music library when the database is empty.
+     * Matches the behaviour of Prism Windows `generateMockListeningEvents`.
+     */
+    suspend fun seedMockEventsIfEmpty(libraryTracks: List<Track> = emptyList()) = withContext(Dispatchers.IO) {
+        try {
+            val db = dbHelper.writableDatabase
+            val countCursor = db.rawQuery("SELECT COUNT(*) FROM listening_events", null)
+            val count = countCursor.use { if (it.moveToFirst()) it.getInt(0) else 0 }
+            if (count > 0) return@withContext
 
-            val totalPlays = events.size
-            val totalMs = events.sumOf { it.durationMs }
-            val totalSeconds = totalMs / 1000
+            val sampleArtists = listOf(
+                Triple("Queen", "Who Wants To Live Forever", "A Kind of Magic"),
+                Triple("IU", "Dear my crazy soulmate", "Love poem"),
+                Triple("JENNIE", "Less than a Lover", "Ruby"),
+                Triple("Chance Emerson", "Doing A Number", "The Raspberry Men"),
+                Triple("Olivia Rodrigo", "drop dead", "GUTS"),
+                Triple("ITZY", "Asylum (LIA)", "GOLD"),
+                Triple("fun.", "Some Nights", "Some Nights"),
+                Triple("Yuqi", "I Like You", "YUQ1"),
+                Triple("TUIDE", "SUN KISS", "SUN KISS"),
+                Triple("JISOO", "CLICK", "ME"),
+                Triple("NMIXX", "Blue Valentine", "Fe3O4: BREAK"),
+                Triple("BLACKPINK", "Fxxkboy", "BORN PINK")
+            )
 
-            // Top Artist
-            val artistMap = mutableMapOf<String, StatTopItem>()
-            events.forEach { e ->
-                val curr = artistMap[e.artistName] ?: StatTopItem(e.artistName, 0, 0L)
-                artistMap[e.artistName] = curr.copy(
-                    count = curr.count + 1,
-                    listenedMs = curr.listenedMs + e.durationMs
-                )
-            }
-            val topArtists = artistMap.values.sortedByDescending { it.listenedMs }
-
-            // Top Songs
-            val songMap = mutableMapOf<String, StatTopItem>()
-            events.forEach { e ->
-                val key = "${e.songTitle} - ${e.artistName}"
-                val curr = songMap[key] ?: StatTopItem(e.songTitle, 0, 0L, subtitle = e.artistName)
-                songMap[key] = curr.copy(
-                    count = curr.count + 1,
-                    listenedMs = curr.listenedMs + e.durationMs
-                )
-            }
-            val topSongs = songMap.values.sortedByDescending { it.listenedMs }
-
-            // Top Album
-            val albumMap = mutableMapOf<String, Int>()
-            events.forEach { e ->
-                if (!e.albumName.isNullOrBlank()) {
-                    albumMap[e.albumName] = (albumMap[e.albumName] ?: 0) + 1
+            val pool: List<Triple<String, String, String>> = if (libraryTracks.size >= 3) {
+                libraryTracks.map {
+                    Triple(
+                        it.artist.ifBlank { "Unknown Artist" },
+                        it.title.ifBlank { "Untitled" },
+                        it.album.ifBlank { "Unknown Album" }
+                    )
                 }
+            } else {
+                sampleArtists
             }
-            val topAlbum = albumMap.maxByOrNull { it.value }?.key
 
-            AggregatedStats(
-                totalTracksPlayed = totalPlays,
-                totalListeningSeconds = totalSeconds,
-                topArtist = topArtists.firstOrNull()?.name,
-                topAlbum = topAlbum,
-                topSong = topSongs.firstOrNull()?.name,
-                topArtistsList = topArtists.take(10),
-                topSongsList = topSongs.take(10)
+            val cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
+            val nowMs = System.currentTimeMillis()
+
+            db.beginTransaction()
+            try {
+                for (i in 0 until 120) {
+                    val item = pool[i % pool.size]
+                    val dayOffset = Random.nextInt(0, 28)
+                    val hour = if (Random.nextFloat() < 0.75f) 14 + Random.nextInt(0, 9) else Random.nextInt(0, 24)
+                    val minute = Random.nextInt(0, 60)
+                    val durationMs = (Random.nextInt(150, 320)) * 1000L
+
+                    cal.timeInMillis = nowMs
+                    cal.add(Calendar.DAY_OF_YEAR, -dayOffset)
+                    cal.set(Calendar.HOUR_OF_DAY, hour % 24)
+                    cal.set(Calendar.MINUTE, minute)
+                    cal.set(Calendar.SECOND, Random.nextInt(0, 60))
+
+                    val playedAtStr = isoFormat.format(cal.time)
+
+                    val values = ContentValues().apply {
+                        put("song_title", item.second)
+                        put("artist_name", item.first)
+                        put("album_name", item.third)
+                        put("genre", "Pop")
+                        put("duration_ms", durationMs)
+                        put("played_at", playedAtStr)
+                    }
+                    db.insert("listening_events", null, values)
+                }
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
+            _statsUpdateTrigger.value = System.currentTimeMillis()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    suspend fun getAggregatedStats(
+        range: StatsFilterRange = StatsFilterRange.ALL_TIME,
+        metric: StatsMetric = StatsMetric.TIME,
+        libraryTracks: List<Track> = emptyList()
+    ): AggregatedStats = withContext(Dispatchers.IO) {
+        var events = fetchListeningEvents(range)
+        if (events.isEmpty() && range == StatsFilterRange.ALL_TIME) {
+            seedMockEventsIfEmpty(libraryTracks)
+            events = fetchListeningEvents(range)
+        } else if (events.isEmpty()) {
+            // Check if all-time is also empty, seed if so
+            val allEvents = fetchListeningEvents(StatsFilterRange.ALL_TIME)
+            if (allEvents.isEmpty()) {
+                seedMockEventsIfEmpty(libraryTracks)
+                events = fetchListeningEvents(range)
+            }
+        }
+
+        if (events.isEmpty()) {
+            return@withContext AggregatedStats()
+        }
+
+        val totalPlays = events.size
+        val totalMs = events.sumOf { it.durationMs }
+        val totalSeconds = totalMs / 1000
+
+        // Track Artwork & Album maps for matching
+        val artBySong = libraryTracks.associate {
+            "${it.title.lowercase()}::${it.artist.lowercase()}" to it.artworkUri
+        }
+        val artByAlbum = libraryTracks.filter { it.album.isNotBlank() }.associate {
+            "${it.album.lowercase()}::${it.artist.lowercase()}" to it.artworkUri
+        }
+        val artByArtist = libraryTracks.filter { it.artist.isNotBlank() }.associate {
+            it.artist.lowercase() to it.artworkUri
+        }
+
+        // Top Artists
+        val artistMap = mutableMapOf<String, StatTopItem>()
+        events.forEach { e ->
+            val curr = artistMap[e.artistName] ?: StatTopItem(
+                name = e.artistName,
+                count = 0,
+                listenedMs = 0L,
+                subtitle = "Artist",
+                artworkUri = artByArtist[e.artistName.lowercase()]
+            )
+            artistMap[e.artistName] = curr.copy(
+                count = curr.count + 1,
+                listenedMs = curr.listenedMs + e.durationMs,
+                artworkUri = curr.artworkUri ?: artByArtist[e.artistName.lowercase()]
             )
         }
+        val topArtists = artistMap.values.sortedWith(
+            if (metric == StatsMetric.TIME) {
+                compareByDescending<StatTopItem> { it.listenedMs }.thenByDescending { it.count }
+            } else {
+                compareByDescending<StatTopItem> { it.count }.thenByDescending { it.listenedMs }
+            }
+        )
+
+        // Top Songs
+        val songMap = mutableMapOf<String, StatTopItem>()
+        events.forEach { e ->
+            val key = "${e.songTitle} - ${e.artistName}"
+            val songLookupKey = "${e.songTitle.lowercase()}::${e.artistName.lowercase()}"
+            val curr = songMap[key] ?: StatTopItem(
+                name = e.songTitle,
+                count = 0,
+                listenedMs = 0L,
+                subtitle = e.artistName,
+                album = e.albumName,
+                artworkUri = artBySong[songLookupKey]
+            )
+            songMap[key] = curr.copy(
+                count = curr.count + 1,
+                listenedMs = curr.listenedMs + e.durationMs,
+                artworkUri = curr.artworkUri ?: artBySong[songLookupKey]
+            )
+        }
+        val topSongs = songMap.values.sortedWith(
+            if (metric == StatsMetric.TIME) {
+                compareByDescending<StatTopItem> { it.listenedMs }.thenByDescending { it.count }
+            } else {
+                compareByDescending<StatTopItem> { it.count }.thenByDescending { it.listenedMs }
+            }
+        )
+
+        // Top Albums
+        val albumMap = mutableMapOf<String, StatTopItem>()
+        events.forEach { e ->
+            if (!e.albumName.isNullOrBlank()) {
+                val key = "${e.albumName} - ${e.artistName}"
+                val albumLookupKey = "${e.albumName.lowercase()}::${e.artistName.lowercase()}"
+                val curr = albumMap[key] ?: StatTopItem(
+                    name = e.albumName,
+                    count = 0,
+                    listenedMs = 0L,
+                    subtitle = e.artistName,
+                    artworkUri = artByAlbum[albumLookupKey]
+                )
+                albumMap[key] = curr.copy(
+                    count = curr.count + 1,
+                    listenedMs = curr.listenedMs + e.durationMs,
+                    artworkUri = curr.artworkUri ?: artByAlbum[albumLookupKey]
+                )
+            }
+        }
+        val topAlbums = albumMap.values.sortedWith(
+            if (metric == StatsMetric.TIME) {
+                compareByDescending<StatTopItem> { it.listenedMs }.thenByDescending { it.count }
+            } else {
+                compareByDescending<StatTopItem> { it.count }.thenByDescending { it.listenedMs }
+            }
+        )
+
+        // Listening habits by hour (24 hours)
+        val habits = IntArray(24) { 0 }
+        events.forEach { e ->
+            try {
+                val date = isoFormat.parse(e.playedAt)
+                if (date != null) {
+                    val cal = Calendar.getInstance()
+                    cal.time = date
+                    val hour = cal.get(Calendar.HOUR_OF_DAY)
+                    if (hour in 0..23) {
+                        habits[hour]++
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        AggregatedStats(
+            totalTracksPlayed = totalPlays,
+            totalListeningSeconds = totalSeconds,
+            topArtist = topArtists.firstOrNull()?.name,
+            topAlbum = topAlbums.firstOrNull()?.name,
+            topSong = topSongs.firstOrNull()?.name,
+            topArtistsList = topArtists,
+            topSongsList = topSongs,
+            topAlbumsList = topAlbums,
+            listeningHabitsHours = habits.toList()
+        )
+    }
 
     suspend fun clearHistory() = withContext(Dispatchers.IO) {
         try {

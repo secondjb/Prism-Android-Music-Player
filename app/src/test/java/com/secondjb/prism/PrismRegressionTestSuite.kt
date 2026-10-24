@@ -7,6 +7,7 @@ import com.secondjb.prism.domain.DomainModelsTest
 import com.secondjb.prism.playback.PlaybackEngineTest
 import com.secondjb.prism.playback.PlaybackRegressionTest
 import com.secondjb.prism.playback.SleepTimerManagerTest
+import com.secondjb.prism.stats.ListeningStatsTest
 import com.secondjb.prism.sync.SyncProtocolTest
 import com.secondjb.prism.theme.PaletteThemingTest
 import com.secondjb.prism.ui.ComponentsTest
@@ -33,6 +34,7 @@ import org.junit.runners.Suite
     LrcParserTest::class,
     AudioTagMetadataExtractorTest::class,
     PlaylistRepositoryTest::class,
-    SyncProtocolTest::class
+    SyncProtocolTest::class,
+    ListeningStatsTest::class
 )
 class PrismRegressionTestSuite

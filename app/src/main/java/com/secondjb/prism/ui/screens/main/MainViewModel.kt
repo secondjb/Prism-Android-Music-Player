@@ -6,6 +6,7 @@ import com.secondjb.prism.core.data.MediaStoreAudioRepository
 import com.secondjb.prism.core.stats.AggregatedStats
 import com.secondjb.prism.core.stats.ListeningStatsRepository
 import com.secondjb.prism.core.stats.StatsFilterRange
+import com.secondjb.prism.core.stats.StatsMetric
 import com.secondjb.prism.domain.model.ListeningStats
 import com.secondjb.prism.domain.model.Track
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +19,7 @@ data class MainUiState(
     val stats: ListeningStats = ListeningStats(),
     val aggregatedStats: AggregatedStats = AggregatedStats(),
     val selectedRange: StatsFilterRange = StatsFilterRange.ALL_TIME,
+    val leaderboardMetric: StatsMetric = StatsMetric.TIME,
     val recentTracks: List<Track> = emptyList(),
     val quickRecommendations: List<Track> = emptyList(),
     val isLoading: Boolean = false
@@ -30,6 +32,7 @@ class MainViewModel(
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
+    private var cachedTracks: List<Track> = emptyList()
 
     init {
         loadDashboard()
@@ -52,9 +55,17 @@ class MainViewModel(
         }
     }
 
+    fun setLeaderboardMetric(metric: StatsMetric) {
+        _uiState.update { it.copy(leaderboardMetric = metric) }
+        viewModelScope.launch {
+            refreshStatsOnly()
+        }
+    }
+
     private suspend fun refreshStatsOnly() {
         val range = _uiState.value.selectedRange
-        val aggregated = statsRepository?.getAggregatedStats(range) ?: AggregatedStats()
+        val metric = _uiState.value.leaderboardMetric
+        val aggregated = statsRepository?.getAggregatedStats(range, metric, cachedTracks) ?: AggregatedStats()
         _uiState.update {
             it.copy(
                 aggregatedStats = aggregated,
@@ -72,8 +83,13 @@ class MainViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             val tracks = repository.loadAllTracks()
+            cachedTracks = tracks
             val libraryStats = repository.computeStats(tracks)
-            val aggregated = statsRepository?.getAggregatedStats(_uiState.value.selectedRange) ?: AggregatedStats()
+            val aggregated = statsRepository?.getAggregatedStats(
+                range = _uiState.value.selectedRange,
+                metric = _uiState.value.leaderboardMetric,
+                libraryTracks = tracks
+            ) ?: AggregatedStats()
 
             // Recommended tracks: prioritize top played songs if available, else shuffle
             val recommendations = if (aggregated.topSongsList.isNotEmpty()) {

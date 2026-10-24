@@ -1,6 +1,7 @@
 package com.secondjb.prism.ui.navigation
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Settings
@@ -34,6 +35,13 @@ sealed class Screen(
         title = "Settings",
         selectedIcon = Icons.Filled.Settings,
         unselectedIcon = Icons.Outlined.Settings
+    )
+
+    data object Stats : Screen(
+        route = "stats",
+        title = "Listening Stats",
+        selectedIcon = Icons.Filled.Equalizer,
+        unselectedIcon = Icons.Filled.Equalizer
     )
 
     companion object {

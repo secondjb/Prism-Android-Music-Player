@@ -62,6 +62,7 @@ import com.secondjb.prism.ui.screens.library.LibraryScreen
 import com.secondjb.prism.ui.screens.library.LibraryViewModel
 import com.secondjb.prism.ui.screens.main.MainScreen
 import com.secondjb.prism.ui.screens.main.MainViewModel
+import com.secondjb.prism.ui.screens.stats.StatsScreen
 import com.secondjb.prism.ui.screens.player.NowPlayingScreen
 import com.secondjb.prism.ui.screens.settings.SettingsScreen
 import com.secondjb.prism.ui.screens.sync.QrScannerDialog
@@ -765,7 +766,39 @@ fun PrismAppRoot(
 						uiState = mainState,
 						onTrackClick = onPlayTrack,
 						onShuffleAllClick = onShuffleAll,
-						onSelectStatsRange = { mainViewModel.setStatsRange(it) }
+						onSelectStatsRange = { mainViewModel.setStatsRange(it) },
+						onOpenStatsClick = { navController.navigate(Screen.Stats.route) }
+					)
+				}
+
+				composable(Screen.Stats.route) {
+					StatsScreen(
+						uiState = mainState,
+						allTracks = libraryState.tracks,
+						onBackClick = { navController.popBackStack() },
+						onTrackClick = onPlayTrack,
+						onSelectStatsRange = { mainViewModel.setStatsRange(it) },
+						onMetricChange = { mainViewModel.setLeaderboardMetric(it) },
+						onGoToArtist = { artistName ->
+							navController.popBackStack()
+							libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ARTISTS)
+							libraryViewModel.setSearchQuery(artistName)
+							navController.navigate(Screen.Library.route) {
+								popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+								launchSingleTop = true
+								restoreState = true
+							}
+						},
+						onGoToAlbum = { albumName ->
+							navController.popBackStack()
+							libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ALBUMS)
+							libraryViewModel.setSearchQuery(albumName)
+							navController.navigate(Screen.Library.route) {
+								popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+								launchSingleTop = true
+								restoreState = true
+							}
+						}
 					)
 				}
 
