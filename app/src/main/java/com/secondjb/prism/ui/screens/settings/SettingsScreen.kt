@@ -149,7 +149,6 @@ fun SettingsScreen(
         item {
             SettingsCategoryCard(
                 title = "Library & File Discovery",
-                subtitle = "Storage scan, audio formats, folder inclusions & exclusions",
                 icon = Icons.Default.Folder,
                 isCollapsed = collapsedLibrary,
                 onToggleCollapse = { collapsedLibrary = !collapsedLibrary }
@@ -184,11 +183,13 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Included Music Folders", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            text = if (prefs.includedFolders.isEmpty()) "Scanning all device audio (no restrictions)" else "Only indexing songs within specified folders",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        if (prefs.includedFolders.isEmpty()) {
+                            Text(
+                                text = "All device audio",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                     OutlinedButton(
                         onClick = {
@@ -242,11 +243,6 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Excluded Folders", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            text = if (prefs.excludedFolders.isEmpty()) "No folders excluded" else "Skipping songs in specified folders (e.g. Ringtones, Recordings)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                     OutlinedButton(
                         onClick = {
@@ -294,7 +290,6 @@ fun SettingsScreen(
 
                 // Minimum Duration Filter
                 Text("Minimum Duration Filter", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Text("Ignore short notification sounds, ringtones, or voice memos", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(6.dp))
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -317,7 +312,6 @@ fun SettingsScreen(
 
                 // Enabled Formats
                 Text("Supported Audio Formats", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Text("Toggle file formats scanned from device storage", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(6.dp))
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -346,7 +340,6 @@ fun SettingsScreen(
         item {
             SettingsCategoryCard(
                 title = "Audio Engine & Playback",
-                subtitle = "Gapless playback, ReplayGain, and crossfading",
                 icon = Icons.Default.Audiotrack,
                 isCollapsed = collapsedAudio,
                 onToggleCollapse = { collapsedAudio = !collapsedAudio }
@@ -357,10 +350,7 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                        Text("Gapless Playback", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                        Text("Preload next audio track in memory for seamless live transitions", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    Text("Gapless Playback", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(end = 12.dp))
                     Switch(
                         checked = prefs.isGaplessEnabled,
                         onCheckedChange = { preferencesRepository.setGaplessEnabled(it) }
@@ -370,15 +360,14 @@ fun SettingsScreen(
                 Spacer(Modifier.height(14.dp))
 
                 // ReplayGain Normalization Mode
-                Text("ReplayGain Loudness Normalization", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Text("Align playback loudness across different albums and releases", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("ReplayGain Normalization", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(6.dp))
 
                 Column {
                     listOf(
-                        "track" to "Track Gain (Recommended individual normalization)",
-                        "album" to "Album Gain (Preserves dynamic volume balance across album)",
-                        "off" to "Disabled (Raw unadjusted source volume)"
+                        "track" to "Track Gain (Recommended)",
+                        "album" to "Album Gain",
+                        "off" to "Disabled"
                     ).forEach { (mode, desc) ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -400,8 +389,7 @@ fun SettingsScreen(
                 Spacer(Modifier.height(14.dp))
 
                 // Crossfade
-                Text("Track Crossfade", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Text("Overlap ending of current track with beginning of next", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Crossfade", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(6.dp))
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -423,7 +411,6 @@ fun SettingsScreen(
         item {
             SettingsCategoryCard(
                 title = "Lyrics & Visualizations",
-                subtitle = "Offline-first lyrics, romanization, and wavy seekbar",
                 icon = Icons.Default.Mic,
                 isCollapsed = collapsedLyrics,
                 onToggleCollapse = { collapsedLyrics = !collapsedLyrics }
@@ -434,10 +421,7 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                        Text("Romanization & Translation Support", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                        Text("Show romanized transliterations below non-Latin lyrics", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    Text("Romanized Lyrics", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(end = 12.dp))
                     Switch(
                         checked = prefs.isRomanizationEnabled,
                         onCheckedChange = { /* Persisted */ }
@@ -452,10 +436,7 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                        Text("Wavy Audio Seekbar", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                        Text("Sine waveform progress animation inspired by LastWave and Android 13+", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    Text("Wavy Seekbar", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(end = 12.dp))
                     Switch(
                         checked = prefs.isWavySeekbarEnabled,
                         onCheckedChange = { preferencesRepository.setWavySeekbarEnabled(it) }
@@ -470,10 +451,7 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                        Text("Auto-fetch Missing Lyrics (LRCLIB)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                        Text("Query lrclib.net when local embedded or .lrc files are not found", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    Text("Auto-fetch Missing Lyrics (LRCLIB)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(end = 12.dp))
                     Switch(
                         checked = prefs.lrclibAutoFetch,
                         onCheckedChange = { preferencesRepository.setLrclibAutoFetch(it) }
@@ -486,7 +464,6 @@ fun SettingsScreen(
         item {
             SettingsCategoryCard(
                 title = "Themes & Appearance",
-                subtitle = "Material 3 Expressive and dynamic album artwork palette",
                 icon = Icons.Default.Palette,
                 isCollapsed = collapsedTheme,
                 onToggleCollapse = { collapsedTheme = !collapsedTheme }
@@ -497,10 +474,7 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                        Text("Dynamic Album Artwork Palette", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                        Text("Extract accent colors from active album art using AndroidX Palette with high text contrast", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    Text("Dynamic Album Artwork Palette", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(end = 12.dp))
                     Switch(
                         checked = prefs.isDynamicThemingEnabled,
                         onCheckedChange = { preferencesRepository.setDynamicThemingEnabled(it) }
@@ -513,18 +487,10 @@ fun SettingsScreen(
         item {
             SettingsCategoryCard(
                 title = "Desktop Companion & LAN Sync",
-                subtitle = "Pair with Prism Windows, manage paired PCs & file sync",
                 icon = Icons.Default.Sync,
                 isCollapsed = collapsedSync,
                 onToggleCollapse = { collapsedSync = !collapsedSync }
             ) {
-                Text(
-                    text = "Seamless offline P2P synchronization with Prism Windows via mDNS and WebSocket.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(12.dp))
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -576,7 +542,6 @@ fun SettingsScreen(
 
                 // Listening Stats & Analytics Synchronization
                 Text("Listening Stats & Sync", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Text("Keep listening history, play counts, and leaderboards identical across PC and phone", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(12.dp))
 
                 // Auto-sync switch
@@ -585,10 +550,7 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                        Text("Auto-Sync Listening Stats", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                        Text("Exchange listening events bidirectionally when companion connects", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    Text("Auto-Sync Listening Stats", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f).padding(end = 12.dp))
                     Switch(
                         checked = prefs.autoSyncStats,
                         onCheckedChange = { preferencesRepository.setAutoSyncStats(it) }
@@ -603,10 +565,7 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                        Text("Prevent Double-Counting", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                        Text("Suppress phone play logging when desktop is actively outputting music", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    Text("Prevent Double-Counting", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f).padding(end = 12.dp))
                     Switch(
                         checked = prefs.preventDoubleCounting,
                         onCheckedChange = { preferencesRepository.setPreventDoubleCounting(it) }
@@ -621,10 +580,7 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                        Text("Record Listening Stats", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                        Text("Log local listening time and play counts for charts and insights", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    Text("Record Listening Stats", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f).padding(end = 12.dp))
                     Switch(
                         checked = prefs.isStatsCollectionEnabled,
                         onCheckedChange = { preferencesRepository.setStatsCollectionEnabled(it) }
@@ -862,7 +818,6 @@ fun SettingsScreen(
 @Composable
 private fun SettingsCategoryCard(
     title: String,
-    subtitle: String,
     icon: ImageVector,
     isCollapsed: Boolean,
     onToggleCollapse: () -> Unit,
@@ -908,18 +863,11 @@ private fun SettingsCategoryCard(
                             )
                         }
                     }
-                    Column {
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = subtitle,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
 
                 Icon(
