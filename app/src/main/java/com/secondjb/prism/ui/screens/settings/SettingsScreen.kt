@@ -134,7 +134,7 @@ fun SettingsScreen(
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 120.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
             Text(
@@ -173,7 +173,7 @@ fun SettingsScreen(
                     }
                 }
 
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(8.dp))
 
                 // Included Folders
                 Row(
@@ -205,7 +205,7 @@ fun SettingsScreen(
                 }
 
                 if (prefs.includedFolders.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(6.dp))
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -233,7 +233,7 @@ fun SettingsScreen(
                     }
                 }
 
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(8.dp))
 
                 // Excluded Folders
                 Row(
@@ -258,7 +258,7 @@ fun SettingsScreen(
                 }
 
                 if (prefs.excludedFolders.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(6.dp))
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -286,11 +286,11 @@ fun SettingsScreen(
                     }
                 }
 
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(8.dp))
 
                 // Minimum Duration Filter
                 Text("Minimum Duration Filter", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(4.dp))
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -308,11 +308,11 @@ fun SettingsScreen(
                     }
                 }
 
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(8.dp))
 
                 // Enabled Formats
                 Text("Supported Audio Formats", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(4.dp))
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -357,11 +357,11 @@ fun SettingsScreen(
                     )
                 }
 
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(6.dp))
 
                 // ReplayGain Normalization Mode
                 Text("ReplayGain Normalization", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(2.dp))
 
                 Column {
                     listOf(
@@ -374,7 +374,7 @@ fun SettingsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { preferencesRepository.setReplayGainMode(mode) }
-                                .padding(vertical = 4.dp)
+                                .padding(vertical = 2.dp)
                         ) {
                             RadioButton(
                                 selected = prefs.replayGainMode == mode,
@@ -386,11 +386,11 @@ fun SettingsScreen(
                     }
                 }
 
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(8.dp))
 
                 // Crossfade
                 Text("Crossfade", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(4.dp))
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -407,10 +407,10 @@ fun SettingsScreen(
             }
         }
 
-        // 3. Lyrics & Visualizations
+        // 3. Lyrics
         item {
             SettingsCategoryCard(
-                title = "Lyrics & Visualizations",
+                title = "Lyrics",
                 icon = Icons.Default.Mic,
                 isCollapsed = collapsedLyrics,
                 onToggleCollapse = { collapsedLyrics = !collapsedLyrics }
@@ -428,22 +428,7 @@ fun SettingsScreen(
                     )
                 }
 
-                Spacer(Modifier.height(14.dp))
-
-                // Wavy Seekbar
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Wavy Seekbar", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(end = 12.dp))
-                    Switch(
-                        checked = prefs.isWavySeekbarEnabled,
-                        onCheckedChange = { preferencesRepository.setWavySeekbarEnabled(it) }
-                    )
-                }
-
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(4.dp))
 
                 // LRCLIB Fetch
                 Row(
@@ -536,13 +521,13 @@ fun SettingsScreen(
                     }
                 }
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(10.dp))
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(8.dp))
 
                 // Listening Stats & Analytics Synchronization
                 Text("Listening Stats & Sync", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(4.dp))
 
                 // Auto-sync switch
                 Row(
@@ -557,7 +542,7 @@ fun SettingsScreen(
                     )
                 }
 
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(4.dp))
 
                 // Prevent double-counting switch
                 Row(
@@ -572,7 +557,7 @@ fun SettingsScreen(
                     )
                 }
 
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(4.dp))
 
                 // Record stats switch
                 Row(
@@ -587,7 +572,7 @@ fun SettingsScreen(
                     )
                 }
 
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
 
                 // Action buttons: Sync Stats Now & Clear History
                 Row(
@@ -833,7 +818,7 @@ private fun SettingsCategoryCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(18.dp)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
             Row(
                 modifier = Modifier
@@ -878,7 +863,7 @@ private fun SettingsCategoryCard(
             }
 
             AnimatedVisibility(visible = !isCollapsed) {
-                Column(modifier = Modifier.padding(top = 16.dp)) {
+                Column(modifier = Modifier.padding(top = 8.dp)) {
                     content()
                 }
             }
