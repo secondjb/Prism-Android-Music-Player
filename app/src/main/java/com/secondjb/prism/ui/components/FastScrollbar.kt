@@ -353,18 +353,8 @@ fun FastScrollbar(
                             shape = CircleShape
                         )
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary),
-                    contentAlignment = Alignment.Center
-                ) {
-                    // Tactile grip line
-                    Box(
-                        modifier = Modifier
-                            .width(2.dp)
-                            .height(18.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.65f))
-                    )
-                }
+                        .background(MaterialTheme.colorScheme.primary)
+                )
             }
 
             // Section indicator bubble while dragging

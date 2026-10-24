@@ -179,27 +179,18 @@ fun FloatingNowPlayingBar(
                                 overflow = TextOverflow.Ellipsis
                             )
 
-                            if (isRemoteActive) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                if (isRemoteActive) {
                                     Icon(
                                         imageVector = Icons.Default.Devices,
                                         contentDescription = "Playing on $remoteDeviceName",
                                         tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(13.dp)
                                     )
-                                    Text(
-                                        text = "Playing on $remoteDeviceName",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
                                 }
-                            } else {
                                 Text(
                                     text = track.artist,
                                     style = MaterialTheme.typography.labelSmall,
