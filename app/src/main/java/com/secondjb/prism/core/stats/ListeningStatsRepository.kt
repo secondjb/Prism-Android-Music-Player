@@ -422,9 +422,9 @@ class ListeningStatsRepository(context: Context) {
     }
 
     /**
-     * Fetches up to 500 recent events formatted for P2P sync to desktop companion.
+     * Fetches all events formatted for P2P sync to desktop companion (no limit).
      */
-    suspend fun fetchAllEventsForSync(limit: Int = 500): List<SyncListeningEventItem> = withContext(Dispatchers.IO) {
+    suspend fun fetchAllEventsForSync(limit: Int? = null): List<SyncListeningEventItem> = withContext(Dispatchers.IO) {
         val list = mutableListOf<SyncListeningEventItem>()
         try {
             val db = dbHelper.readableDatabase
@@ -436,7 +436,7 @@ class ListeningStatsRepository(context: Context) {
                 null,
                 null,
                 "played_at DESC",
-                limit.toString()
+                limit?.toString()
             )
             cursor.use { c ->
                 val titleCol = c.getColumnIndexOrThrow("song_title")
