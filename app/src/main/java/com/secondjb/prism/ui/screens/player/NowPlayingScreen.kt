@@ -1,5 +1,6 @@
 package com.secondjb.prism.ui.screens.player
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -109,6 +110,28 @@ fun NowPlayingScreen(
         }
     }
 
+    BackHandler(enabled = true) {
+        if (isLyricsFullscreen) {
+            isLyricsFullscreen = false
+        } else {
+            onDismiss()
+        }
+    }
+
+    if (isLyricsFullscreen) {
+        FullScreenLyricsPage(
+            track = track,
+            playbackState = playbackState,
+            lyricsText = resolvedLyrics,
+            onSeek = onSeek,
+            onTogglePlayPause = onTogglePlayPause,
+            onSkipNext = onSkipNext,
+            onSkipPrevious = onSkipPrevious,
+            onDismiss = { isLyricsFullscreen = false }
+        )
+        return
+    }
+
     val scrollState = rememberScrollState()
 
     Box(
@@ -136,11 +159,11 @@ fun NowPlayingScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = 16.dp)
                 .verticalScroll(scrollState),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.height(48.dp))
+            Spacer(Modifier.height(36.dp))
 
             // Top Bar (Swipe Down Chevron + Title)
             Row(
@@ -177,14 +200,15 @@ fun NowPlayingScreen(
                 Spacer(Modifier.size(48.dp))
             }
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
 
-            // Large Album Art
+            // Large Album Art taking as much space as it can with a little bit of padding
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(0.85f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp)
                     .aspectRatio(1f)
-                    .shadow(16.dp, RoundedCornerShape(24.dp))
+                    .shadow(24.dp, RoundedCornerShape(24.dp))
                     .clip(RoundedCornerShape(24.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
@@ -196,7 +220,7 @@ fun NowPlayingScreen(
                 )
             }
 
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(20.dp))
 
             // Track Title & Artist
             Text(
@@ -380,11 +404,11 @@ fun NowPlayingScreen(
                 lyricsText = resolvedLyrics,
                 currentPositionMs = playbackState.positionMs,
                 onSeek = onSeek,
-                isFullScreen = isLyricsFullscreen,
-                onToggleFullScreen = { isLyricsFullscreen = !isLyricsFullscreen },
+                isFullScreen = false,
+                onToggleFullScreen = { isLyricsFullscreen = true },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(if (isLyricsFullscreen) 420.dp else 240.dp)
+                    .height(240.dp)
             )
 
             Spacer(Modifier.height(36.dp))

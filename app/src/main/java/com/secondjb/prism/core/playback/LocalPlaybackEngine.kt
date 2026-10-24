@@ -161,7 +161,11 @@ class LocalPlaybackEngine(
 
     override fun playTrack(track: Track, queue: List<Track>, startIndex: Int) {
         currentQueue = queue
-        val targetIndex = if (startIndex in queue.indices) startIndex else queue.indexOf(track).coerceAtLeast(0)
+        val targetIndex = if (startIndex != -1 && startIndex in queue.indices) {
+            startIndex
+        } else {
+            queue.indexOfFirst { it.id == track.id }.takeIf { it != -1 } ?: 0
+        }
         val mediaItems = queue.map { it.toMediaItem() }
 
         val controller = mediaController
