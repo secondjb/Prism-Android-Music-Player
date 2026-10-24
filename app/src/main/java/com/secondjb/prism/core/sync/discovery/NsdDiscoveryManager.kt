@@ -16,7 +16,11 @@ import kotlinx.coroutines.flow.update
  */
 class NsdDiscoveryManager(private val context: Context) {
 
-    private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as? NsdManager
+    private val nsdManager: NsdManager? = try {
+        context.applicationContext.getSystemService(Context.NSD_SERVICE) as? NsdManager
+    } catch (e: Exception) {
+        null
+    }
     private val serviceType = "_prism._tcp."
 
     private val _discoveredDevices = MutableStateFlow<List<DeviceNode>>(emptyList())
