@@ -77,5 +77,5 @@
 2. **Windows (if touched)**: Whenever you edit anything to do with the Windows app (`prism-windows`), push to remote and pull down the updates in the standalone Desktop replica:
    ```bash
    git -C prism-windows push origin master
-   git -C "C:\Users\b1a7e\Desktop\Prism Music Player" pull origin master
+   git -C "../Prism Music Player" pull origin master
    ```
