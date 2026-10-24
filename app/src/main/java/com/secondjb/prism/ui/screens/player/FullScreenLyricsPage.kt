@@ -7,6 +7,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -35,7 +38,12 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.TextIncrease
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Translate
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -101,6 +109,12 @@ fun FullScreenLyricsPage(
     var fontScale by remember { mutableFloatStateOf(1.0f) }
 
     val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+    var isUserScrolled by remember { mutableStateOf(false) }
+
+    LaunchedEffect(track.id) {
+        isUserScrolled = false
+    }
 
     var lastInteractionTime by remember { mutableStateOf(System.currentTimeMillis()) }
 
@@ -109,9 +123,19 @@ fun FullScreenLyricsPage(
         showControls = true
     }
 
-    // When the user starts scrolling, show all buttons immediately and keep them open!
-    LaunchedEffect(listState.isScrollInProgress) {
-        if (listState.isScrollInProgress) {
+    // Detect manual user touch drag gestures (distinguishing user interaction from programmatic scroll)
+    LaunchedEffect(listState.interactionSource) {
+        listState.interactionSource.interactions.collect { interaction ->
+            if (interaction is DragInteraction.Start) {
+                isUserScrolled = true
+                resetControlsTimer()
+            }
+        }
+    }
+
+    // When the user is scrolling manually, reveal playback controls immediately and keep them alive!
+    LaunchedEffect(listState.isScrollInProgress, isUserScrolled) {
+        if (listState.isScrollInProgress && isUserScrolled) {
             resetControlsTimer()
         }
     }
@@ -142,9 +166,9 @@ fun FullScreenLyricsPage(
         }
     }
 
-    // Smooth auto-scroll keeping active lyric line near center when user isn't scrolling
-    LaunchedEffect(activeIndex, listState.isScrollInProgress) {
-        if (!listState.isScrollInProgress && activeIndex in parsedLines.indices) {
+    // Smooth auto-scroll keeping active lyric line near center when user hasn't manually scrolled away
+    LaunchedEffect(activeIndex, isUserScrolled) {
+        if (!isUserScrolled && activeIndex in parsedLines.indices) {
             val targetScroll = (activeIndex - 2).coerceAtLeast(0)
             listState.animateScrollToItem(targetScroll)
         }
@@ -211,6 +235,7 @@ fun FullScreenLyricsPage(
                         showTranslation = isTranslationVisible,
                         onClick = {
                             onSeek(line.timestampMs)
+                            isUserScrolled = false
                             resetControlsTimer()
                         }
                     )
@@ -218,44 +243,48 @@ fun FullScreenLyricsPage(
             }
         }
 
-        // Top Floating Header (With subtle gradient, safely below status bar notch)
+        // Top Floating Pill Header (Opaque pill matching FloatingNowPlayingBar aesthetic & colors)
         AnimatedVisibility(
             visible = showControls,
             enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
             exit = fadeOut() + slideOutVertically(targetOffsetY = { -it }),
             modifier = Modifier
                 .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(horizontal = 14.dp, vertical = 8.dp)
                 .zIndex(10f)
         ) {
-            androidx.compose.material3.Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = Color(0xFF121217).copy(alpha = 0.95f),
-                shadowElevation = 8.dp
+            ElevatedCard(
+                shape = CircleShape,
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                ),
+                elevation = CardDefaults.elevatedCardElevation(defaultElevation = 8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
+                        shape = CircleShape
+                    )
             ) {
-                Box(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Close / Exit Button
+                    // Close / Exit Button (naked icon, no background circle)
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier
-                            .size(42.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.12f))
+                        modifier = Modifier.size(38.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Exit Fullscreen Lyrics",
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
 
@@ -264,27 +293,30 @@ fun FullScreenLyricsPage(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier
                             .weight(1f)
-                            .padding(horizontal = 12.dp)
+                            .padding(horizontal = 8.dp)
                     ) {
                         Text(
                             text = track.title,
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = track.artist,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.75f),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
 
-                    // Utility Action Buttons Row
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Utility Action Buttons Row (Naked icons without circular background; color indicates ON/OFF)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
                         // Font Size Cycle Toggle
                         IconButton(
                             onClick = {
@@ -295,15 +327,12 @@ fun FullScreenLyricsPage(
                                     else -> 1.0f
                                 }
                             },
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(Color.White.copy(alpha = if (fontScale > 1.0f) 0.25f else 0.12f))
+                            modifier = Modifier.size(38.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.TextIncrease,
                                 contentDescription = "Cycle Font Size",
-                                tint = if (fontScale > 1.0f) MaterialTheme.colorScheme.primary else Color.White,
+                                tint = if (fontScale > 1.0f) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -314,15 +343,12 @@ fun FullScreenLyricsPage(
                                 resetControlsTimer()
                                 isRomanizationVisible = !isRomanizationVisible
                             },
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(Color.White.copy(alpha = if (isRomanizationVisible) 0.25f else 0.12f))
+                            modifier = Modifier.size(38.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Language,
                                 contentDescription = "Toggle Romanization",
-                                tint = if (isRomanizationVisible) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.5f),
+                                tint = if (isRomanizationVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -333,21 +359,64 @@ fun FullScreenLyricsPage(
                                 resetControlsTimer()
                                 isTranslationVisible = !isTranslationVisible
                             },
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(Color.White.copy(alpha = if (isTranslationVisible) 0.25f else 0.12f))
+                            modifier = Modifier.size(38.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Translate,
                                 contentDescription = "Toggle Translation",
-                                tint = if (isTranslationVisible) MaterialTheme.colorScheme.secondary else Color.White.copy(alpha = 0.5f),
+                                tint = if (isTranslationVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
                                 modifier = Modifier.size(20.dp)
                             )
                         }
                     }
                 }
             }
+        }
+
+        // Floating "Sync to lyrics" pill button when user has scrolled away from the active line
+        AnimatedVisibility(
+            visible = isUserScrolled && parsedLines.isNotEmpty(),
+            enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 }),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = if (showControls) 180.dp else 40.dp)
+                .navigationBarsPadding()
+                .zIndex(15f)
+        ) {
+            androidx.compose.material3.Surface(
+                onClick = {
+                    isUserScrolled = false
+                    resetControlsTimer()
+                    coroutineScope.launch {
+                        if (activeIndex in parsedLines.indices) {
+                            val targetScroll = (activeIndex - 2).coerceAtLeast(0)
+                            listState.animateScrollToItem(targetScroll)
+                        }
+                    }
+                },
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shadowElevation = 8.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Sync,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "Sync to lyrics",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
             }
         }
 
