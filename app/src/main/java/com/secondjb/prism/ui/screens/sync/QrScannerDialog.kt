@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -20,24 +23,28 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.secondjb.prism.core.sync.transport.TransportConnectionState
 
 /**
- * Material 3 Expressive pairing dialog supporting camera QR scans
- * and direct pairing URI paste (prism://pair?...).
+ * Material 3 Expressive pairing dialog supporting live Camera QR scanning,
+ * 1-click clipboard paste, and direct IP/Port endpoint entry.
  */
 @Composable
 fun QrScannerDialog(
@@ -46,6 +53,7 @@ fun QrScannerDialog(
     onPair: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    var selectedTab by remember { mutableIntStateOf(0) }
     var rawInput by remember { mutableStateOf("") }
     val clipboardManager = LocalClipboardManager.current
 
@@ -67,29 +75,109 @@ fun QrScannerDialog(
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text(
-                    text = "Scan the QR code shown on your desktop Prism app, or paste the pairing URI below:",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                // Tab Selection: Camera Scanner vs Manual Input
+                PrimaryTabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier.clip(RoundedCornerShape(12.dp))
+                ) {
+                    Tab(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Text("Camera Scan")
+                            }
+                        }
+                    )
+                    Tab(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Text("Manual / Paste")
+                            }
+                        }
+                    )
+                }
 
-                OutlinedTextField(
-                    value = rawInput,
-                    onValueChange = { rawInput = it },
-                    placeholder = { Text("prism://pair?host=... or IP:PORT") },
-                    shape = MaterialTheme.shapes.medium,
-                    modifier = Modifier.fillMaxWidth(),
-                    trailingIcon = {
-                        IconButton(onClick = {
-                            clipboardManager.getText()?.text?.let { rawInput = it }
-                        }) {
-                            Icon(Icons.Default.ContentPaste, contentDescription = "Paste from Clipboard")
+                if (selectedTab == 0) {
+                    // Live Camera QR Scanner View
+                    CameraQrScannerView(
+                        onQrCodeScanned = { scannedCode ->
+                            rawInput = scannedCode
+                            onPair(scannedCode)
+                        }
+                    )
+                } else {
+                    // Manual Input / Paste Tab
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            text = "Paste the pairing URI or host:port:token copied from desktop Prism:",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        OutlinedTextField(
+                            value = rawInput,
+                            onValueChange = { rawInput = it },
+                            placeholder = { Text("prism://pair?... or IP:PORT") },
+                            shape = MaterialTheme.shapes.medium,
+                            modifier = Modifier.fillMaxWidth(),
+                            trailingIcon = {
+                                IconButton(onClick = {
+                                    clipboardManager.getText()?.text?.let { rawInput = it }
+                                }) {
+                                    Icon(Icons.Default.ContentPaste, contentDescription = "Paste from Clipboard")
+                                }
+                            }
+                        )
+
+                        // USB ADB Reverse Helper Chip
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Usb,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Column {
+                                    Text(
+                                        text = "USB Bypass Available",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Tap 'Enable ADB Reverse' in desktop modal, then enter: 127.0.0.1:8765",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         }
                     }
-                )
+                }
 
+                // Connecting Indicator
                 if (connectionState is TransportConnectionState.Connecting) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -105,6 +193,7 @@ fun QrScannerDialog(
                     }
                 }
 
+                // Error Message if failed
                 if (errorMessage != null) {
                     Surface(
                         shape = MaterialTheme.shapes.small,
@@ -119,39 +208,20 @@ fun QrScannerDialog(
                         )
                     }
                 }
-
-                Surface(
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text(
-                            text = "Offline-First Direct Connection",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "Prism connects directly via local Wi-Fi or tethering without routing audio or data to any third-party cloud.",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
             }
         },
         confirmButton = {
-            Button(
-                onClick = {
-                    if (rawInput.isNotBlank()) {
-                        onPair(rawInput.trim())
-                    }
-                },
-                enabled = rawInput.isNotBlank() && connectionState !is TransportConnectionState.Connecting
-            ) {
-                Text("Connect")
+            if (selectedTab == 1 || rawInput.isNotBlank()) {
+                Button(
+                    onClick = {
+                        if (rawInput.isNotBlank()) {
+                            onPair(rawInput.trim())
+                        }
+                    },
+                    enabled = rawInput.isNotBlank() && connectionState !is TransportConnectionState.Connecting
+                ) {
+                    Text("Connect")
+                }
             }
         },
         dismissButton = {
