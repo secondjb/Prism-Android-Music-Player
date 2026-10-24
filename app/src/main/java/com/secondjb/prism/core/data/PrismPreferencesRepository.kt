@@ -27,6 +27,8 @@ data class PrismPreferences(
     val minDurationSeconds: Int = 10,
     val enabledFormats: Set<String> = setOf("FLAC", "MP3", "M4A", "WAV", "OGG", "OPUS"),
     val autoScanOnStartup: Boolean = true,
+    val includedFolders: Set<String> = emptySet(),
+    val excludedFolders: Set<String> = emptySet(),
 
     // Audio & Playback
     val isGaplessEnabled: Boolean = true,
@@ -56,6 +58,8 @@ class PrismPreferencesRepository(context: Context) {
             minDurationSeconds = prefs.getInt(KEY_MIN_DURATION, 10),
             enabledFormats = prefs.getStringSet(KEY_FORMATS, setOf("FLAC", "MP3", "M4A", "WAV", "OGG", "OPUS")) ?: setOf("FLAC", "MP3", "M4A", "WAV", "OGG", "OPUS"),
             autoScanOnStartup = prefs.getBoolean(KEY_AUTO_SCAN, true),
+            includedFolders = prefs.getStringSet(KEY_INCLUDED_FOLDERS, emptySet()) ?: emptySet(),
+            excludedFolders = prefs.getStringSet(KEY_EXCLUDED_FOLDERS, emptySet()) ?: emptySet(),
             isGaplessEnabled = prefs.getBoolean(KEY_GAPLESS, true),
             replayGainMode = prefs.getString(KEY_REPLAY_GAIN, "track") ?: "track",
             crossfadeDurationSeconds = prefs.getInt(KEY_CROSSFADE, 0),
@@ -142,6 +146,34 @@ class PrismPreferencesRepository(context: Context) {
         _pairedDevices.value = updated
     }
 
+    fun addIncludedFolder(folder: String) {
+        val clean = folder.trim()
+        if (clean.isEmpty()) return
+        val current = _preferences.value.includedFolders.toMutableSet().apply { add(clean) }
+        prefs.edit().putStringSet(KEY_INCLUDED_FOLDERS, current).apply()
+        _preferences.value = _preferences.value.copy(includedFolders = current)
+    }
+
+    fun removeIncludedFolder(folder: String) {
+        val current = _preferences.value.includedFolders.toMutableSet().apply { remove(folder) }
+        prefs.edit().putStringSet(KEY_INCLUDED_FOLDERS, current).apply()
+        _preferences.value = _preferences.value.copy(includedFolders = current)
+    }
+
+    fun addExcludedFolder(folder: String) {
+        val clean = folder.trim()
+        if (clean.isEmpty()) return
+        val current = _preferences.value.excludedFolders.toMutableSet().apply { add(clean) }
+        prefs.edit().putStringSet(KEY_EXCLUDED_FOLDERS, current).apply()
+        _preferences.value = _preferences.value.copy(excludedFolders = current)
+    }
+
+    fun removeExcludedFolder(folder: String) {
+        val current = _preferences.value.excludedFolders.toMutableSet().apply { remove(folder) }
+        prefs.edit().putStringSet(KEY_EXCLUDED_FOLDERS, current).apply()
+        _preferences.value = _preferences.value.copy(excludedFolders = current)
+    }
+
     fun setDarkThemeMode(mode: String) {
         prefs.edit().putString(KEY_DARK_THEME_MODE, mode).apply()
         _preferences.value = _preferences.value.copy(darkThemeMode = mode)
@@ -152,6 +184,8 @@ class PrismPreferencesRepository(context: Context) {
         private const val KEY_MIN_DURATION = "key_min_duration"
         private const val KEY_FORMATS = "key_formats"
         private const val KEY_AUTO_SCAN = "key_auto_scan"
+        private const val KEY_INCLUDED_FOLDERS = "key_included_folders"
+        private const val KEY_EXCLUDED_FOLDERS = "key_excluded_folders"
         private const val KEY_GAPLESS = "key_gapless"
         private const val KEY_REPLAY_GAIN = "key_replay_gain"
         private const val KEY_CROSSFADE = "key_crossfade"

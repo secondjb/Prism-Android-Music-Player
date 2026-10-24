@@ -1,20 +1,25 @@
 package com.secondjb.prism.ui.screens.sync
 
+import android.content.Context
+import android.media.MediaScannerConnection
+import android.os.Environment
 import android.os.SystemClock
 import android.util.Base64
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.secondjb.prism.core.data.PairedDevice
+import com.secondjb.prism.core.data.PrismPreferencesRepository
+import com.secondjb.prism.domain.model.DeviceNode
 import com.secondjb.prism.core.sync.discovery.NsdDiscoveryManager
 import com.secondjb.prism.core.sync.protocol.CommandAction
+import com.secondjb.prism.core.sync.protocol.ManifestTrackEntry
 import com.secondjb.prism.core.sync.protocol.SyncFrame
 import com.secondjb.prism.core.sync.qr.QrPairingParser
 import com.secondjb.prism.core.sync.transport.ConnectionEndpoint
 import com.secondjb.prism.core.sync.transport.LanWebSocketSyncTransport
 import com.secondjb.prism.core.sync.transport.SyncTransport
 import com.secondjb.prism.core.sync.transport.TransportConnectionState
-import com.secondjb.prism.domain.model.DeviceNode
-import com.secondjb.prism.domain.model.DeviceType
 import com.secondjb.prism.domain.model.PlaybackState
 import com.secondjb.prism.domain.model.Track
 import kotlinx.coroutines.Dispatchers
@@ -24,18 +29,45 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 
-import com.secondjb.prism.core.data.PairedDevice
-import com.secondjb.prism.core.data.PrismPreferencesRepository
+data class TrackNotFoundEvent(
+    val title: String,
+    val artist: String,
+    val filename: String
+)
+
+enum class ConnectionSpeedTier(val label: String, val approxSpeedMBps: Double) {
+    USB_REVERSE("USB Cable (High-Speed)", 35.0),
+    WIFI_HOTSPOT("Wi-Fi Hotspot / Tether", 16.0),
+    WIFI_LAN("Wi-Fi Local Network", 9.0)
+}
+
+data class FileSyncManifestDiff(
+    val missingOnPhone: List<ManifestTrackEntry> = emptyList(),
+    val missingOnDesktop: List<ManifestTrackEntry> = emptyList(),
+    val syncedCount: Int = 0,
+    val totalMissingBytesPhone: Long = 0L,
+    val totalMissingBytesDesktop: Long = 0L,
+    val connectionTier: ConnectionSpeedTier = ConnectionSpeedTier.WIFI_LAN,
+    val estimatedTimeSecondsPhone: Long = 0L,
+    val estimatedTimeSecondsDesktop: Long = 0L,
+    val isAnalyzing: Boolean = false,
+    val isSyncing: Boolean = false,
+    val currentSyncTrack: String? = null,
+    val syncProgressPercent: Float = 0f,
+    val syncStatusMessage: String? = null
+)
 
 class SyncViewModel(
     val transport: SyncTransport = LanWebSocketSyncTransport(),
     val discoveryManager: NsdDiscoveryManager? = null,
     private val localTracksProvider: (suspend () -> List<Track>)? = null,
     private val preferencesRepository: PrismPreferencesRepository? = null,
-    private val cacheDir: File? = null
+    private val cacheDir: File? = null,
+    private val context: Context? = null
 ) : ViewModel() {
 
     val connectionState: StateFlow<TransportConnectionState> = transport.connectionState
@@ -63,6 +95,12 @@ class SyncViewModel(
     private val _lastPairingError = MutableStateFlow<String?>(null)
     val lastPairingError: StateFlow<String?> = _lastPairingError.asStateFlow()
 
+    private val _trackNotFoundPrompt = MutableStateFlow<TrackNotFoundEvent?>(null)
+    val trackNotFoundPrompt: StateFlow<TrackNotFoundEvent?> = _trackNotFoundPrompt.asStateFlow()
+
+    private val _fileSyncState = MutableStateFlow(FileSyncManifestDiff())
+    val fileSyncState: StateFlow<FileSyncManifestDiff> = _fileSyncState.asStateFlow()
+
     private var cachedLocalTracks: List<Track> = emptyList()
     private var lastSyncRealtime: Long = 0L
     private var basePositionMs: Long = 0L
@@ -70,60 +108,43 @@ class SyncViewModel(
 
     init {
         discoveryManager?.startDiscovery()
-        loadLocalTracks()
         observeIncomingFrames()
         observeConnectionState()
-        startContinuousProgressTicker()
-        autoConnectToLastPairedDevice()
+        preloadLocalTracks()
+        autoConnectRecentPairedDevice()
     }
 
-    private fun autoConnectToLastPairedDevice() {
-        val last = preferencesRepository?.pairedDevices?.value?.firstOrNull() ?: return
+    private fun autoConnectRecentPairedDevice() {
         viewModelScope.launch {
-            Log.i("PrismSync", "Auto-connecting to previously paired desktop: ${last.name} (${last.host}:${last.port})")
-            val endpoint = ConnectionEndpoint(host = last.host, port = last.port, authToken = last.token)
-            _connectedEndpoint.value = endpoint
-            _connectedServerName.value = last.name
-            lastPairingToken = last.token
-            transport.connect(endpoint).onFailure {
-                Log.d("PrismSync", "Auto-connect deferred: ${it.message}")
+            val devices = preferencesRepository?.pairedDevices?.value ?: return@launch
+            if (devices.isNotEmpty()) {
+                val mostRecent = devices.maxByOrNull { it.lastConnectedTimeMs } ?: devices.first()
+                Log.i("PrismSync", "Auto-connecting to previously paired desktop: ${mostRecent.name} (${mostRecent.host}:${mostRecent.port})")
+                connectToPairedDevice(mostRecent)
             }
         }
     }
 
-    private fun loadLocalTracks() {
-        localTracksProvider?.let { provider ->
-            viewModelScope.launch(Dispatchers.IO) {
+    private fun preloadLocalTracks() {
+        viewModelScope.launch(Dispatchers.IO) {
+            localTracksProvider?.let {
                 try {
-                    cachedLocalTracks = provider()
-                    Log.i("PrismSync", "Loaded ${cachedLocalTracks.size} local tracks for library sync reconciliation")
+                    cachedLocalTracks = it()
+                    Log.d("PrismSync", "Preloaded ${cachedLocalTracks.size} local tracks for companion pairing")
                 } catch (e: Exception) {
-                    Log.w("PrismSync", "Failed to load local tracks: ${e.message}")
+                    Log.w("PrismSync", "Failed to preload local tracks: ${e.message}")
                 }
             }
         }
     }
 
-    private fun startContinuousProgressTicker() {
-        viewModelScope.launch(Dispatchers.Main) {
-            while (true) {
-                delay(30) // ~33 fps for fluid seekbar movement & word-by-word synced lyrics
-                val current = _remotePlaybackState.value
-                if (_activeDeviceId.value != "local" && current != null && current.isPlaying) {
-                    val now = SystemClock.elapsedRealtime()
-                    val elapsed = now - lastSyncRealtime
-                    val interpolatedPos = (basePositionMs + elapsed).coerceAtMost(current.durationMs)
-                    if (interpolatedPos != current.positionMs) {
-                        _remotePlaybackState.value = current.copy(positionMs = interpolatedPos)
-                    }
-                }
-            }
-        }
+    fun refreshLocalTracks() {
+        preloadLocalTracks()
     }
 
     private fun observeConnectionState() {
         viewModelScope.launch {
-            transport.connectionState.collect { state ->
+            connectionState.collect { state ->
                 when (state) {
                     is TransportConnectionState.Connected -> {
                         _lastPairingError.value = null
@@ -191,6 +212,20 @@ class SyncViewModel(
                             _lastPairingError.value = "Pairing rejected by desktop: invalid token"
                         }
                     }
+                    is SyncFrame.TrackNotFound -> {
+                        Log.w("PrismSync", "Remote track not found on desktop: ${frame.trackTitle}")
+                        _trackNotFoundPrompt.value = TrackNotFoundEvent(
+                            title = frame.trackTitle,
+                            artist = frame.trackArtist,
+                            filename = frame.trackFilename
+                        )
+                    }
+                    is SyncFrame.ManifestResponse -> {
+                        handleManifestResponse(frame.tracks)
+                    }
+                    is SyncFrame.FileChunk -> {
+                        handleIncomingFileChunk(frame)
+                    }
                     else -> {}
                 }
             }
@@ -207,25 +242,21 @@ class SyncViewModel(
     }
 
     private fun reconcileTrack(remoteTrack: Track): Track {
-        // 1. Check if the exact audio file exists in phone's local library
         val match = cachedLocalTracks.firstOrNull { local ->
             val sameTitle = local.title.equals(remoteTrack.title, ignoreCase = true)
             val sameArtist = local.artist.equals(remoteTrack.artist, ignoreCase = true)
             if (sameTitle && sameArtist) return@firstOrNull true
 
-            // Match by audio filename
             val remoteFilename = remoteTrack.uri.substringAfterLast('/').substringAfterLast('\\')
             val localFilename = (local.filePath ?: local.uri).substringAfterLast('/').substringAfterLast('\\')
             if (remoteFilename.isNotBlank() && remoteFilename.equals(localFilename, ignoreCase = true)) return@firstOrNull true
 
-            // Match by same title and duration within 2 seconds
-            if (sameTitle && Math.abs(local.durationMs - remoteTrack.durationMs) <= 2000L) return@firstOrNull true
+            if (sameTitle && Math.abs(local.durationMs - remoteTrack.durationMs) <= 3000L) return@firstOrNull true
 
             false
         }
 
         if (match != null) {
-            Log.d("PrismSync", "Matched remote track '${remoteTrack.title}' with local library track")
             return remoteTrack.copy(
                 artworkUri = match.artworkUri ?: remoteTrack.artworkUri,
                 lyrics = if (!match.lyrics.isNullOrBlank()) match.lyrics else remoteTrack.lyrics,
@@ -233,7 +264,6 @@ class SyncViewModel(
             )
         }
 
-        // 2. If no local match, check if remote track contains Base64 embedded art (data:image/...)
         val rawArt = remoteTrack.artworkUri
         if (rawArt != null && rawArt.startsWith("data:image")) {
             val fileArtUri = cacheBase64ArtworkToFile(remoteTrack.id, rawArt)
@@ -343,7 +373,13 @@ class SyncViewModel(
         }
     }
 
-    fun sendPlayTrackCommand(trackTitle: String, trackArtist: String, trackFilename: String, trackUri: String) {
+    fun sendPlayTrackCommand(
+        trackTitle: String,
+        trackArtist: String,
+        trackFilename: String,
+        trackUri: String,
+        queueFilenames: List<String>? = null
+    ) {
         lastSyncRealtime = SystemClock.elapsedRealtime()
         basePositionMs = 0L
         _remotePlaybackState.update { it?.copy(isPlaying = true, positionMs = 0L) }
@@ -354,7 +390,8 @@ class SyncViewModel(
                 trackTitle = trackTitle,
                 trackArtist = trackArtist,
                 trackFilename = trackFilename,
-                trackUri = trackUri
+                trackUri = trackUri,
+                queueFilenames = queueFilenames
             )
             transport.sendFrame(command)
         }
@@ -379,7 +416,6 @@ class SyncViewModel(
     fun getAllLocalTracks(): List<Track> = cachedLocalTracks
 
     fun sendRemoteCommand(action: CommandAction, seekMs: Long? = null, volume: Float? = null) {
-        // Optimistic UI updates
         when (action) {
             CommandAction.PAUSE -> {
                 _remotePlaybackState.update { it?.copy(isPlaying = false) }
@@ -415,6 +451,206 @@ class SyncViewModel(
 
     fun clearPairingError() {
         _lastPairingError.value = null
+    }
+
+    fun clearTrackNotFoundPrompt() {
+        _trackNotFoundPrompt.value = null
+    }
+
+    fun requestManifestDiff() {
+        val host = _connectedEndpoint.value?.host ?: ""
+        val tier = when {
+            host == "127.0.0.1" || host == "localhost" -> ConnectionSpeedTier.USB_REVERSE
+            host.startsWith("192.168.43.") -> ConnectionSpeedTier.WIFI_HOTSPOT
+            else -> ConnectionSpeedTier.WIFI_LAN
+        }
+        _fileSyncState.update {
+            it.copy(
+                isAnalyzing = true,
+                connectionTier = tier,
+                syncStatusMessage = "Analyzing remote desktop library manifest..."
+            )
+        }
+
+        viewModelScope.launch {
+            transport.sendFrame(SyncFrame.ManifestRequest())
+        }
+    }
+
+    private fun handleManifestResponse(remoteTracks: List<ManifestTrackEntry>) {
+        val normalize = { s: String? -> (s ?: "").trim().lowercase() }
+        val localList = cachedLocalTracks
+
+        val missingOnPhone = remoteTracks.filter { remote ->
+            val remoteFn = normalize(remote.filename)
+            val remoteTitle = normalize(remote.title)
+            val remoteArtist = normalize(remote.artist)
+
+            localList.none { local ->
+                val localFn = normalize((local.filePath ?: local.uri).substringAfterLast('/').substringAfterLast('\\'))
+                if (remoteFn.isNotBlank() && localFn == remoteFn) return@none true
+                if (remoteTitle.isNotBlank() && normalize(local.title) == remoteTitle) {
+                    if (remoteArtist.isBlank() || normalize(local.artist).contains(remoteArtist) || remoteArtist.contains(normalize(local.artist))) {
+                        return@none true
+                    }
+                }
+                false
+            }
+        }
+
+        val missingOnDesktop = localList.filter { local ->
+            val localFn = normalize((local.filePath ?: local.uri).substringAfterLast('/').substringAfterLast('\\'))
+            val localTitle = normalize(local.title)
+            val localArtist = normalize(local.artist)
+
+            remoteTracks.none { remote ->
+                val remoteFn = normalize(remote.filename)
+                if (localFn.isNotBlank() && remoteFn == localFn) return@none true
+                if (localTitle.isNotBlank() && normalize(remote.title) == localTitle) {
+                    if (localArtist.isBlank() || normalize(remote.artist).contains(localArtist) || localArtist.contains(normalize(remote.artist))) {
+                        return@none true
+                    }
+                }
+                false
+            }
+        }.map { local ->
+            ManifestTrackEntry(
+                filename = (local.filePath ?: local.uri).substringAfterLast('/').substringAfterLast('\\'),
+                title = local.title,
+                artist = local.artist,
+                sizeBytes = 25_000_000L,
+                durationSecs = (local.durationMs / 1000.0)
+            )
+        }
+
+        val totalBytesPhone = missingOnPhone.sumOf { it.sizeBytes.takeIf { s -> s > 0 } ?: 25_000_000L }
+        val totalBytesDesktop = missingOnDesktop.sumOf { it.sizeBytes }
+
+        val tier = _fileSyncState.value.connectionTier
+        val speedBytesPerSec = tier.approxSpeedMBps * 1024 * 1024
+        val estSecondsPhone = Math.max(1L, (totalBytesPhone / speedBytesPerSec).toLong())
+        val estSecondsDesktop = Math.max(1L, (totalBytesDesktop / speedBytesPerSec).toLong())
+
+        _fileSyncState.update {
+            it.copy(
+                missingOnPhone = missingOnPhone,
+                missingOnDesktop = missingOnDesktop,
+                syncedCount = remoteTracks.size - missingOnPhone.size,
+                totalMissingBytesPhone = totalBytesPhone,
+                totalMissingBytesDesktop = totalBytesDesktop,
+                estimatedTimeSecondsPhone = estSecondsPhone,
+                estimatedTimeSecondsDesktop = estSecondsDesktop,
+                isAnalyzing = false,
+                syncStatusMessage = null
+            )
+        }
+    }
+
+    fun startSyncDownload() {
+        val missing = _fileSyncState.value.missingOnPhone
+        if (missing.isEmpty()) return
+
+        _fileSyncState.update { it.copy(isSyncing = true, syncProgressPercent = 0f, syncStatusMessage = "Starting safe download...") }
+
+        viewModelScope.launch {
+            for ((index, track) in missing.withIndex()) {
+                val progress = (index.toFloat() / missing.size.toFloat())
+                _fileSyncState.update {
+                    it.copy(
+                        currentSyncTrack = "${track.title} - ${track.artist}",
+                        syncProgressPercent = progress,
+                        syncStatusMessage = "Syncing ${index + 1} of ${missing.size}: ${track.title}"
+                    )
+                }
+
+                transport.sendFrame(
+                    SyncFrame.PlaybackCommand(
+                        action = CommandAction.REQUEST_FILE_DOWNLOAD,
+                        trackFilename = track.filename,
+                        trackTitle = track.title
+                    )
+                )
+
+                delay(600)
+            }
+
+            _fileSyncState.update {
+                it.copy(
+                    isSyncing = false,
+                    syncProgressPercent = 1f,
+                    syncStatusMessage = "Sync completed! All missing tracks saved safely."
+                )
+            }
+        }
+    }
+
+    private fun handleIncomingFileChunk(chunk: SyncFrame.FileChunk) {
+        try {
+            val baseDir = cacheDir ?: return
+            val downloadDir = File(baseDir, "sync_incoming").apply { if (!exists()) mkdirs() }
+            val tmpFile = File(downloadDir, "${chunk.fileId}.tmp")
+
+            val bytes = Base64.decode(chunk.dataBase64, Base64.DEFAULT)
+            FileOutputStream(tmpFile, true).use { it.write(bytes) }
+
+            if (chunk.isLast) {
+                val musicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+                val targetDir = File(musicDir, "Prism").apply { if (!exists()) mkdirs() }
+                val targetFile = File(targetDir, chunk.fileId)
+
+                // Never overwrite existing files!
+                if (!targetFile.exists()) {
+                    tmpFile.renameTo(targetFile)
+                    context?.let { ctx ->
+                        MediaScannerConnection.scanFile(ctx, arrayOf(targetFile.absolutePath), null, null)
+                    }
+                } else {
+                    tmpFile.delete()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("PrismSync", "Error handling file chunk for ${chunk.fileId}: ${e.message}")
+        }
+    }
+
+    fun sendSingleTrackToDesktop(track: Track, onComplete: () -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val filename = (track.filePath ?: track.uri).substringAfterLast('/').substringAfterLast('\\')
+                val path = track.filePath
+                val file = if (path != null) File(path) else null
+
+                if (file != null && file.exists()) {
+                    val bytes = file.readBytes()
+                    val totalSize = bytes.size.toLong()
+                    val chunkSize = 512 * 1024
+                    val totalChunks = Math.ceil(bytes.size.toDouble() / chunkSize).toInt()
+
+                    for (i in 0 until totalChunks) {
+                        val start = i * chunkSize
+                        val end = Math.min(bytes.size, start + chunkSize)
+                        val chunkBytes = bytes.copyOfRange(start, end)
+                        val b64 = Base64.encodeToString(chunkBytes, Base64.NO_WRAP)
+
+                        transport.sendFrame(
+                            SyncFrame.FileChunk(
+                                fileId = filename,
+                                chunkIndex = i,
+                                totalChunks = totalChunks,
+                                dataBase64 = b64,
+                                sizeBytes = totalSize,
+                                isLast = i == totalChunks - 1
+                            )
+                        )
+                    }
+                }
+                withContext(Dispatchers.Main) {
+                    onComplete()
+                }
+            } catch (e: Exception) {
+                Log.e("PrismSync", "Failed to send track to desktop: ${e.message}")
+            }
+        }
     }
 
     override fun onCleared() {

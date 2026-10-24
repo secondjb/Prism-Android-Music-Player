@@ -60,7 +60,9 @@ import com.secondjb.prism.ui.screens.main.MainViewModel
 import com.secondjb.prism.ui.screens.player.NowPlayingScreen
 import com.secondjb.prism.ui.screens.settings.SettingsScreen
 import com.secondjb.prism.ui.screens.sync.QrScannerDialog
+import com.secondjb.prism.ui.screens.sync.SmartFileSyncSheet
 import com.secondjb.prism.ui.screens.sync.SyncViewModel
+import com.secondjb.prism.ui.screens.sync.TrackNotFoundSheet
 import com.secondjb.prism.ui.theme.PrismDynamicThemeProvider
 import com.secondjb.prism.ui.theme.PrismTheme
 
@@ -72,9 +74,9 @@ class MainActivity : ComponentActivity() {
 
 		setContent {
 			val context = LocalContext.current
-			val repository = remember { MediaStoreAudioRepository(context) }
-			val playlistRepository = remember { PlaylistRepository(context) }
 			val preferencesRepository = remember { PrismPreferencesRepository(context) }
+			val repository = remember { MediaStoreAudioRepository(context, preferencesRepository) }
+			val playlistRepository = remember { PlaylistRepository(context) }
 			val statsRepository = remember { com.secondjb.prism.core.stats.ListeningStatsRepository(context) }
 			val playbackEngine = remember { LocalPlaybackEngine(context, statsRepository) }
 			val sleepTimerManager = remember { com.secondjb.prism.core.playback.SleepTimerManager(playbackEngine) }
@@ -85,7 +87,8 @@ class MainActivity : ComponentActivity() {
 					discoveryManager = discoveryManager,
 					localTracksProvider = { repository.loadAllTracks() },
 					preferencesRepository = preferencesRepository,
-					cacheDir = context.cacheDir
+					cacheDir = context.cacheDir,
+					context = context
 				)
 			}
 
@@ -228,11 +231,15 @@ class MainActivity : ComponentActivity() {
 				val filename = (track.filePath ?: track.uri).substringAfterLast('/').substringAfterLast('\\')
 
 				if (desktopActive) {
+					val queueFns = queue.take(150).map {
+						(it.filePath ?: it.uri).substringAfterLast('/').substringAfterLast('\\')
+					}
 					syncViewModel.sendPlayTrackCommand(
 						trackTitle = track.title,
 						trackArtist = track.artist,
 						trackFilename = filename,
-						trackUri = track.uri
+						trackUri = track.uri,
+						queueFilenames = queueFns
 					)
 				}
 
@@ -317,6 +324,9 @@ class MainActivity : ComponentActivity() {
 
 			var isNowPlayingExpanded by remember { mutableStateOf(false) }
 			var showQrPairingDialog by remember { mutableStateOf(false) }
+			var showSmartFileSyncSheet by remember { mutableStateOf(false) }
+			val trackNotFoundEvent by syncViewModel.trackNotFoundPrompt.collectAsState()
+			val fileSyncState by syncViewModel.fileSyncState.collectAsState()
 
 			// Fallback demo tracks if device library is empty initially
 			LaunchedEffect(Unit) {
@@ -376,8 +386,21 @@ class MainActivity : ComponentActivity() {
 						onOpenQrPairing = {
 							showQrPairingDialog = true
 						},
+						onRescanLibrary = {
+							libraryViewModel.loadLibrary()
+							syncViewModel.refreshLocalTracks()
+						},
 						isRemoteActive = isRemoteOnlyActive,
-						remoteDeviceName = connectedServerName?.ifBlank { "Prism Desktop" } ?: "Prism Desktop"
+						remoteDeviceName = connectedServerName?.ifBlank { "Prism Desktop" } ?: "Prism Desktop",
+						connectedDeviceName = connectedServerName,
+						isDesktopConnected = isDesktopConnected,
+						pairedDevices = pairedDevices,
+						onConnectToPairedDevice = { syncViewModel.connectToPairedDevice(it) },
+						onDeletePairedDevice = { syncViewModel.deletePairing(it) },
+						onOpenSmartFileSync = {
+							syncViewModel.requestManifestDiff()
+							showSmartFileSyncSheet = true
+						}
 					)
 
 					// BackHandler collapses now playing before exiting app
@@ -460,6 +483,70 @@ class MainActivity : ComponentActivity() {
 							}
 						)
 					}
+
+					// Smart Library File Sync Dialog
+					if (showSmartFileSyncSheet) {
+						SmartFileSyncSheet(
+							syncState = fileSyncState,
+							onStartSync = { syncViewModel.startSyncDownload() },
+							onDismiss = { showSmartFileSyncSheet = false }
+						)
+					}
+
+					// Track Not Found on PC Sheet
+					trackNotFoundEvent?.let { event ->
+						TrackNotFoundSheet(
+							event = event,
+							onPlayLocally = {
+								syncViewModel.toggleLocalOutput(true)
+								val localMatch = syncViewModel.findLocalMatch(
+									Track(
+										id = "local_direct",
+										uri = "",
+										title = event.title,
+										artist = event.artist,
+										album = "",
+										durationMs = 0L,
+										format = "FLAC"
+									)
+								)
+								if (localMatch != null) {
+									playbackEngine.playTrack(localMatch, syncViewModel.getAllLocalTracks())
+								}
+								syncViewModel.clearTrackNotFoundPrompt()
+							},
+							onSendToDesktop = {
+								val localMatch = syncViewModel.findLocalMatch(
+									Track(
+										id = "local_direct",
+										uri = "",
+										title = event.title,
+										artist = event.artist,
+										album = "",
+										durationMs = 0L,
+										format = "FLAC"
+									)
+								)
+								if (localMatch != null) {
+									syncViewModel.sendSingleTrackToDesktop(localMatch) {
+										syncViewModel.sendPlayTrackCommand(
+											trackTitle = event.title,
+											trackArtist = event.artist,
+											trackFilename = event.filename,
+											trackUri = localMatch.uri
+										)
+									}
+								}
+								syncViewModel.clearTrackNotFoundPrompt()
+							},
+							onStreamToDesktop = {
+								syncViewModel.clearTrackNotFoundPrompt()
+							},
+							onDismiss = {
+								syncViewModel.clearTrackNotFoundPrompt()
+							}
+						)
+					}
 				}
 			}
 		}
@@ -480,8 +567,15 @@ fun PrismAppRoot(
 	onShuffleAll: () -> Unit,
 	onExpandNowPlaying: () -> Unit,
 	onOpenQrPairing: () -> Unit,
+	onRescanLibrary: () -> Unit = {},
 	isRemoteActive: Boolean = false,
-	remoteDeviceName: String = "Prism Desktop"
+	remoteDeviceName: String = "Prism Desktop",
+	connectedDeviceName: String? = null,
+	isDesktopConnected: Boolean = false,
+	pairedDevices: List<com.secondjb.prism.core.data.PairedDevice> = emptyList(),
+	onConnectToPairedDevice: (com.secondjb.prism.core.data.PairedDevice) -> Unit = {},
+	onDeletePairedDevice: (com.secondjb.prism.core.data.PairedDevice) -> Unit = {},
+	onOpenSmartFileSync: () -> Unit = {}
 ) {
 	val navController = rememberNavController()
 	val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -591,8 +685,14 @@ fun PrismAppRoot(
 				SettingsScreen(
 					preferencesRepository = preferencesRepository,
 					totalTrackCount = libraryState.tracks.size,
-					onRescanLibrary = { libraryViewModel.loadLibrary() },
-					onScanQrClick = onOpenQrPairing
+					onRescanLibrary = onRescanLibrary,
+					onScanQrClick = onOpenQrPairing,
+					connectedDeviceName = connectedDeviceName,
+					isDesktopConnected = isDesktopConnected,
+					pairedDevices = pairedDevices,
+					onConnectToPairedDevice = onConnectToPairedDevice,
+					onDeletePairedDevice = onDeletePairedDevice,
+					onStartFileSync = onOpenSmartFileSync
 				)
 			}
 		}

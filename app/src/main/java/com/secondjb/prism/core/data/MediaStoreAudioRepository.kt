@@ -15,12 +15,20 @@ import kotlinx.coroutines.withContext
 /**
  * Scans local storage audio files and album artwork via Android MediaStore.
  */
-class MediaStoreAudioRepository(private val context: Context) {
+class MediaStoreAudioRepository(
+    private val context: Context,
+    private val preferencesRepository: PrismPreferencesRepository? = null
+) {
 
     private val albumArtUriBase = Uri.parse("content://media/external/audio/albumart")
 
     suspend fun loadAllTracks(): List<Track> = withContext(Dispatchers.IO) {
         val tracks = mutableListOf<Track>()
+        val prefs = preferencesRepository?.preferences?.value
+        val included = prefs?.includedFolders ?: emptySet()
+        val excluded = prefs?.excludedFolders ?: emptySet()
+        val minDurationMs = (prefs?.minDurationSeconds ?: 10) * 1000L
+        val enabledFormats = prefs?.enabledFormats
         val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
         } else {
@@ -74,6 +82,17 @@ class MediaStoreAudioRepository(private val context: Context) {
                     val filePath = if (dataCol != -1) cursor.getString(dataCol) else null
 
                     val format = resolveFormatFromMime(mimeType)
+                    if (durationMs < minDurationMs) continue
+                    if (enabledFormats != null && !enabledFormats.contains(format)) continue
+
+                    if (filePath != null) {
+                        if (included.isNotEmpty() && included.none { inc -> filePath.contains(inc, ignoreCase = true) || filePath.startsWith(inc, ignoreCase = true) }) {
+                            continue
+                        }
+                        if (excluded.isNotEmpty() && excluded.any { exc -> filePath.contains(exc, ignoreCase = true) || filePath.startsWith(exc, ignoreCase = true) }) {
+                            continue
+                        }
+                    }
 
                     tracks.add(
                         Track(
