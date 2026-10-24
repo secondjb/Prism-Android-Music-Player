@@ -15,17 +15,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
@@ -38,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.secondjb.prism.core.data.PairedDevice
 import com.secondjb.prism.domain.model.DeviceNode
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -49,9 +52,12 @@ fun DeviceSwitcherSheet(
     connectedServerName: String?,
     connectedEndpointInfo: String?,
     availableDiscoveredDevices: List<DeviceNode> = emptyList(),
+    pairedDevices: List<PairedDevice> = emptyList(),
     onToggleDesktopOutput: (Boolean) -> Unit,
     onToggleLocalOutput: (Boolean) -> Unit,
     onConnectToDevice: (DeviceNode) -> Unit = {},
+    onConnectToPairedDevice: (PairedDevice) -> Unit = {},
+    onDeletePairing: (PairedDevice) -> Unit = {},
     onPairQrClick: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -121,7 +127,7 @@ fun DeviceSwitcherSheet(
                 }
             }
 
-            // 1. Windows PC Device Row
+            // 1. Currently Connected Windows PC Output
             val desktopActive = isDesktopConnected && isDesktopOutputEnabled
             Surface(
                 shape = MaterialTheme.shapes.medium,
@@ -173,7 +179,7 @@ fun DeviceSwitcherSheet(
                             text = if (isDesktopConnected) {
                                 "Connected • ${connectedEndpointInfo ?: "LAN Synced"}"
                             } else {
-                                "Not Connected • Tap to pair with QR code"
+                                "Not Connected • Tap to pair or auto-connect below"
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = if (isDesktopConnected) {
@@ -239,7 +245,79 @@ fun DeviceSwitcherSheet(
                 }
             }
 
-            // 3. Additional Discovered LAN Devices (if any)
+            // 3. Previously Paired PCs (Stored Pairings)
+            if (pairedDevices.isNotEmpty()) {
+                Text(
+                    text = "Paired Computers",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+
+                pairedDevices.forEach { paired ->
+                    val isThisCurrentlyConnected = isDesktopConnected && connectedEndpointInfo?.contains(paired.host) == true
+
+                    Surface(
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Computer,
+                                contentDescription = null,
+                                tint = if (isThisCurrentlyConnected) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(22.dp)
+                            )
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = paired.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = if (isThisCurrentlyConnected) "Connected • ${paired.host}:${paired.port}" else "${paired.host}:${paired.port}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isThisCurrentlyConnected) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            if (!isThisCurrentlyConnected) {
+                                Text(
+                                    text = "Connect",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier
+                                        .clickable { onConnectToPairedDevice(paired) }
+                                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                                )
+                            }
+
+                            // Delete pairing button
+                            IconButton(
+                                onClick = { onDeletePairing(paired) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DeleteOutline,
+                                    contentDescription = "Delete Pairing",
+                                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 4. Additional Discovered LAN Devices (if any)
             if (availableDiscoveredDevices.isNotEmpty()) {
                 Text(
                     text = "Nearby Devices",
@@ -292,11 +370,15 @@ fun DeviceSwitcherSheet(
 
             Spacer(Modifier.height(4.dp))
 
-            // Pair / Scan QR Code Button
-            FilledTonalButton(
+            // Pair / Scan QR Code Button - Same Primary Color as Play Button
+            Button(
                 onClick = onPairQrClick,
                 modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium
+                shape = MaterialTheme.shapes.medium,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
             ) {
                 Icon(Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))

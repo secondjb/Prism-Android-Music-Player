@@ -84,6 +84,7 @@ class MainActivity : ComponentActivity() {
 				SyncViewModel(
 					discoveryManager = discoveryManager,
 					localTracksProvider = { repository.loadAllTracks() },
+					preferencesRepository = preferencesRepository,
 					cacheDir = context.cacheDir
 				)
 			}
@@ -105,6 +106,7 @@ class MainActivity : ComponentActivity() {
 			val connectedEndpoint by syncViewModel.connectedEndpoint.collectAsState()
 			val pairingError by syncViewModel.lastPairingError.collectAsState()
 			val discoveredDevices by syncViewModel.discoveredDevices.collectAsState()
+			val pairedDevices by syncViewModel.pairedDevices.collectAsState()
 
 			// Effective playback state prefers remote companion state when desktop output is active
 			val effectivePlaybackState = if (isDesktopConnected && isDesktopOutputEnabled && remotePlaybackState != null) {
@@ -312,14 +314,27 @@ class MainActivity : ComponentActivity() {
 						isNowPlayingExpanded = false
 					}
 
+					var lastKnownTrack by remember { mutableStateOf<Track?>(null) }
+					LaunchedEffect(effectivePlaybackState.currentTrack) {
+						if (effectivePlaybackState.currentTrack != null) {
+							lastKnownTrack = effectivePlaybackState.currentTrack
+						}
+					}
+					val activeTrackForNowPlaying = effectivePlaybackState.currentTrack ?: lastKnownTrack
+
 					// Full-Screen Now Playing View (PixelPlayer & LastWave inspired)
 					AnimatedVisibility(
-						visible = isNowPlayingExpanded && effectivePlaybackState.currentTrack != null,
+						visible = isNowPlayingExpanded && activeTrackForNowPlaying != null,
 						enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
 						exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
 					) {
+						val stateForNowPlaying = if (effectivePlaybackState.currentTrack == null && activeTrackForNowPlaying != null) {
+							effectivePlaybackState.copy(currentTrack = activeTrackForNowPlaying)
+						} else {
+							effectivePlaybackState
+						}
 						NowPlayingScreen(
-							playbackState = effectivePlaybackState,
+							playbackState = stateForNowPlaying,
 							onTogglePlayPause = handleTogglePlayPause,
 							onSeek = handleSeek,
 							onSkipNext = handleSkipNext,
@@ -343,9 +358,12 @@ class MainActivity : ComponentActivity() {
 							connectedDeviceName = connectedServerName,
 							connectedEndpointInfo = connectedEndpoint?.let { "ws://${it.host}:${it.port}" },
 							availableDiscoveredDevices = discoveredDevices,
+							pairedDevices = pairedDevices,
 							onToggleDesktopOutput = { syncViewModel.toggleDesktopOutput(it) },
 							onToggleLocalOutput = { syncViewModel.toggleLocalOutput(it) },
 							onConnectToDevice = { syncViewModel.connectToDevice(it) },
+							onConnectToPairedDevice = { syncViewModel.connectToPairedDevice(it) },
+							onDeletePairing = { syncViewModel.deletePairing(it) },
 							sleepTimerState = sleepTimerState,
 							onStartSleepTimerMinutes = { mins, finishLast, endOfQ ->
 								sleepTimerManager.startTimerByMinutes(mins, finishLast, endOfQ)

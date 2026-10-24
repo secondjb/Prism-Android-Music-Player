@@ -473,11 +473,12 @@ private fun LyricLineRow(
                         style = SpanStyle(
                             color = sylColor,
                             fontWeight = if (isCurrentSyl) FontWeight.ExtraBold else FontWeight.Bold,
-                            fontSize = activeBaseSize
+                            fontSize = activeBaseSize,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.SansSerif
                         )
                     ) {
                         append(syl.text)
-                        if (syl.hasTrailingSpace) append(" ")
+                        if (syl.hasTrailingSpace && !syl.text.endsWith(" ")) append(" ")
                     }
                 }
             }

@@ -23,10 +23,14 @@ fun FluidArtworkBackground(
     artworkUri: String?,
     modifier: Modifier = Modifier
 ) {
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color(0xFF0E0E12))
+    ) {
         Crossfade(
             targetState = artworkUri,
-            animationSpec = tween(durationMillis = 600),
+            animationSpec = tween(durationMillis = 400),
             label = "ArtworkBackgroundCrossfade"
         ) { uri ->
             if (uri != null) {
@@ -42,7 +46,7 @@ fun FluidArtworkBackground(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background)
+                        .background(Color(0xFF14141A))
                 )
             }
         }

@@ -37,15 +37,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Material 3 Expressive synchronized lyrics viewer.
- * Highlights the active lyric line, auto-scrolls in rhythm with playback,
- * and allows the user to tap any lyric line to jump directly to that point in the song.
+ * Material 3 Expressive synchronized lyrics preview card for NowPlayingScreen.
+ * Features centered typography, word-by-word syllable pacing, and seamless viewport centering.
  */
 @Composable
 fun ModernLyricsView(
@@ -74,7 +78,8 @@ fun ModernLyricsView(
                 Text(
                     text = "No lyrics available for this track",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    fontFamily = FontFamily.SansSerif
                 )
             }
         }
@@ -91,7 +96,7 @@ fun ModernLyricsView(
 
     val listState = rememberLazyListState()
 
-    // Smoothly scroll to active line
+    // Keep active lyric line centered in the preview card viewport
     LaunchedEffect(activeIndex) {
         if (activeIndex in parsedLines.indices) {
             val targetScroll = (activeIndex - 2).coerceAtLeast(0)
@@ -106,7 +111,7 @@ fun ModernLyricsView(
         shape = MaterialTheme.shapes.large
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Lyrics Header
+            // Lyrics Header with Tap-to-Fullscreen
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -128,7 +133,8 @@ fun ModernLyricsView(
                     Text(
                         text = "Lyrics",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.SansSerif
                     )
                 }
 
@@ -141,14 +147,14 @@ fun ModernLyricsView(
                 }
             }
 
-            // Lyrics Scroll List
+            // Lyrics Scroll List with Centered Alignment & Viewport Balancing
             LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 64.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
                 itemsIndexed(parsedLines) { index, line ->
                     val isActive = index == activeIndex
@@ -158,7 +164,7 @@ fun ModernLyricsView(
                         label = "lyricTextColor"
                     )
                     val alpha by animateFloatAsState(
-                        targetValue = if (isActive) 1.0f else 0.40f,
+                        targetValue = if (isActive) 1.0f else 0.38f,
                         animationSpec = tween(durationMillis = 200),
                         label = "lyricAlpha"
                     )
@@ -169,39 +175,80 @@ fun ModernLyricsView(
                             .alpha(alpha)
                             .clickable { onSeek(line.timestampMs) }
                             .padding(vertical = 4.dp),
-                        horizontalAlignment = Alignment.Start
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(
-                            text = line.text,
-                            style = if (isActive) {
-                                MaterialTheme.typography.titleLarge.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = if (isFullScreen) 24.sp else 20.sp
-                                )
-                            } else {
-                                MaterialTheme.typography.bodyLarge.copy(
-                                    fontWeight = FontWeight.Normal,
-                                    fontSize = if (isFullScreen) 18.sp else 16.sp
-                                )
-                            },
-                            color = textColor,
-                            textAlign = TextAlign.Start,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        if (!line.romanized.isNullOrBlank()) {
-                            Spacer(Modifier.height(2.dp))
+                        // Word-by-word syllable lighting when active
+                        if (isActive && line.hasSyllables) {
+                            val annotated = buildAnnotatedString {
+                                for (syl in line.syllables) {
+                                    val isPast = currentPositionMs >= syl.timeMs + syl.durationMs
+                                    val isCurrent = currentPositionMs in syl.timeMs until (syl.timeMs + syl.durationMs)
+                                    val color = when {
+                                        isPast || isCurrent -> MaterialTheme.colorScheme.primary
+                                        else -> MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+                                    }
+
+                                    withStyle(
+                                        SpanStyle(
+                                            color = color,
+                                            fontWeight = if (isCurrent) FontWeight.ExtraBold else FontWeight.Bold,
+                                            fontSize = if (isFullScreen) 24.sp else 20.sp,
+                                            fontFamily = FontFamily.SansSerif
+                                        )
+                                    ) {
+                                        append(syl.text)
+                                        if (syl.hasTrailingSpace && !syl.text.endsWith(" ")) {
+                                            append(" ")
+                                        }
+                                    }
+                                }
+                            }
                             Text(
-                                text = line.romanized,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = if (isActive) 0.85f else 0.45f)
+                                text = annotated,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        } else {
+                            Text(
+                                text = line.text,
+                                style = if (isActive) {
+                                    MaterialTheme.typography.titleLarge.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = if (isFullScreen) 24.sp else 20.sp,
+                                        fontFamily = FontFamily.SansSerif
+                                    )
+                                } else {
+                                    MaterialTheme.typography.bodyLarge.copy(
+                                        fontWeight = FontWeight.Normal,
+                                        fontSize = if (isFullScreen) 18.sp else 16.sp,
+                                        fontFamily = FontFamily.SansSerif
+                                    )
+                                },
+                                color = textColor,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
+
+                        // Romanization Subline
+                        if (!line.romanized.isNullOrBlank()) {
+                            Spacer(Modifier.height(3.dp))
+                            Text(
+                                text = line.romanized,
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.SansSerif),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = if (isActive) 0.85f else 0.45f),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+
+                        // Translation Subline
                         if (!line.translation.isNullOrBlank()) {
                             Spacer(Modifier.height(2.dp))
                             Text(
                                 text = line.translation,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (isActive) 0.90f else 0.50f)
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.SansSerif),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (isActive) 0.90f else 0.50f),
+                                textAlign = TextAlign.Center
                             )
                         }
                     }

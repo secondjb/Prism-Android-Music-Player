@@ -5,6 +5,19 @@ import android.content.SharedPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+
+@Serializable
+data class PairedDevice(
+    val id: String,
+    val name: String,
+    val host: String,
+    val port: Int,
+    val token: String,
+    val lastConnectedTimeMs: Long = System.currentTimeMillis()
+)
 
 /**
  * Manages persisted user preferences for Prism Android with feature parity to Prism Windows.
@@ -101,6 +114,34 @@ class PrismPreferencesRepository(context: Context) {
         _preferences.value = _preferences.value.copy(isDynamicThemingEnabled = enabled)
     }
 
+    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+    private val _pairedDevices = MutableStateFlow(loadPairedDevices())
+    val pairedDevices: StateFlow<List<PairedDevice>> = _pairedDevices.asStateFlow()
+
+    private fun loadPairedDevices(): List<PairedDevice> {
+        val raw = prefs.getString(KEY_PAIRED_DEVICES, null) ?: return emptyList()
+        return try {
+            json.decodeFromString<List<PairedDevice>>(raw)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun savePairedDevice(device: PairedDevice) {
+        val current = _pairedDevices.value.filter { !(it.host == device.host && it.port == device.port) }.toMutableList()
+        current.add(0, device) // most recent at top
+        val serialized = json.encodeToString(current)
+        prefs.edit().putString(KEY_PAIRED_DEVICES, serialized).apply()
+        _pairedDevices.value = current
+    }
+
+    fun removePairedDevice(deviceIdOrHost: String) {
+        val updated = _pairedDevices.value.filter { it.id != deviceIdOrHost && it.host != deviceIdOrHost }
+        val serialized = json.encodeToString(updated)
+        prefs.edit().putString(KEY_PAIRED_DEVICES, serialized).apply()
+        _pairedDevices.value = updated
+    }
+
     fun setDarkThemeMode(mode: String) {
         prefs.edit().putString(KEY_DARK_THEME_MODE, mode).apply()
         _preferences.value = _preferences.value.copy(darkThemeMode = mode)
@@ -120,5 +161,6 @@ class PrismPreferencesRepository(context: Context) {
         private const val KEY_WAVY_SEEKBAR = "key_wavy_seekbar"
         private const val KEY_DYNAMIC_THEME = "key_dynamic_theme"
         private const val KEY_DARK_THEME_MODE = "key_dark_theme_mode"
+        private const val KEY_PAIRED_DEVICES = "key_paired_devices"
     }
 }

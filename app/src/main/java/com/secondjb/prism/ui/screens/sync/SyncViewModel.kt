@@ -27,15 +27,20 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 
+import com.secondjb.prism.core.data.PairedDevice
+import com.secondjb.prism.core.data.PrismPreferencesRepository
+
 class SyncViewModel(
     val transport: SyncTransport = LanWebSocketSyncTransport(),
     val discoveryManager: NsdDiscoveryManager? = null,
     private val localTracksProvider: (suspend () -> List<Track>)? = null,
+    private val preferencesRepository: PrismPreferencesRepository? = null,
     private val cacheDir: File? = null
 ) : ViewModel() {
 
     val connectionState: StateFlow<TransportConnectionState> = transport.connectionState
     val discoveredDevices: StateFlow<List<DeviceNode>> = discoveryManager?.discoveredDevices ?: MutableStateFlow(emptyList())
+    val pairedDevices: StateFlow<List<PairedDevice>> = preferencesRepository?.pairedDevices ?: MutableStateFlow(emptyList())
 
     private val _isDesktopOutputEnabled = MutableStateFlow(false)
     val isDesktopOutputEnabled: StateFlow<Boolean> = _isDesktopOutputEnabled.asStateFlow()
@@ -61,6 +66,7 @@ class SyncViewModel(
     private var cachedLocalTracks: List<Track> = emptyList()
     private var lastSyncRealtime: Long = 0L
     private var basePositionMs: Long = 0L
+    private var lastPairingToken: String = ""
 
     init {
         discoveryManager?.startDiscovery()
@@ -68,6 +74,21 @@ class SyncViewModel(
         observeIncomingFrames()
         observeConnectionState()
         startContinuousProgressTicker()
+        autoConnectToLastPairedDevice()
+    }
+
+    private fun autoConnectToLastPairedDevice() {
+        val last = preferencesRepository?.pairedDevices?.value?.firstOrNull() ?: return
+        viewModelScope.launch {
+            Log.i("PrismSync", "Auto-connecting to previously paired desktop: ${last.name} (${last.host}:${last.port})")
+            val endpoint = ConnectionEndpoint(host = last.host, port = last.port, authToken = last.token)
+            _connectedEndpoint.value = endpoint
+            _connectedServerName.value = last.name
+            lastPairingToken = last.token
+            transport.connect(endpoint).onFailure {
+                Log.d("PrismSync", "Auto-connect deferred: ${it.message}")
+            }
+        }
     }
 
     private fun loadLocalTracks() {
@@ -149,6 +170,23 @@ class SyncViewModel(
                                 _connectedServerName.value = frame.serverDeviceName
                             }
                             _isDesktopOutputEnabled.value = true
+
+                            // Persist paired device for seamless automatic reconnection
+                            preferencesRepository?.let { repo ->
+                                val endpoint = _connectedEndpoint.value
+                                if (endpoint != null && lastPairingToken.isNotBlank()) {
+                                    repo.savePairedDevice(
+                                        PairedDevice(
+                                            id = "${endpoint.host}:${endpoint.port}",
+                                            name = frame.serverDeviceName.ifBlank { "Prism Desktop" },
+                                            host = endpoint.host,
+                                            port = endpoint.port,
+                                            token = lastPairingToken,
+                                            lastConnectedTimeMs = System.currentTimeMillis()
+                                        )
+                                    )
+                                }
+                            }
                         } else {
                             _lastPairingError.value = "Pairing rejected by desktop: invalid token"
                         }
@@ -247,6 +285,7 @@ class SyncViewModel(
         result.onSuccess { pairing ->
             _lastPairingError.value = null
             _connectedEndpoint.value = pairing.endpoint
+            lastPairingToken = pairing.endpoint.authToken ?: ""
             viewModelScope.launch {
                 transport.connect(pairing.endpoint)
                     .onFailure { err ->
@@ -255,6 +294,31 @@ class SyncViewModel(
             }
         }.onFailure { err ->
             _lastPairingError.value = "Invalid pairing code: ${err.message}"
+        }
+    }
+
+    fun connectToPairedDevice(device: PairedDevice) {
+        viewModelScope.launch {
+            _lastPairingError.value = null
+            val endpoint = ConnectionEndpoint(host = device.host, port = device.port, authToken = device.token)
+            _connectedEndpoint.value = endpoint
+            _connectedServerName.value = device.name
+            lastPairingToken = device.token
+            transport.connect(endpoint)
+                .onFailure { err ->
+                    _lastPairingError.value = "Failed to connect to ${device.name}: ${err.message}"
+                }
+        }
+    }
+
+    fun deletePairing(device: PairedDevice) {
+        preferencesRepository?.removePairedDevice(device.id)
+        if (_connectedEndpoint.value?.host == device.host && _connectedEndpoint.value?.port == device.port) {
+            viewModelScope.launch {
+                transport.disconnect()
+            }
+            _isDesktopOutputEnabled.value = false
+            _isLocalOutputEnabled.value = true
         }
     }
 

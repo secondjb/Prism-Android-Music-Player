@@ -63,6 +63,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.secondjb.prism.core.data.PairedDevice
 import com.secondjb.prism.core.lyrics.PrismLyricsEngine
 import com.secondjb.prism.domain.model.DeviceNode
 import com.secondjb.prism.domain.model.PlaybackState
@@ -106,12 +107,21 @@ fun NowPlayingScreen(
     connectedDeviceName: String? = null,
     connectedEndpointInfo: String? = null,
     availableDiscoveredDevices: List<DeviceNode> = emptyList(),
+    pairedDevices: List<PairedDevice> = emptyList(),
     onToggleDesktopOutput: (Boolean) -> Unit = {},
     onToggleLocalOutput: (Boolean) -> Unit = {},
     onConnectToDevice: (DeviceNode) -> Unit = {},
+    onConnectToPairedDevice: (PairedDevice) -> Unit = {},
+    onDeletePairing: (PairedDevice) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val track = playbackState.currentTrack ?: return
+    var cachedTrack by remember { mutableStateOf(playbackState.currentTrack) }
+    LaunchedEffect(playbackState.currentTrack) {
+        if (playbackState.currentTrack != null) {
+            cachedTrack = playbackState.currentTrack
+        }
+    }
+    val track = playbackState.currentTrack ?: cachedTrack ?: return
 
     var showQueueSheet by remember { mutableStateOf(false) }
     var showDeviceSheet by remember { mutableStateOf(false) }
@@ -155,6 +165,7 @@ fun NowPlayingScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
+            .background(Color(0xFF0C0C10))
             .pointerInput(Unit) {
                 var totalDragY = 0f
                 detectVerticalDragGestures(
@@ -379,10 +390,14 @@ fun NowPlayingScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Swap Playback Device Button
-                FilledTonalIconButton(
+                FilledIconButton(
                     onClick = { showDeviceSheet = true },
                     shape = PillShape,
-                    modifier = Modifier.height(40.dp)
+                    modifier = Modifier.height(40.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp),
@@ -407,18 +422,14 @@ fun NowPlayingScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Sleep Timer Button
-                    FilledTonalIconButton(
+                    FilledIconButton(
                         onClick = { showSleepTimer = true },
                         shape = CircleShape,
                         modifier = Modifier.size(40.dp),
-                        colors = if (sleepTimerState.isActive) {
-                            IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            )
-                        } else {
-                            IconButtonDefaults.filledTonalIconButtonColors()
-                        }
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
                     ) {
                         Icon(
                             imageVector = Icons.Default.Timer,
@@ -428,10 +439,14 @@ fun NowPlayingScreen(
                     }
 
                     // Queue Modal/Drawer Button
-                    FilledTonalIconButton(
+                    FilledIconButton(
                         onClick = { showQueueSheet = true },
                         shape = CircleShape,
-                        modifier = Modifier.size(40.dp)
+                        modifier = Modifier.size(40.dp),
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.QueueMusic,
@@ -453,7 +468,7 @@ fun NowPlayingScreen(
                 onToggleFullScreen = { isLyricsFullscreen = true },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(240.dp)
+                    .height(420.dp)
             )
 
             Spacer(Modifier.height(36.dp))
@@ -484,9 +499,12 @@ fun NowPlayingScreen(
             connectedServerName = connectedDeviceName,
             connectedEndpointInfo = connectedEndpointInfo,
             availableDiscoveredDevices = availableDiscoveredDevices,
+            pairedDevices = pairedDevices,
             onToggleDesktopOutput = onToggleDesktopOutput,
             onToggleLocalOutput = onToggleLocalOutput,
             onConnectToDevice = onConnectToDevice,
+            onConnectToPairedDevice = onConnectToPairedDevice,
+            onDeletePairing = onDeletePairing,
             onPairQrClick = {
                 showDeviceSheet = false
                 onPairQrClick()

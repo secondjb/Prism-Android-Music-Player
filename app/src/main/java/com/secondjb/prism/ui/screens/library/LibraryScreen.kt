@@ -714,21 +714,6 @@ private fun TrackListView(
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f, fill = false)
                             )
-                            if (track.audioFormatInfo.isHiRes) {
-                                Spacer(Modifier.width(6.dp))
-                                Surface(
-                                    shape = PillShape,
-                                    color = MaterialTheme.colorScheme.tertiaryContainer,
-                                    modifier = Modifier.padding(horizontal = 2.dp)
-                                ) {
-                                    Text(
-                                        text = "HI-RES",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
                         }
                     }
 
