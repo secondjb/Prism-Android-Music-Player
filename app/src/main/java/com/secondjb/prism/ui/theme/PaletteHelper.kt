@@ -52,7 +52,13 @@ fun extractPaletteFromBitmap(bitmap: Bitmap): PrismAlbumPalette {
     val muted = palette.mutedSwatch?.rgb?.let { Color(it) }
     val dominant = palette.dominantSwatch?.rgb?.let { Color(it) } ?: Color(0xFF6750A4)
 
-    val primaryColor = vibrant ?: lightVibrant ?: dominant
+    val defaultAccent = Color(0xFF8B5CF6) // Fallback vibrant purple
+    val candidatePrimary = vibrant ?: lightVibrant ?: dominant
+    val primaryColor = if (candidatePrimary.toHsl()[2] < 0.22f) {
+        lightVibrant ?: defaultAccent
+    } else {
+        candidatePrimary
+    }
     val secondaryColor = darkVibrant ?: muted ?: dominant.adjustLuminance(0.7f)
     val tertiaryColor = lightVibrant ?: muted ?: primaryColor.adjustLuminance(1.2f)
 
@@ -74,11 +80,11 @@ fun extractPaletteFromBitmap(bitmap: Bitmap): PrismAlbumPalette {
  */
 fun buildDynamicColorScheme(palette: PrismAlbumPalette, isDark: Boolean): ColorScheme {
     return if (isDark) {
-        // Guarantee accessible primary color with high contrast on dark surface
-        val primary = palette.primary.adjustLuminance(1.15f)
-        val primaryContainer = palette.primary.adjustLuminance(0.28f)
-        val secondary = palette.secondary.adjustLuminance(1.1f)
-        val secondaryContainer = palette.secondary.adjustLuminance(0.24f)
+        // Guarantee accessible primary color with high contrast on dark surface (Tone ~80)
+        val primary = palette.primary.adjustLuminance(1.15f).clampLightness(minL = 0.68f, maxL = 0.88f)
+        val primaryContainer = palette.primary.adjustLuminance(0.28f).clampLightness(minL = 0.18f, maxL = 0.32f)
+        val secondary = palette.secondary.adjustLuminance(1.1f).clampLightness(minL = 0.60f, maxL = 0.85f)
+        val secondaryContainer = palette.secondary.adjustLuminance(0.24f).clampLightness(minL = 0.15f, maxL = 0.30f)
 
         // Maintain rock-solid dark surface hierarchy (never black-out)
         val surfaceBase = Color(0xFF141519)

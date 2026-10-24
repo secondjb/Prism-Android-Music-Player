@@ -95,6 +95,17 @@ fun Color.adjustLuminance(factor: Float): Color {
 }
 
 /**
+ * Ensures the lightness of this color is at least [minL] and at most [maxL],
+ * guaranteeing high contrast against dark surfaces while preserving vibrant color.
+ */
+fun Color.clampLightness(minL: Float = 0.65f, maxL: Float = 0.90f): Color {
+    val hsl = toHsl()
+    val newL = hsl[2].coerceIn(minL, maxL)
+    val newS = if (hsl[1] < 0.25f) 0.50f else hsl[1]
+    return hslToColor(hsl[0], newS, newL, alpha)
+}
+
+/**
  * Calculates a high-contrast text/icon color (pure black or white) for any background color.
  */
 fun Color.contrastContentColor(): Color {

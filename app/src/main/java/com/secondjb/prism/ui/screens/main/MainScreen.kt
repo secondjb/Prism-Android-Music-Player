@@ -41,14 +41,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.secondjb.prism.core.stats.StatsFilterRange
 import com.secondjb.prism.domain.model.Track
 import com.secondjb.prism.ui.theme.PillShape
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 
 @Composable
 fun MainScreen(
     uiState: MainUiState,
     onTrackClick: (Track, List<Track>) -> Unit,
     onShuffleAllClick: () -> Unit,
+    onSelectStatsRange: (StatsFilterRange) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -161,19 +165,50 @@ fun MainScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Equalizer,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "Listening Stats",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    // Time Range Selector Chips
+                    LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Equalizer,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "Listening Stats",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        items(StatsFilterRange.values()) { range ->
+                            val label = when (range) {
+                                StatsFilterRange.TODAY -> "Today"
+                                StatsFilterRange.SEVEN_DAYS -> "7 Days"
+                                StatsFilterRange.THIRTY_DAYS -> "30 Days"
+                                StatsFilterRange.ALL_TIME -> "All Time"
+                            }
+                            val isSelected = uiState.selectedRange == range
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { onSelectStatsRange(range) },
+                                label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                                shape = PillShape,
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            )
+                        }
                     }
 
                     Row(
@@ -181,7 +216,7 @@ fun MainScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         StatMetric(
-                            label = "Total Tracks",
+                            label = "Plays",
                             value = "${stats.totalTracksPlayed}"
                         )
                         StatMetric(
@@ -194,7 +229,7 @@ fun MainScreen(
                         )
                     }
 
-                    if (stats.topArtist != null) {
+                    if (stats.topArtist != null || uiState.aggregatedStats.topSong != null) {
                         Surface(
                             shape = MaterialTheme.shapes.medium,
                             color = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -205,20 +240,43 @@ fun MainScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Column {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = "Top Artist",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Text(
-                                        text = stats.topArtist,
+                                        text = stats.topArtist ?: "None yet",
                                         style = MaterialTheme.typography.bodyLarge,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
-                                if (stats.topAlbum != null) {
-                                    Column(horizontalAlignment = Alignment.End) {
+                                if (uiState.aggregatedStats.topSong != null) {
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        horizontalAlignment = Alignment.End
+                                    ) {
+                                        Text(
+                                            text = "Top Song",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = uiState.aggregatedStats.topSong ?: "",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                } else if (stats.topAlbum != null) {
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        horizontalAlignment = Alignment.End
+                                    ) {
                                         Text(
                                             text = "Top Album",
                                             style = MaterialTheme.typography.labelSmall,

@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -88,11 +89,18 @@ fun LibraryScreen(
     onAddTrackToPlaylist: (String, String) -> Unit = { _, _ -> },
     onRemoveTrackFromPlaylist: (String, String) -> Unit = { _, _ -> },
     onToggleLikeTrack: (String) -> Unit = {},
+    onPlayNext: (Track) -> Unit = {},
+    onAddToQueue: (Track) -> Unit = {},
+    onGoToQueue: () -> Unit = {},
+    onGoToAlbum: (String) -> Unit = {},
+    onGoToArtist: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
     var trackForPlaylistDialog by remember { mutableStateOf<Track?>(null) }
+    var actionTrack by remember { mutableStateOf<Track?>(null) }
+    var actionTrackIsInPlaylist by remember { mutableStateOf(false) }
 
     // If viewing a single playlist detail
     if (uiState.activePlaylist != null) {
@@ -116,8 +124,27 @@ fun LibraryScreen(
             onDeletePlaylist = {
                 onDeletePlaylist(uiState.activePlaylist.id)
             },
+            onMoreClick = { track ->
+                actionTrack = track
+                actionTrackIsInPlaylist = true
+            },
             modifier = modifier
         )
+        if (actionTrack != null) {
+            val currTrack = actionTrack!!
+            TrackActionsBottomSheet(
+                track = currTrack,
+                isInPlaylist = actionTrackIsInPlaylist,
+                onDismiss = { actionTrack = null },
+                onPlayNext = { onPlayNext(currTrack) },
+                onAddToQueue = { onAddToQueue(currTrack) },
+                onAddToPlaylist = { trackForPlaylistDialog = currTrack },
+                onRemoveFromPlaylist = { onRemoveTrackFromPlaylist(uiState.activePlaylist.id, currTrack.id) },
+                onGoToQueue = onGoToQueue,
+                onGoToAlbum = onGoToAlbum,
+                onGoToArtist = onGoToArtist
+            )
+        }
         return
     }
 
@@ -242,6 +269,10 @@ fun LibraryScreen(
                             onTogglePin = onTogglePin,
                             onToggleLike = onToggleLikeTrack,
                             onAddToPlaylist = { trackForPlaylistDialog = it },
+                            onMoreClick = {
+                                actionTrack = it
+                                actionTrackIsInPlaylist = false
+                            },
                             onTrackClick = onTrackClick
                         )
                     }
@@ -324,6 +355,21 @@ fun LibraryScreen(
             }
         )
     }
+
+    actionTrack?.let { currTrack ->
+        TrackActionsBottomSheet(
+            track = currTrack,
+            isInPlaylist = actionTrackIsInPlaylist,
+            onDismiss = { actionTrack = null },
+            onPlayNext = { onPlayNext(currTrack) },
+            onAddToQueue = { onAddToQueue(currTrack) },
+            onAddToPlaylist = { trackForPlaylistDialog = currTrack },
+            onRemoveFromPlaylist = null,
+            onGoToQueue = onGoToQueue,
+            onGoToAlbum = onGoToAlbum,
+            onGoToArtist = onGoToArtist
+        )
+    }
 }
 
 @Composable
@@ -336,6 +382,7 @@ private fun PlaylistDetailScreen(
     onShuffleAll: (List<Track>) -> Unit,
     onRemoveTrack: (String) -> Unit,
     onDeletePlaylist: () -> Unit,
+    onMoreClick: (Track) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -476,6 +523,9 @@ private fun PlaylistDetailScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
+                            IconButton(onClick = { onMoreClick(track) }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "More Options", modifier = Modifier.size(20.dp))
+                            }
                             IconButton(onClick = { onRemoveTrack(track.id) }) {
                                 Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(18.dp))
                             }
@@ -603,6 +653,7 @@ private fun TrackListView(
     onTogglePin: (String) -> Unit,
     onToggleLike: (String) -> Unit = {},
     onAddToPlaylist: (Track) -> Unit = {},
+    onMoreClick: (Track) -> Unit = {},
     onTrackClick: (Track, List<Track>) -> Unit
 ) {
     val sortedTracks = remember(tracks, pinnedIds) {
@@ -696,11 +747,11 @@ private fun TrackListView(
 
                     // Add to Playlist Button
                     IconButton(
-                        onClick = { onAddToPlaylist(track) },
+                        onClick = { onMoreClick(track) },
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.PlaylistAdd,
+                            imageVector = Icons.Default.MoreVert,
                             contentDescription = "Add to playlist",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)
@@ -717,6 +768,7 @@ private fun TrackGridView(
     tracks: List<Track>,
     pinnedIds: Set<String>,
     onTogglePin: (String) -> Unit,
+    onMoreClick: (Track) -> Unit = {},
     onTrackClick: (Track, List<Track>) -> Unit
 ) {
     val sortedTracks = remember(tracks, pinnedIds) {
@@ -773,20 +825,39 @@ private fun TrackGridView(
 
                     Spacer(Modifier.height(8.dp))
 
-                    Text(
-                        text = track.title,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = track.artist,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = track.title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = track.artist,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        IconButton(
+                            onClick = { onMoreClick(track) },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "More options",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
         }

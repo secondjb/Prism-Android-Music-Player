@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -74,11 +75,14 @@ class MainActivity : ComponentActivity() {
 			val repository = remember { MediaStoreAudioRepository(context) }
 			val playlistRepository = remember { PlaylistRepository(context) }
 			val preferencesRepository = remember { PrismPreferencesRepository(context) }
-			val playbackEngine = remember { LocalPlaybackEngine(context) }
+			val statsRepository = remember { com.secondjb.prism.core.stats.ListeningStatsRepository(context) }
+			val playbackEngine = remember { LocalPlaybackEngine(context, statsRepository) }
+			val sleepTimerManager = remember { com.secondjb.prism.core.playback.SleepTimerManager(playbackEngine) }
+			val sleepTimerState by sleepTimerManager.timerState.collectAsState()
 			val discoveryManager = remember { NsdDiscoveryManager(context) }
 			val syncViewModel = remember { SyncViewModel(discoveryManager = discoveryManager) }
 
-			val mainViewModel = remember { MainViewModel(repository) }
+			val mainViewModel = remember { MainViewModel(repository, statsRepository) }
 			val libraryViewModel = remember { LibraryViewModel(repository, playlistRepository) }
 
 			val userPreferences by preferencesRepository.preferences.collectAsState()
@@ -229,7 +233,15 @@ class MainActivity : ComponentActivity() {
 							onClearQueue = { playbackEngine.clearQueue() },
 							onPairQrClick = {
 								showQrPairingDialog = true
-							}
+							},
+							sleepTimerState = sleepTimerState,
+							onStartSleepTimerMinutes = { mins, finishLast, endOfQ ->
+								sleepTimerManager.startTimerByMinutes(mins, finishLast, endOfQ)
+							},
+							onStartSleepTimerTracks = { count, finishLast, endOfQ ->
+								sleepTimerManager.startTimerByTracks(count, finishLast, endOfQ)
+							},
+							onCancelSleepTimer = { sleepTimerManager.cancelTimer() }
 						)
 					}
 
@@ -307,7 +319,19 @@ fun PrismAppRoot(
 									contentDescription = screen.title
 								)
 							},
-							label = { Text(screen.title) }
+							label = {
+								Text(
+									text = screen.title,
+									fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal
+								)
+							},
+							colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+								selectedIconColor = MaterialTheme.colorScheme.primary,
+								selectedTextColor = MaterialTheme.colorScheme.primary,
+								indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+								unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+								unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+							)
 						)
 					}
 				}
@@ -323,7 +347,8 @@ fun PrismAppRoot(
 				MainScreen(
 					uiState = mainState,
 					onTrackClick = onPlayTrack,
-					onShuffleAllClick = onShuffleAll
+					onShuffleAllClick = onShuffleAll,
+					onSelectStatsRange = { mainViewModel.setStatsRange(it) }
 				)
 			}
 
@@ -341,7 +366,18 @@ fun PrismAppRoot(
 					onDeletePlaylist = libraryViewModel::deletePlaylist,
 					onAddTrackToPlaylist = libraryViewModel::addTrackToPlaylist,
 					onRemoveTrackFromPlaylist = libraryViewModel::removeTrackFromPlaylist,
-					onToggleLikeTrack = libraryViewModel::toggleLikeTrack
+					onToggleLikeTrack = libraryViewModel::toggleLikeTrack,
+					onPlayNext = { playbackEngine.playNext(it) },
+					onAddToQueue = { playbackEngine.addToQueue(it) },
+					onGoToQueue = onExpandNowPlaying,
+					onGoToAlbum = { albumName ->
+						libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ALBUMS)
+						libraryViewModel.setSearchQuery(albumName)
+					},
+					onGoToArtist = { artistName ->
+						libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ARTISTS)
+						libraryViewModel.setSearchQuery(artistName)
+					}
 				)
 			}
 

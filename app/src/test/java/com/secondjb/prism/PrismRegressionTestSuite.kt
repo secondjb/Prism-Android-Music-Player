@@ -6,6 +6,7 @@ import com.secondjb.prism.data.MediaStoreAudioRepositoryTest
 import com.secondjb.prism.domain.DomainModelsTest
 import com.secondjb.prism.playback.PlaybackEngineTest
 import com.secondjb.prism.playback.PlaybackRegressionTest
+import com.secondjb.prism.playback.SleepTimerManagerTest
 import com.secondjb.prism.sync.SyncProtocolTest
 import com.secondjb.prism.theme.PaletteThemingTest
 import com.secondjb.prism.ui.ComponentsTest
@@ -25,6 +26,7 @@ import org.junit.runners.Suite
     PaletteThemingTest::class,
     PlaybackEngineTest::class,
     PlaybackRegressionTest::class,
+    SleepTimerManagerTest::class,
     MediaStoreAudioRepositoryTest::class,
     LibraryUiStateTest::class,
     ComponentsTest::class,

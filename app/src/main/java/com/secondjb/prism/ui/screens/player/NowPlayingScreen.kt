@@ -78,6 +78,10 @@ import com.secondjb.prism.ui.theme.PillShape
  * Supports swipe-down dismissal, fluid blurred artwork backdrop, LastWave wavy seekbar,
  * audio quality badges, device handover modal, queue sheet, and synced lyrics.
  */
+import androidx.compose.material.icons.filled.Timer
+import com.secondjb.prism.core.playback.SleepTimerState
+import com.secondjb.prism.ui.screens.player.SleepTimerModal
+
 @Composable
 fun NowPlayingScreen(
     playbackState: PlaybackState,
@@ -92,12 +96,17 @@ fun NowPlayingScreen(
     onRemoveQueueIndex: (Int) -> Unit = {},
     onClearQueue: () -> Unit = {},
     onPairQrClick: () -> Unit = {},
+    sleepTimerState: SleepTimerState = SleepTimerState(),
+    onStartSleepTimerMinutes: (Int, Boolean, Boolean) -> Unit = { _, _, _ -> },
+    onStartSleepTimerTracks: (Int, Boolean, Boolean) -> Unit = { _, _, _ -> },
+    onCancelSleepTimer: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val track = playbackState.currentTrack ?: return
 
     var showQueueSheet by remember { mutableStateOf(false) }
     var showDeviceSheet by remember { mutableStateOf(false) }
+    var showSleepTimer by remember { mutableStateOf(false) }
     var isLyricsFullscreen by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
@@ -383,17 +392,44 @@ fun NowPlayingScreen(
                     }
                 }
 
-                // Queue Modal/Drawer Button
-                FilledTonalIconButton(
-                    onClick = { showQueueSheet = true },
-                    shape = CircleShape,
-                    modifier = Modifier.size(40.dp)
+                // Action Buttons: Sleep Timer & Queue
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                        contentDescription = "Queue Drawer",
-                        modifier = Modifier.size(20.dp)
-                    )
+                    // Sleep Timer Button
+                    FilledTonalIconButton(
+                        onClick = { showSleepTimer = true },
+                        shape = CircleShape,
+                        modifier = Modifier.size(40.dp),
+                        colors = if (sleepTimerState.isActive) {
+                            IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            )
+                        } else {
+                            IconButtonDefaults.filledTonalIconButtonColors()
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Timer,
+                            contentDescription = "Sleep Timer",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // Queue Modal/Drawer Button
+                    FilledTonalIconButton(
+                        onClick = { showQueueSheet = true },
+                        shape = CircleShape,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                            contentDescription = "Queue Drawer",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
 
@@ -441,6 +477,17 @@ fun NowPlayingScreen(
                 onPairQrClick()
             },
             onDismiss = { showDeviceSheet = false }
+        )
+    }
+
+    // Sleep Timer Modal
+    if (showSleepTimer) {
+        SleepTimerModal(
+            timerState = sleepTimerState,
+            onStartMinutes = onStartSleepTimerMinutes,
+            onStartTracks = onStartSleepTimerTracks,
+            onCancelTimer = onCancelSleepTimer,
+            onDismiss = { showSleepTimer = false }
         )
     }
 }

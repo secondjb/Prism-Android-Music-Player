@@ -31,6 +31,7 @@ import kotlinx.coroutines.launch
  */
 class LocalPlaybackEngine(
     private val context: Context,
+    private val statsRepository: com.secondjb.prism.core.stats.ListeningStatsRepository? = null,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.Main + Job())
 ) : PlaybackController {
 
@@ -41,7 +42,13 @@ class LocalPlaybackEngine(
     private var mediaController: MediaController? = null
 
     private var currentQueue: List<Track> = emptyList()
+    val customQueueIds = mutableSetOf<String>()
     private var positionTickerJob: Job? = null
+
+    // Listening stats accumulation
+    private var activeListeningMs = 0L
+    private var currentScrobbleTrack: Track? = null
+    private var hasLoggedCurrentTrack = false
 
     init {
         initializeController()
@@ -79,9 +86,16 @@ class LocalPlaybackEngine(
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                // If previous track had accumulated listening time, check if it reached threshold
+                commitActiveListeningEvent()
+
                 val currentMediaId = mediaItem?.mediaId
                 val trackIndex = currentQueue.indexOfFirst { it.id == currentMediaId }
                 val track = if (trackIndex != -1) currentQueue[trackIndex] else null
+
+                currentScrobbleTrack = track
+                activeListeningMs = 0L
+                hasLoggedCurrentTrack = false
 
                 _playbackState.update {
                     it.copy(
@@ -148,10 +162,37 @@ class LocalPlaybackEngine(
                     val pos = controller.currentPosition.coerceAtLeast(0L)
                     val dur = controller.duration.coerceAtLeast(0L)
                     _playbackState.update { it.copy(positionMs = pos, durationMs = dur) }
+
+                    // Accumulate listening time for stats
+                    activeListeningMs += 250L
+                    checkThresholdAndLogEvent()
                 }
-                delay(200)
+                delay(250)
             }
         }
+    }
+
+    private fun checkThresholdAndLogEvent() {
+        val track = currentScrobbleTrack ?: return
+        if (hasLoggedCurrentTrack || statsRepository == null) return
+
+        val durSecs = track.durationSecs
+        val threshold = if (durSecs > 0) {
+            Math.min(30000L, Math.max(5000L, (durSecs * 1000L) / 2))
+        } else {
+            15000L
+        }
+
+        if (activeListeningMs >= threshold) {
+            hasLoggedCurrentTrack = true
+            scope.launch {
+                statsRepository.logListeningEvent(track, activeListeningMs)
+            }
+        }
+    }
+
+    private fun commitActiveListeningEvent() {
+        checkThresholdAndLogEvent()
     }
 
     private fun stopPositionTicker() {
@@ -261,7 +302,18 @@ class LocalPlaybackEngine(
     override fun addToQueue(track: Track) {
         val updatedQueue = currentQueue + track
         currentQueue = updatedQueue
+        customQueueIds.add(track.id)
         mediaController?.addMediaItem(track.toMediaItem())
+        _playbackState.update { it.copy(queue = updatedQueue) }
+    }
+
+    override fun playNext(track: Track) {
+        val currentIndex = _playbackState.value.queueIndex
+        val insertIndex = if (currentIndex != -1 && currentIndex in currentQueue.indices) currentIndex + 1 else currentQueue.size
+        val updatedQueue = currentQueue.toMutableList().apply { add(insertIndex, track) }
+        currentQueue = updatedQueue
+        customQueueIds.add(track.id)
+        mediaController?.addMediaItem(insertIndex, track.toMediaItem())
         _playbackState.update { it.copy(queue = updatedQueue) }
     }
 

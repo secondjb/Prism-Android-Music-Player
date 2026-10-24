@@ -18,60 +18,66 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.TextIncrease
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.secondjb.prism.domain.model.PlaybackState
 import com.secondjb.prism.domain.model.Track
 import com.secondjb.prism.ui.components.FluidArtworkBackground
 import com.secondjb.prism.ui.components.WavySeekBar
 import com.secondjb.prism.ui.components.lyrics.LyricLine
 import com.secondjb.prism.ui.components.lyrics.LrcParser
-import com.secondjb.prism.ui.theme.PillShape
 import kotlinx.coroutines.delay
 
 /**
- * Dedicated Full-Screen Lyrics Page with word-by-word synced highlighting,
- * romanization & translation sublines, LastWave wavy seekbar, and auto-fading playback controls.
+ * Dedicated Full-Screen Lyrics Page matching PixelPlayer aesthetic and Prism Windows functionality:
+ * - Fluid animated artwork backdrop with deep frosted blur scrim.
+ * - Word-by-word synced highlighting and romanization / translation sublines.
+ * - Auto-fades controls after idle, reappears instantly on tap or scroll.
+ * - Status bars and navigation bars padding for unobstructed touch targets.
  */
 @Composable
 fun FullScreenLyricsPage(
@@ -92,11 +98,21 @@ fun FullScreenLyricsPage(
     var showControls by remember { mutableStateOf(true) }
     var isRomanizationVisible by remember { mutableStateOf(true) }
     var isTranslationVisible by remember { mutableStateOf(true) }
+    var fontScale by remember { mutableFloatStateOf(1.0f) }
 
-    // Auto-fade controls after 3.5s idle
+    val listState = rememberLazyListState()
+
+    // When the user starts scrolling, show all buttons immediately!
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress) {
+            showControls = true
+        }
+    }
+
+    // Auto-fade controls after 4 seconds idle
     LaunchedEffect(showControls) {
         if (showControls) {
-            delay(3500L)
+            delay(4000L)
             showControls = false
         }
     }
@@ -112,11 +128,9 @@ fun FullScreenLyricsPage(
         }
     }
 
-    val listState = rememberLazyListState()
-
-    // Smooth auto-scroll keeping active lyric line near center
-    LaunchedEffect(activeIndex) {
-        if (activeIndex in parsedLines.indices) {
+    // Smooth auto-scroll keeping active lyric line near center when user isn't scrolling
+    LaunchedEffect(activeIndex, listState.isScrollInProgress) {
+        if (!listState.isScrollInProgress && activeIndex in parsedLines.indices) {
             val targetScroll = (activeIndex - 2).coerceAtLeast(0)
             listState.animateScrollToItem(targetScroll)
         }
@@ -141,7 +155,7 @@ fun FullScreenLyricsPage(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.55f))
+                .background(Color.Black.copy(alpha = 0.58f))
         )
 
         // Center Lyrics Stream
@@ -160,8 +174,8 @@ fun FullScreenLyricsPage(
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(top = 100.dp, bottom = 180.dp, start = 24.dp, end = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(22.dp)
+                contentPadding = PaddingValues(top = 120.dp, bottom = 200.dp, start = 24.dp, end = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
                 itemsIndexed(parsedLines, key = { index, line -> "$index-${line.timestampMs}" }) { index, line ->
                     val isActive = index == activeIndex
@@ -169,8 +183,8 @@ fun FullScreenLyricsPage(
 
                     val targetAlpha = when {
                         isActive -> 1.0f
-                        isPast -> 0.45f
-                        else -> 0.65f
+                        isPast -> 0.40f
+                        else -> 0.60f
                     }
 
                     LyricLineRow(
@@ -178,6 +192,7 @@ fun FullScreenLyricsPage(
                         isActive = isActive,
                         currentPosMs = playbackState.positionMs,
                         alpha = targetAlpha,
+                        fontScale = fontScale,
                         showRomanization = isRomanizationVisible,
                         showTranslation = isTranslationVisible,
                         onClick = {
@@ -189,36 +204,57 @@ fun FullScreenLyricsPage(
             }
         }
 
-        // Top Floating Header (Fade Away)
+        // Top Floating Header (With subtle gradient, safely below status bar notch)
         AnimatedVisibility(
             visible = showControls,
             enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
             exit = fadeOut() + slideOutVertically(targetOffsetY = { -it }),
-            modifier = Modifier.align(Alignment.TopCenter)
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .zIndex(10f)
         ) {
-            Surface(
-                color = Color.Black.copy(alpha = 0.45f),
-                modifier = Modifier.fillMaxWidth()
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color.Black.copy(alpha = 0.75f),
+                                Color.Black.copy(alpha = 0.40f),
+                                Color.Transparent
+                            )
+                        )
+                    )
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onDismiss) {
+                    // Close / Exit Button
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.12f))
+                    ) {
                         Icon(
-                            imageVector = Icons.Default.FullscreenExit,
+                            imageVector = Icons.Default.Close,
                             contentDescription = "Exit Fullscreen Lyrics",
                             tint = Color.White,
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                     }
 
+                    // Track Title & Artist
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 12.dp)
                     ) {
                         Text(
                             text = track.title,
@@ -237,24 +273,59 @@ fun FullScreenLyricsPage(
                         )
                     }
 
-                    Row {
+                    // Utility Action Buttons Row
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        // Font Size Cycle Toggle
+                        IconButton(
+                            onClick = {
+                                fontScale = when (fontScale) {
+                                    1.0f -> 1.15f
+                                    1.15f -> 1.30f
+                                    else -> 1.0f
+                                }
+                            },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = if (fontScale > 1.0f) 0.25f else 0.12f))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.TextIncrease,
+                                contentDescription = "Cycle Font Size",
+                                tint = if (fontScale > 1.0f) MaterialTheme.colorScheme.primary else Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
                         // Romanization Toggle
-                        IconButton(onClick = { isRomanizationVisible = !isRomanizationVisible }) {
+                        IconButton(
+                            onClick = { isRomanizationVisible = !isRomanizationVisible },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = if (isRomanizationVisible) 0.25f else 0.12f))
+                        ) {
                             Icon(
                                 imageVector = Icons.Default.Language,
                                 contentDescription = "Toggle Romanization",
-                                tint = if (isRomanizationVisible) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.4f),
-                                modifier = Modifier.size(22.dp)
+                                tint = if (isRomanizationVisible) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.5f),
+                                modifier = Modifier.size(20.dp)
                             )
                         }
 
                         // Translation Toggle
-                        IconButton(onClick = { isTranslationVisible = !isTranslationVisible }) {
+                        IconButton(
+                            onClick = { isTranslationVisible = !isTranslationVisible },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = if (isTranslationVisible) 0.25f else 0.12f))
+                        ) {
                             Icon(
                                 imageVector = Icons.Default.Translate,
                                 contentDescription = "Toggle Translation",
-                                tint = if (isTranslationVisible) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.4f),
-                                modifier = Modifier.size(22.dp)
+                                tint = if (isTranslationVisible) MaterialTheme.colorScheme.secondary else Color.White.copy(alpha = 0.5f),
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
@@ -262,24 +333,35 @@ fun FullScreenLyricsPage(
             }
         }
 
-        // Bottom Floating Player Controls & Seekbar (Fade Away)
+        // Bottom Floating Player Controls & Wavy Seekbar (With gradient scrim, safely above navigation bars)
         AnimatedVisibility(
             visible = showControls,
             enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
             exit = fadeOut() + slideOutVertically(targetOffsetY = { it }),
-            modifier = Modifier.align(Alignment.BottomCenter)
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .zIndex(10f)
         ) {
-            Surface(
-                color = Color.Black.copy(alpha = 0.65f),
-                modifier = Modifier.fillMaxWidth()
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.65f),
+                                Color.Black.copy(alpha = 0.90f)
+                            )
+                        )
+                    )
+                    .navigationBarsPadding()
+                    .padding(horizontal = 24.dp, vertical = 16.dp)
             ) {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Wavy Seekbar
+                    // Wavy Animated Seekbar
                     WavySeekBar(
                         positionMs = playbackState.positionMs,
                         durationMs = playbackState.durationMs,
@@ -292,7 +374,7 @@ fun FullScreenLyricsPage(
                         tertiaryColor = MaterialTheme.colorScheme.tertiary
                     )
 
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(12.dp))
 
                     // Playback Buttons Row
                     Row(
@@ -302,13 +384,16 @@ fun FullScreenLyricsPage(
                     ) {
                         IconButton(
                             onClick = onSkipPrevious,
-                            modifier = Modifier.size(48.dp)
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.10f))
                         ) {
                             Icon(
                                 imageVector = Icons.Default.SkipPrevious,
                                 contentDescription = "Previous Track",
                                 tint = Color.White,
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(28.dp)
                             )
                         }
 
@@ -324,19 +409,22 @@ fun FullScreenLyricsPage(
                             Icon(
                                 imageVector = if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                 contentDescription = if (playbackState.isPlaying) "Pause" else "Play",
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(34.dp)
                             )
                         }
 
                         IconButton(
                             onClick = onSkipNext,
-                            modifier = Modifier.size(48.dp)
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.10f))
                         ) {
                             Icon(
                                 imageVector = Icons.Default.SkipNext,
                                 contentDescription = "Next Track",
                                 tint = Color.White,
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(28.dp)
                             )
                         }
                     }
@@ -352,10 +440,16 @@ private fun LyricLineRow(
     isActive: Boolean,
     currentPosMs: Long,
     alpha: Float,
+    fontScale: Float,
     showRomanization: Boolean,
     showTranslation: Boolean,
     onClick: () -> Unit
 ) {
+    val activeBaseSize = (28f * fontScale).sp
+    val inactiveBaseSize = (22f * fontScale).sp
+    val activeLineHeight = (36f * fontScale).sp
+    val inactiveLineHeight = (30f * fontScale).sp
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -379,7 +473,7 @@ private fun LyricLineRow(
                         style = SpanStyle(
                             color = sylColor,
                             fontWeight = if (isCurrentSyl) FontWeight.ExtraBold else FontWeight.Bold,
-                            fontSize = 28.sp
+                            fontSize = activeBaseSize
                         )
                     ) {
                         append(syl.text)
@@ -390,15 +484,15 @@ private fun LyricLineRow(
 
             Text(
                 text = annotated,
-                lineHeight = 36.sp
+                lineHeight = activeLineHeight
             )
         } else {
             Text(
                 text = line.text,
-                fontSize = if (isActive) 28.sp else 22.sp,
+                fontSize = if (isActive) activeBaseSize else inactiveBaseSize,
                 fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
                 color = if (isActive) Color.White else Color.White.copy(alpha = alpha),
-                lineHeight = if (isActive) 36.sp else 30.sp
+                lineHeight = if (isActive) activeLineHeight else inactiveLineHeight
             )
         }
 
@@ -407,10 +501,10 @@ private fun LyricLineRow(
             Spacer(Modifier.height(3.dp))
             Text(
                 text = line.romanized,
-                fontSize = if (isActive) 15.sp else 13.sp,
+                fontSize = ((if (isActive) 15f else 13f) * fontScale).sp,
                 fontWeight = FontWeight.Normal,
                 color = if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.35f),
-                lineHeight = 18.sp
+                lineHeight = (18f * fontScale).sp
             )
         }
 
@@ -419,10 +513,10 @@ private fun LyricLineRow(
             Spacer(Modifier.height(2.dp))
             Text(
                 text = line.translation,
-                fontSize = if (isActive) 15.sp else 13.sp,
+                fontSize = ((if (isActive) 15f else 13f) * fontScale).sp,
                 fontWeight = FontWeight.Normal,
                 color = if (isActive) MaterialTheme.colorScheme.secondary.copy(alpha = 0.90f) else Color.White.copy(alpha = 0.35f),
-                lineHeight = 18.sp
+                lineHeight = (18f * fontScale).sp
             )
         }
     }

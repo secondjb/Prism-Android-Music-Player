@@ -23,6 +23,7 @@ interface PlaybackController {
     fun toggleShuffle()
     fun setVolume(volume: Float)
     fun addToQueue(track: Track)
+    fun playNext(track: Track)
     fun removeFromQueue(index: Int)
     fun reorderQueue(fromIndex: Int, toIndex: Int)
     fun clearQueue()
