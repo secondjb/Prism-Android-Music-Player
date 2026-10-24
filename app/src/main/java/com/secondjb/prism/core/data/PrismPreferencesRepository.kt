@@ -51,7 +51,10 @@ data class PrismPreferences(
     // Listening Stats & Companion Sync
     val autoSyncStats: Boolean = true,
     val preventDoubleCounting: Boolean = true,
-    val isStatsCollectionEnabled: Boolean = true
+    val isStatsCollectionEnabled: Boolean = true,
+
+    // App Updates
+    val checkUpdatesOnStartup: Boolean = true
 )
 
 class PrismPreferencesRepository(context: Context) {
@@ -82,7 +85,8 @@ class PrismPreferencesRepository(context: Context) {
             darkThemeMode = prefs.getString(KEY_DARK_THEME_MODE, "system") ?: "system",
             autoSyncStats = prefs.getBoolean(KEY_AUTO_SYNC_STATS, true),
             preventDoubleCounting = prefs.getBoolean(KEY_PREVENT_DOUBLE_COUNTING, true),
-            isStatsCollectionEnabled = prefs.getBoolean(KEY_STATS_COLLECTION_ENABLED, true)
+            isStatsCollectionEnabled = prefs.getBoolean(KEY_STATS_COLLECTION_ENABLED, true),
+            checkUpdatesOnStartup = prefs.getBoolean(KEY_CHECK_UPDATES_ON_STARTUP, true)
         )
     }
 
@@ -223,6 +227,11 @@ class PrismPreferencesRepository(context: Context) {
         _preferences.value = _preferences.value.copy(lyricsFontScale = scale)
     }
 
+    fun setCheckUpdatesOnStartup(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_CHECK_UPDATES_ON_STARTUP, enabled).apply()
+        _preferences.value = _preferences.value.copy(checkUpdatesOnStartup = enabled)
+    }
+
     companion object {
         private const val PREFS_NAME = "prism_user_preferences"
         private const val KEY_MIN_DURATION = "key_min_duration"
@@ -246,5 +255,6 @@ class PrismPreferencesRepository(context: Context) {
         private const val KEY_LYRICS_ROMANIZATION_MODE = "key_lyrics_romanization_mode"
         private const val KEY_LYRICS_TRANSLATION_MODE = "key_lyrics_translation_mode"
         private const val KEY_LYRICS_FONT_SCALE = "key_lyrics_font_scale"
+        private const val KEY_CHECK_UPDATES_ON_STARTUP = "key_check_updates_on_startup"
     }
 }

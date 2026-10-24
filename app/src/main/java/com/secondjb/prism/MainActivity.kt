@@ -1,5 +1,7 @@
 package com.secondjb.prism
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -12,16 +14,29 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -35,9 +50,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -48,6 +65,8 @@ import com.secondjb.prism.core.data.MediaStoreAudioRepository
 import com.secondjb.prism.core.data.PlaylistRepository
 import com.secondjb.prism.core.data.PrismPreferencesRepository
 import com.secondjb.prism.core.playback.LocalPlaybackEngine
+import com.secondjb.prism.core.update.UpdateChecker
+import com.secondjb.prism.core.update.UpdateResult
 import com.secondjb.prism.core.sync.discovery.NsdDiscoveryManager
 import com.secondjb.prism.core.sync.protocol.CommandAction
 import com.secondjb.prism.core.sync.transport.TransportConnectionState
@@ -402,6 +421,23 @@ class MainActivity : ComponentActivity() {
 
 
 
+			// Automatic GitHub Update Check on Launch
+			var updateBannerInfo by remember { mutableStateOf<UpdateResult.UpdateAvailable?>(null) }
+			LaunchedEffect(userPreferences.checkUpdatesOnStartup) {
+				if (userPreferences.checkUpdatesOnStartup) {
+					val result = UpdateChecker.checkForUpdates()
+					if (result is UpdateResult.UpdateAvailable) {
+						updateBannerInfo = result
+					}
+				}
+			}
+			LaunchedEffect(updateBannerInfo) {
+				if (updateBannerInfo != null) {
+					delay(12000L)
+					updateBannerInfo = null
+				}
+			}
+
 			// Request audio permission on first launch
 			val permissionLauncher = rememberLauncherForActivityResult(
 				contract = ActivityResultContracts.RequestPermission()
@@ -661,7 +697,106 @@ class MainActivity : ComponentActivity() {
 							}
 						)
 					}
+
+					// App Update Notification Toast
+					AnimatedVisibility(
+						visible = updateBannerInfo != null,
+						enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+						exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+						modifier = Modifier
+							.align(Alignment.TopCenter)
+							.statusBarsPadding()
+							.padding(horizontal = 16.dp, vertical = 12.dp)
+					) {
+						updateBannerInfo?.let { update ->
+							UpdateToastBanner(
+								latestVersion = update.latestVersion,
+								releaseName = update.releaseName,
+								onOpenRelease = {
+									val intent = Intent(Intent.ACTION_VIEW, Uri.parse(update.releaseUrl)).apply {
+										flags = Intent.FLAG_ACTIVITY_NEW_TASK
+									}
+									try {
+										context.startActivity(intent)
+									} catch (_: Exception) {}
+									updateBannerInfo = null
+								},
+								onDismiss = {
+									updateBannerInfo = null
+								}
+							)
+						}
+					}
 				}
+			}
+		}
+	}
+}
+
+@Composable
+private fun UpdateToastBanner(
+	latestVersion: String,
+	releaseName: String,
+	onOpenRelease: () -> Unit,
+	onDismiss: () -> Unit,
+	modifier: Modifier = Modifier
+) {
+	Surface(
+		modifier = modifier
+			.fillMaxWidth()
+			.clickable(onClick = onOpenRelease),
+		shape = RoundedCornerShape(20.dp),
+		color = MaterialTheme.colorScheme.surfaceContainerHighest,
+		shadowElevation = 8.dp,
+		border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
+	) {
+		Row(
+			modifier = Modifier
+				.fillMaxWidth()
+				.padding(horizontal = 16.dp, vertical = 12.dp),
+			verticalAlignment = Alignment.CenterVertically,
+			horizontalArrangement = Arrangement.spacedBy(14.dp)
+		) {
+			Surface(
+				shape = CircleShape,
+				color = MaterialTheme.colorScheme.primaryContainer,
+				modifier = Modifier.size(40.dp)
+			) {
+				Box(contentAlignment = Alignment.Center) {
+					Icon(
+						imageVector = Icons.Default.CloudDownload,
+						contentDescription = null,
+						tint = MaterialTheme.colorScheme.onPrimaryContainer,
+						modifier = Modifier.size(22.dp)
+					)
+				}
+			}
+
+			Column(modifier = Modifier.weight(1f)) {
+				Text(
+					text = "Prism Update Available",
+					style = MaterialTheme.typography.titleSmall,
+					fontWeight = FontWeight.Bold,
+					color = MaterialTheme.colorScheme.onSurface
+				)
+				Text(
+					text = "Version ${latestVersion.removePrefix("v")} is ready • Tap to view",
+					style = MaterialTheme.typography.bodySmall,
+					color = MaterialTheme.colorScheme.primary,
+					fontWeight = FontWeight.Medium
+				)
+			}
+
+			IconButton(
+				onClick = onDismiss,
+				modifier = Modifier.size(32.dp)
+			) {
+				Icon(
+					imageVector = Icons.Default.Close,
+					contentDescription = "Dismiss",
+					tint = MaterialTheme.colorScheme.onSurfaceVariant,
+					modifier = Modifier.size(18.dp)
+				)
 			}
 		}
 	}
