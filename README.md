@@ -32,7 +32,6 @@
   - [Prerequisites](#prerequisites)
   - [Building from Source](#building-from-source)
   - [Running Unit Tests](#running-unit-tests)
-- [Packaging and Signing](#packaging-and-signing)
 - [Related Repositories](#related-repositories)
 - [License](#license)
 
@@ -210,41 +209,6 @@ Run the complete regression test suite:
 ```bash
 ./gradlew testDebugUnitTest
 ```
-
----
-
-## Packaging and Signing
-
-To build an optimized, signed release APK ready for distribution or GitHub Releases:
-
-### 1. Generate a Keystore (If not already created)
-
-In Android Studio:
-1. Navigate to **Build > Generate Signed Bundle / APK...**
-2. Select **APK** and click **Next**.
-3. Under **Key store path**, click **Create new...**
-4. Choose a secure storage location outside the project directory.
-5. Enter and confirm passwords for the keystore and the key alias.
-6. Set the key validity to at least 25 years.
-7. Fill in your name/organization details and click **OK**.
-
-Alternatively, generate via the command line with `keytool`:
-```bash
-keytool -genkey -v -keystore prism-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias prism
-```
-
-### 2. Build the Signed APK in Android Studio
-
-1. In Android Studio, go to **Build > Generate Signed Bundle / APK...**
-2. Select **APK** and click **Next**.
-3. Specify your keystore file path, keystore password, key alias, and key password.
-4. Click **Next**.
-5. Select destination folder: `app/release/`.
-6. Choose the **release** build variant.
-7. Ensure **V1 (Jar Signature)** and **V2 (Full APK Signature)** are checked.
-8. Click **Create**.
-9. The signed production APK will be created at:
-   `app/release/app-release.apk`
 
 ---
 
