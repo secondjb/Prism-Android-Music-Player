@@ -564,7 +564,7 @@ fun SettingsScreen(
                             ) {
                                 Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("Smart File Sync", maxLines = 1)
+                                Text("File Sync", maxLines = 1)
                             }
                         }
                     }
