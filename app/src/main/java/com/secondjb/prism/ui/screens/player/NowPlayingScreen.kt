@@ -29,6 +29,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.runtime.collectAsState
+import com.secondjb.prism.core.data.PrismPreferencesRepository
+import com.secondjb.prism.ui.components.lyrics.LyricDisplayMode
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
@@ -115,6 +119,7 @@ fun NowPlayingScreen(
     onConnectToDevice: (DeviceNode) -> Unit = {},
     onConnectToPairedDevice: (PairedDevice) -> Unit = {},
     onDeletePairing: (PairedDevice) -> Unit = {},
+    preferencesRepository: PrismPreferencesRepository? = null,
     modifier: Modifier = Modifier
 ) {
     var cachedTrack by remember { mutableStateOf(playbackState.currentTrack) }
@@ -131,6 +136,15 @@ fun NowPlayingScreen(
     var isLyricsFullscreen by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+    val prefsRepo = preferencesRepository ?: remember { PrismPreferencesRepository(context) }
+    val userPreferences by prefsRepo.preferences.collectAsState()
+    val lyricsRomanizationMode = remember(userPreferences.lyricsRomanizationMode) {
+        LyricDisplayMode.fromString(userPreferences.lyricsRomanizationMode)
+    }
+    val lyricsTranslationMode = remember(userPreferences.lyricsTranslationMode) {
+        LyricDisplayMode.fromString(userPreferences.lyricsTranslationMode)
+    }
+    val lyricsFontScale = userPreferences.lyricsFontScale
     val lyricsEngine = remember { PrismLyricsEngine(context) }
     var resolvedLyrics by remember(track.id) { mutableStateOf(track.lyrics) }
 
@@ -157,7 +171,19 @@ fun NowPlayingScreen(
             onTogglePlayPause = onTogglePlayPause,
             onSkipNext = onSkipNext,
             onSkipPrevious = onSkipPrevious,
-            onDismiss = { isLyricsFullscreen = false }
+            onDismiss = { isLyricsFullscreen = false },
+            initialRomanizationMode = lyricsRomanizationMode,
+            initialTranslationMode = lyricsTranslationMode,
+            initialFontScale = lyricsFontScale,
+            onUpdateRomanizationMode = { mode ->
+                prefsRepo.setLyricsRomanizationMode(mode.name)
+            },
+            onUpdateTranslationMode = { mode ->
+                prefsRepo.setLyricsTranslationMode(mode.name)
+            },
+            onUpdateFontScale = { scale ->
+                prefsRepo.setLyricsFontScale(scale)
+            }
         )
         return
     }
@@ -440,6 +466,23 @@ fun NowPlayingScreen(
                         )
                     }
 
+                    // Full Screen Lyrics Button (between Sleep Timer & Queue)
+                    FilledIconButton(
+                        onClick = { isLyricsFullscreen = true },
+                        shape = CircleShape,
+                        modifier = Modifier.size(40.dp),
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Mic,
+                            contentDescription = "Full Screen Lyrics",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
                     // Queue Modal/Drawer Button
                     FilledIconButton(
                         onClick = { showQueueSheet = true },
@@ -468,6 +511,9 @@ fun NowPlayingScreen(
                 onSeek = onSeek,
                 isFullScreen = false,
                 onToggleFullScreen = { isLyricsFullscreen = true },
+                fontScale = lyricsFontScale,
+                romanizationMode = lyricsRomanizationMode,
+                translationMode = lyricsTranslationMode,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(420.dp)

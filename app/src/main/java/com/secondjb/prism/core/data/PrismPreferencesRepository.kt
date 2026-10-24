@@ -40,6 +40,9 @@ data class PrismPreferences(
     val preferOnlineLyrics: Boolean = false,
     val isRomanizationEnabled: Boolean = true,
     val isWavySeekbarEnabled: Boolean = true,
+    val lyricsRomanizationMode: String = "OFF",
+    val lyricsTranslationMode: String = "OFF",
+    val lyricsFontScale: Float = 1.0f,
 
     // Theme & Appearance
     val isDynamicThemingEnabled: Boolean = true,
@@ -72,6 +75,9 @@ class PrismPreferencesRepository(context: Context) {
             preferOnlineLyrics = prefs.getBoolean(KEY_PREFER_ONLINE, false),
             isRomanizationEnabled = prefs.getBoolean(KEY_ROMANIZATION, true),
             isWavySeekbarEnabled = prefs.getBoolean(KEY_WAVY_SEEKBAR, true),
+            lyricsRomanizationMode = prefs.getString(KEY_LYRICS_ROMANIZATION_MODE, "OFF") ?: "OFF",
+            lyricsTranslationMode = prefs.getString(KEY_LYRICS_TRANSLATION_MODE, "OFF") ?: "OFF",
+            lyricsFontScale = prefs.getFloat(KEY_LYRICS_FONT_SCALE, 1.0f),
             isDynamicThemingEnabled = prefs.getBoolean(KEY_DYNAMIC_THEME, true),
             darkThemeMode = prefs.getString(KEY_DARK_THEME_MODE, "system") ?: "system",
             autoSyncStats = prefs.getBoolean(KEY_AUTO_SYNC_STATS, true),
@@ -202,6 +208,21 @@ class PrismPreferencesRepository(context: Context) {
         _preferences.value = _preferences.value.copy(isStatsCollectionEnabled = enabled)
     }
 
+    fun setLyricsRomanizationMode(mode: String) {
+        prefs.edit().putString(KEY_LYRICS_ROMANIZATION_MODE, mode).apply()
+        _preferences.value = _preferences.value.copy(lyricsRomanizationMode = mode)
+    }
+
+    fun setLyricsTranslationMode(mode: String) {
+        prefs.edit().putString(KEY_LYRICS_TRANSLATION_MODE, mode).apply()
+        _preferences.value = _preferences.value.copy(lyricsTranslationMode = mode)
+    }
+
+    fun setLyricsFontScale(scale: Float) {
+        prefs.edit().putFloat(KEY_LYRICS_FONT_SCALE, scale).apply()
+        _preferences.value = _preferences.value.copy(lyricsFontScale = scale)
+    }
+
     companion object {
         private const val PREFS_NAME = "prism_user_preferences"
         private const val KEY_MIN_DURATION = "key_min_duration"
@@ -222,5 +243,8 @@ class PrismPreferencesRepository(context: Context) {
         private const val KEY_AUTO_SYNC_STATS = "key_auto_sync_stats"
         private const val KEY_PREVENT_DOUBLE_COUNTING = "key_prevent_double_counting"
         private const val KEY_STATS_COLLECTION_ENABLED = "key_stats_collection_enabled"
+        private const val KEY_LYRICS_ROMANIZATION_MODE = "key_lyrics_romanization_mode"
+        private const val KEY_LYRICS_TRANSLATION_MODE = "key_lyrics_translation_mode"
+        private const val KEY_LYRICS_FONT_SCALE = "key_lyrics_font_scale"
     }
 }

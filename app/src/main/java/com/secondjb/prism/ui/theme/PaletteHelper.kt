@@ -26,7 +26,54 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Encapsulates vibrant and dominant swatches extracted from music album art.
+ * Default smooth, rich Prism color stops (Indigo -> Purple -> Pink -> Fuchsia -> Blue -> Violet)
+ * identical to Desktop Windows theme stops.
+ */
+val DefaultPrismGradientStops: List<Color> = listOf(
+    Color(0xFF6366F1), // Indigo
+    Color(0xFF8B5CF6), // Purple
+    Color(0xFFEC4899), // Pink
+    Color(0xFFD946EF), // Fuchsia
+    Color(0xFF3B82F6), // Blue
+    Color(0xFF818CF8)  // Light Indigo
+)
+
+/**
+ * Calculates 6 harmonic, vivid color stops centered around the active album art palette,
+ * mirroring the Windows desktop colorExtractor implementation.
+ */
+fun computePrismGradientStops(
+    primaryColor: Color,
+    secondaryColor: Color? = null,
+    tertiaryColor: Color? = null
+): List<Color> {
+    val (h, s, l) = primaryColor.toHsl()
+    val normSat = (s * 1.15f).coerceIn(0.55f, 0.88f)
+    val normLight = l.coerceIn(0.46f, 0.62f)
+
+    val stop1 = hslToColor(h, normSat, normLight)
+    val stop2 = if (secondaryColor != null) {
+        val (secH, secS, secL) = secondaryColor.toHsl()
+        hslToColor(secH, (secS * 1.1f).coerceIn(0.50f, 0.85f), secL.coerceIn(0.45f, 0.60f))
+    } else {
+        hslToColor((h + 25f) % 360f, normSat * 0.95f, normLight)
+    }
+    val stop3 = if (tertiaryColor != null) {
+        val (tertH, tertS, tertL) = tertiaryColor.toHsl()
+        hslToColor(tertH, (tertS * 1.1f).coerceIn(0.50f, 0.85f), tertL.coerceIn(0.45f, 0.60f))
+    } else {
+        hslToColor((h - 30f + 360f) % 360f, normSat * 0.90f, (normLight * 1.05f).coerceIn(0f, 1f))
+    }
+    val stop4 = hslToColor((h + 50f) % 360f, normSat * 0.85f, (normLight * 1.08f).coerceIn(0f, 0.65f))
+    val stop5 = hslToColor((h - 45f + 360f) % 360f, normSat * 0.90f, (normLight * 0.92f).coerceAtLeast(0.42f))
+    val stop6 = hslToColor((h + 15f) % 360f, (normSat * 1.05f).coerceIn(0f, 0.90f), (normLight * 1.12f).coerceIn(0f, 0.68f))
+
+    return listOf(stop1, stop2, stop3, stop4, stop5, stop6)
+}
+
+/**
+ * Encapsulates vibrant and dominant swatches extracted from music album art,
+ * including dynamic gradient stops for brand headers and logo refraction waves.
  */
 data class PrismAlbumPalette(
     val primary: Color,
@@ -35,7 +82,8 @@ data class PrismAlbumPalette(
     val dominant: Color,
     val surface: Color,
     val onPrimary: Color,
-    val onSurface: Color
+    val onSurface: Color,
+    val gradientStops: List<Color> = computePrismGradientStops(primary, secondary, tertiary)
 )
 
 /**
@@ -198,6 +246,28 @@ fun animateColorScheme(target: ColorScheme): ColorScheme {
         surfaceVariant = surfaceVariant,
         onSurfaceVariant = onSurfaceVariant
     )
+}
+
+/**
+ * Smoothly animates the 6 harmonic Prism color stops with a 350ms tween
+ * to seamlessly transition brand text and logo refraction when album art changes.
+ */
+@Composable
+fun rememberAnimatedPrismGradient(
+    palette: PrismAlbumPalette? = LocalPrismPalette.current
+): List<Color> {
+    val targetStops = palette?.gradientStops?.takeIf { it.size == 6 } ?: DefaultPrismGradientStops
+    val duration = 350
+    val c0 by animateColorAsState(targetStops[0], tween(duration), label = "grad0")
+    val c1 by animateColorAsState(targetStops[1], tween(duration), label = "grad1")
+    val c2 by animateColorAsState(targetStops[2], tween(duration), label = "grad2")
+    val c3 by animateColorAsState(targetStops[3], tween(duration), label = "grad3")
+    val c4 by animateColorAsState(targetStops[4], tween(duration), label = "grad4")
+    val c5 by animateColorAsState(targetStops[5], tween(duration), label = "grad5")
+
+    return remember(c0, c1, c2, c3, c4, c5) {
+        listOf(c0, c1, c2, c3, c4, c5)
+    }
 }
 
 private val paletteCache = LruCache<String, PrismAlbumPalette>(64)

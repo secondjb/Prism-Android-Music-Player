@@ -556,6 +556,7 @@ class MainActivity : ComponentActivity() {
 						}
 						NowPlayingScreen(
 							playbackState = stateForNowPlaying,
+							preferencesRepository = preferencesRepository,
 							onTogglePlayPause = handleTogglePlayPause,
 							onSeek = handleSeek,
 							onSkipNext = handleSkipNext,

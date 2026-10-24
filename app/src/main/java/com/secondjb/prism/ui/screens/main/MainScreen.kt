@@ -21,7 +21,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.MusicNote
@@ -41,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
@@ -51,7 +51,9 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.secondjb.prism.core.stats.StatsFilterRange
 import com.secondjb.prism.domain.model.Track
+import com.secondjb.prism.ui.components.PrismLogo
 import com.secondjb.prism.ui.theme.PillShape
+import com.secondjb.prism.ui.theme.rememberAnimatedPrismGradient
 
 private fun formatMainDuration(totalSeconds: Long): String {
     val hours = totalSeconds / 3600
@@ -77,31 +79,24 @@ fun MainScreen(
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        // Prism Header
+        // Prism Brand Header (SVG Logo + Text themed according to song album art)
         item {
+            val gradientColors = rememberAnimatedPrismGradient()
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Surface(
-                    shape = PillShape,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.size(40.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = "Prism Logo",
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                }
+                PrismLogo(
+                    gradientColors = gradientColors,
+                    modifier = Modifier.size(width = 56.dp, height = 26.dp)
+                )
                 Text(
                     text = "Prism",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        brush = Brush.horizontalGradient(gradientColors),
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 0.5.sp
+                    )
                 )
             }
         }

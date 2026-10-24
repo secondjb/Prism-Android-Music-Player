@@ -58,6 +58,7 @@ class LibraryUiStateTest {
     @Test
     fun testNavigationScreenDefinitions() {
         assertEquals("main", Screen.Main.route)
+        assertEquals("Home", Screen.Main.title)
         assertEquals("library", Screen.Library.route)
         assertEquals("settings", Screen.Settings.route)
         assertEquals(3, Screen.bottomNavItems.size)

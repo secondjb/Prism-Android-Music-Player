@@ -76,6 +76,7 @@ import com.secondjb.prism.domain.model.PlaybackState
 import com.secondjb.prism.domain.model.Track
 import com.secondjb.prism.ui.components.FluidArtworkBackground
 import com.secondjb.prism.ui.components.WavySeekBar
+import com.secondjb.prism.ui.components.lyrics.LyricDisplayMode
 import com.secondjb.prism.ui.components.lyrics.LyricLine
 import com.secondjb.prism.ui.components.lyrics.LrcParser
 import kotlinx.coroutines.delay
@@ -87,23 +88,7 @@ import kotlinx.coroutines.delay
  * - Auto-fades controls after idle, reappears instantly on tap or scroll.
  * - Status bars and navigation bars padding for unobstructed touch targets.
  */
-/**
- * Ternary display mode for Romanization and Translation lines in lyrics.
- * OFF: Subline hidden.
- * BELOW: Shown as secondary subline underneath the main line.
- * REPLACE: Replaces the main lyric text.
- */
-enum class LyricDisplayMode {
-    OFF,
-    BELOW,
-    REPLACE;
 
-    fun next(): LyricDisplayMode = when (this) {
-        OFF -> BELOW
-        BELOW -> REPLACE
-        REPLACE -> OFF
-    }
-}
 
 @Composable
 fun FullScreenLyricsPage(
@@ -115,6 +100,12 @@ fun FullScreenLyricsPage(
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
     onDismiss: () -> Unit,
+    initialRomanizationMode: LyricDisplayMode = LyricDisplayMode.OFF,
+    initialTranslationMode: LyricDisplayMode = LyricDisplayMode.OFF,
+    initialFontScale: Float = 1.0f,
+    onUpdateRomanizationMode: (LyricDisplayMode) -> Unit = {},
+    onUpdateTranslationMode: (LyricDisplayMode) -> Unit = {},
+    onUpdateFontScale: (Float) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     BackHandler(enabled = true) {
@@ -122,9 +113,9 @@ fun FullScreenLyricsPage(
     }
 
     var showControls by remember { mutableStateOf(true) }
-    var romanizationMode by remember { mutableStateOf(LyricDisplayMode.OFF) }
-    var translationMode by remember { mutableStateOf(LyricDisplayMode.OFF) }
-    var fontScale by remember { mutableFloatStateOf(1.0f) }
+    var romanizationMode by remember(initialRomanizationMode) { mutableStateOf(initialRomanizationMode) }
+    var translationMode by remember(initialTranslationMode) { mutableStateOf(initialTranslationMode) }
+    var fontScale by remember(initialFontScale) { mutableFloatStateOf(initialFontScale) }
 
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
@@ -339,11 +330,13 @@ fun FullScreenLyricsPage(
                         IconButton(
                             onClick = {
                                 resetControlsTimer()
-                                fontScale = when (fontScale) {
+                                val nextScale = when (fontScale) {
                                     1.0f -> 1.15f
                                     1.15f -> 1.30f
                                     else -> 1.0f
                                 }
+                                fontScale = nextScale
+                                onUpdateFontScale(nextScale)
                             },
                             modifier = Modifier.size(38.dp)
                         ) {
@@ -365,7 +358,9 @@ fun FullScreenLyricsPage(
                         IconButton(
                             onClick = {
                                 resetControlsTimer()
-                                romanizationMode = romanizationMode.next()
+                                val nextMode = romanizationMode.next()
+                                romanizationMode = nextMode
+                                onUpdateRomanizationMode(nextMode)
                             },
                             modifier = Modifier.size(38.dp)
                         ) {
@@ -387,7 +382,9 @@ fun FullScreenLyricsPage(
                         IconButton(
                             onClick = {
                                 resetControlsTimer()
-                                translationMode = translationMode.next()
+                                val nextMode = translationMode.next()
+                                translationMode = nextMode
+                                onUpdateTranslationMode(nextMode)
                             },
                             modifier = Modifier.size(38.dp)
                         ) {

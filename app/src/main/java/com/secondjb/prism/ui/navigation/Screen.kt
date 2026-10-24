@@ -18,7 +18,7 @@ sealed class Screen(
 ) {
     data object Main : Screen(
         route = "main",
-        title = "Prism",
+        title = "Home",
         selectedIcon = Icons.Filled.Home,
         unselectedIcon = Icons.Outlined.Home
     )

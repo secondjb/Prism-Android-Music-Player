@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Lyrics
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -58,7 +59,10 @@ fun ModernLyricsView(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
     isFullScreen: Boolean = false,
-    onToggleFullScreen: () -> Unit = {}
+    onToggleFullScreen: () -> Unit = {},
+    fontScale: Float = 1.0f,
+    romanizationMode: LyricDisplayMode = LyricDisplayMode.OFF,
+    translationMode: LyricDisplayMode = LyricDisplayMode.OFF
 ) {
     if (lyricsText.isNullOrBlank()) {
         Box(
@@ -108,7 +112,10 @@ fun ModernLyricsView(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp)),
-        shape = MaterialTheme.shapes.large
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.72f)
+        )
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Lyrics Header with Tap-to-Fullscreen
@@ -164,10 +171,26 @@ fun ModernLyricsView(
                         label = "lyricTextColor"
                     )
                     val alpha by animateFloatAsState(
-                        targetValue = if (isActive) 1.0f else 0.38f,
+                        targetValue = if (isActive) 1.0f else 0.35f,
                         animationSpec = tween(durationMillis = 200),
                         label = "lyricAlpha"
                     )
+
+                    val hasTranslation = !line.translation.isNullOrBlank()
+                    val hasRomanized = !line.romanized.isNullOrBlank()
+
+                    val isTranslationReplacing = translationMode == LyricDisplayMode.REPLACE && hasTranslation
+                    val isRomanizationReplacing = !isTranslationReplacing && romanizationMode == LyricDisplayMode.REPLACE && hasRomanized
+
+                    val displayText = when {
+                        isTranslationReplacing -> line.translation!!
+                        isRomanizationReplacing -> line.romanized!!
+                        else -> line.text
+                    }
+
+                    val activeFontSize = (if (isFullScreen) 24f else 20f) * fontScale
+                    val inactiveFontSize = (if (isFullScreen) 18f else 16f) * fontScale
+                    val sublineFontSize = (if (isActive) 14f else 12f) * fontScale
 
                     Column(
                         modifier = Modifier
@@ -175,10 +198,10 @@ fun ModernLyricsView(
                             .alpha(alpha)
                             .clickable { onSeek(line.timestampMs) }
                             .padding(vertical = 4.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        horizontalAlignment = Alignment.Start
                     ) {
                         // Word-by-word syllable lighting when active
-                        if (isActive && line.hasSyllables) {
+                        if (isActive && line.hasSyllables && !isTranslationReplacing && !isRomanizationReplacing) {
                             val annotated = buildAnnotatedString {
                                 for (syl in line.syllables) {
                                     val isPast = currentPositionMs >= syl.timeMs + syl.durationMs
@@ -192,7 +215,7 @@ fun ModernLyricsView(
                                         SpanStyle(
                                             color = color,
                                             fontWeight = if (isCurrent) FontWeight.ExtraBold else FontWeight.Bold,
-                                            fontSize = if (isFullScreen) 24.sp else 20.sp,
+                                            fontSize = activeFontSize.sp,
                                             fontFamily = FontFamily.SansSerif
                                         )
                                     ) {
@@ -205,50 +228,60 @@ fun ModernLyricsView(
                             }
                             Text(
                                 text = annotated,
-                                textAlign = TextAlign.Center,
+                                textAlign = TextAlign.Start,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         } else {
                             Text(
-                                text = line.text,
+                                text = displayText,
                                 style = if (isActive) {
                                     MaterialTheme.typography.titleLarge.copy(
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = if (isFullScreen) 24.sp else 20.sp,
+                                        fontSize = activeFontSize.sp,
                                         fontFamily = FontFamily.SansSerif
                                     )
                                 } else {
                                     MaterialTheme.typography.bodyLarge.copy(
                                         fontWeight = FontWeight.Normal,
-                                        fontSize = if (isFullScreen) 18.sp else 16.sp,
+                                        fontSize = inactiveFontSize.sp,
                                         fontFamily = FontFamily.SansSerif
                                     )
                                 },
                                 color = textColor,
-                                textAlign = TextAlign.Center,
+                                textAlign = TextAlign.Start,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
 
-                        // Romanization Subline
-                        if (!line.romanized.isNullOrBlank()) {
+                        // Romanization Subline (shown when in BELOW mode or when REPLACE overridden by translation)
+                        val showRomanizationBelow = (romanizationMode == LyricDisplayMode.BELOW || (romanizationMode == LyricDisplayMode.REPLACE && isTranslationReplacing)) && hasRomanized
+                        if (showRomanizationBelow) {
                             Spacer(Modifier.height(3.dp))
                             Text(
-                                text = line.romanized,
-                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.SansSerif),
+                                text = line.romanized!!,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = FontFamily.SansSerif,
+                                    fontSize = sublineFontSize.sp
+                                ),
                                 color = MaterialTheme.colorScheme.primary.copy(alpha = if (isActive) 0.85f else 0.45f),
-                                textAlign = TextAlign.Center
+                                textAlign = TextAlign.Start,
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
 
-                        // Translation Subline
-                        if (!line.translation.isNullOrBlank()) {
+                        // Translation Subline (shown when in BELOW mode)
+                        val showTranslationBelow = translationMode == LyricDisplayMode.BELOW && hasTranslation
+                        if (showTranslationBelow) {
                             Spacer(Modifier.height(2.dp))
                             Text(
-                                text = line.translation,
-                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.SansSerif),
+                                text = line.translation!!,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = FontFamily.SansSerif,
+                                    fontSize = sublineFontSize.sp
+                                ),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (isActive) 0.90f else 0.50f),
-                                textAlign = TextAlign.Center
+                                textAlign = TextAlign.Start,
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
                     }
