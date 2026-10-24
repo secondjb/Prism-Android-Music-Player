@@ -100,6 +100,15 @@ fun NowPlayingScreen(
     onStartSleepTimerMinutes: (Int, Boolean, Boolean) -> Unit = { _, _, _ -> },
     onStartSleepTimerTracks: (Int, Boolean, Boolean) -> Unit = { _, _, _ -> },
     onCancelSleepTimer: () -> Unit = {},
+    isDesktopConnected: Boolean = false,
+    isDesktopOutputEnabled: Boolean = false,
+    isLocalOutputEnabled: Boolean = true,
+    connectedDeviceName: String? = null,
+    connectedEndpointInfo: String? = null,
+    availableDiscoveredDevices: List<DeviceNode> = emptyList(),
+    onToggleDesktopOutput: (Boolean) -> Unit = {},
+    onToggleLocalOutput: (Boolean) -> Unit = {},
+    onConnectToDevice: (DeviceNode) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val track = playbackState.currentTrack ?: return
@@ -469,9 +478,15 @@ fun NowPlayingScreen(
     // Device Switcher Bottom Sheet
     if (showDeviceSheet) {
         DeviceSwitcherSheet(
-            activeDeviceId = playbackState.activeDeviceId,
-            availableDevices = emptyList(),
-            onSelectDevice = { showDeviceSheet = false },
+            isDesktopConnected = isDesktopConnected,
+            isDesktopOutputEnabled = isDesktopOutputEnabled,
+            isLocalOutputEnabled = isLocalOutputEnabled,
+            connectedServerName = connectedDeviceName,
+            connectedEndpointInfo = connectedEndpointInfo,
+            availableDiscoveredDevices = availableDiscoveredDevices,
+            onToggleDesktopOutput = onToggleDesktopOutput,
+            onToggleLocalOutput = onToggleLocalOutput,
+            onConnectToDevice = onConnectToDevice,
             onPairQrClick = {
                 showDeviceSheet = false
                 onPairQrClick()

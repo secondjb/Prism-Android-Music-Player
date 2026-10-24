@@ -170,12 +170,19 @@ private fun LiveCameraScannerBox(
     val lifecycleOwner = LocalLifecycleOwner.current
 
     var activeCamera by remember { mutableStateOf<Camera?>(null) }
+    var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     var isTorchEnabled by remember { mutableStateOf(false) }
     var hasFoundMatch by remember { mutableStateOf(false) }
 
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     DisposableEffect(Unit) {
         onDispose {
+            try {
+                activeCamera?.cameraControl?.enableTorch(false)
+                cameraProvider?.unbindAll()
+            } catch (e: Exception) {
+                // ignore
+            }
             cameraExecutor.shutdown()
         }
     }
@@ -213,7 +220,8 @@ private fun LiveCameraScannerBox(
 
                 val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
                 cameraProviderFuture.addListener({
-                    val cameraProvider = cameraProviderFuture.get()
+                    val provider = cameraProviderFuture.get()
+                    cameraProvider = provider
 
                     val preview = Preview.Builder().build().also {
                         it.setSurfaceProvider(previewView.surfaceProvider)
@@ -286,6 +294,10 @@ private fun LiveCameraScannerBox(
                             if (result != null && !result.text.isNullOrBlank()) {
                                 hasFoundMatch = true
                                 previewView.post {
+                                    try {
+                                        activeCamera?.cameraControl?.enableTorch(false)
+                                        cameraProvider?.unbindAll()
+                                    } catch (e: Exception) {}
                                     onQrCodeScanned(result.text.trim())
                                 }
                             }
@@ -297,8 +309,8 @@ private fun LiveCameraScannerBox(
                     }
 
                     try {
-                        cameraProvider.unbindAll()
-                        val cam = cameraProvider.bindToLifecycle(
+                        provider.unbindAll()
+                        val cam = provider.bindToLifecycle(
                             lifecycleOwner,
                             CameraSelector.DEFAULT_BACK_CAMERA,
                             preview,

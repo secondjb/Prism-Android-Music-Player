@@ -47,7 +47,11 @@ sealed class SyncFrame {
         val action: CommandAction,
         val seekPositionMs: Long? = null,
         val volume: Float? = null,
-        val repeatMode: RepeatMode? = null
+        val repeatMode: RepeatMode? = null,
+        val trackTitle: String? = null,
+        val trackArtist: String? = null,
+        val trackFilename: String? = null,
+        val trackUri: String? = null
     ) : SyncFrame()
 
     @Serializable
@@ -67,5 +71,6 @@ enum class CommandAction {
     SKIP_PREVIOUS,
     SET_VOLUME,
     TOGGLE_SHUFFLE,
-    SET_REPEAT
+    SET_REPEAT,
+    PLAY_TRACK
 }

@@ -80,7 +80,13 @@ class MainActivity : ComponentActivity() {
 			val sleepTimerManager = remember { com.secondjb.prism.core.playback.SleepTimerManager(playbackEngine) }
 			val sleepTimerState by sleepTimerManager.timerState.collectAsState()
 			val discoveryManager = remember { NsdDiscoveryManager(context) }
-			val syncViewModel = remember { SyncViewModel(discoveryManager = discoveryManager) }
+			val syncViewModel = remember {
+				SyncViewModel(
+					discoveryManager = discoveryManager,
+					localTracksProvider = { repository.loadAllTracks() },
+					cacheDir = context.cacheDir
+				)
+			}
 
 			val mainViewModel = remember { MainViewModel(repository, statsRepository) }
 			val libraryViewModel = remember { LibraryViewModel(repository, playlistRepository) }
@@ -91,19 +97,155 @@ class MainActivity : ComponentActivity() {
 			val remotePlaybackState by syncViewModel.remotePlaybackState.collectAsState()
 			val activeDeviceId by syncViewModel.activeDeviceId.collectAsState()
 
-			// Effective playback state switches between local engine and remote companion state!
-			val effectivePlaybackState = if (activeDeviceId != "local" && remotePlaybackState != null) {
+			val connectionState by syncViewModel.connectionState.collectAsState()
+			val isDesktopConnected = connectionState is TransportConnectionState.Connected
+			val isDesktopOutputEnabled by syncViewModel.isDesktopOutputEnabled.collectAsState()
+			val isLocalOutputEnabled by syncViewModel.isLocalOutputEnabled.collectAsState()
+			val connectedServerName by syncViewModel.connectedServerName.collectAsState()
+			val connectedEndpoint by syncViewModel.connectedEndpoint.collectAsState()
+			val pairingError by syncViewModel.lastPairingError.collectAsState()
+			val discoveredDevices by syncViewModel.discoveredDevices.collectAsState()
+
+			// Effective playback state prefers remote companion state when desktop output is active
+			val effectivePlaybackState = if (isDesktopConnected && isDesktopOutputEnabled && remotePlaybackState != null) {
 				remotePlaybackState!!
 			} else {
 				localPlaybackState
 			}
 
+			// Multi-room synchronization: when both Windows and Phone outputs are enabled, keep them in sync!
+			LaunchedEffect(remotePlaybackState?.currentTrack?.title, remotePlaybackState?.isPlaying, isDesktopOutputEnabled, isLocalOutputEnabled, isDesktopConnected) {
+				if (!isDesktopConnected || !isDesktopOutputEnabled || !isLocalOutputEnabled) return@LaunchedEffect
+				val remote = remotePlaybackState ?: return@LaunchedEffect
+				val remoteTrack = remote.currentTrack ?: return@LaunchedEffect
+				val localState = playbackEngine.playbackState.value
+
+				val isSameTrack = localState.currentTrack != null && (
+					localState.currentTrack?.title.equals(remoteTrack.title, ignoreCase = true) ||
+					(localState.currentTrack?.filePath ?: localState.currentTrack?.uri)?.substringAfterLast('/')?.equals(
+						remoteTrack.uri.substringAfterLast('/'), ignoreCase = true
+					) == true
+				)
+
+				if (!isSameTrack) {
+					val match = syncViewModel.findLocalMatch(remoteTrack)
+					if (match != null) {
+						playbackEngine.playTrack(match, syncViewModel.getAllLocalTracks())
+						playbackEngine.seekTo(remote.positionMs)
+						if (!remote.isPlaying) {
+							playbackEngine.pause()
+						}
+					}
+				} else {
+					if (remote.isPlaying && !localState.isPlaying) {
+						playbackEngine.play()
+					} else if (!remote.isPlaying && localState.isPlaying) {
+						playbackEngine.pause()
+					}
+
+					val drift = Math.abs(remote.positionMs - localState.positionMs)
+					if (drift > 450L) {
+						playbackEngine.seekTo(remote.positionMs)
+					}
+				}
+			}
+
+			// Unified command handlers for single or simultaneous dual output
+			val handlePlayTrack: (Track, List<Track>) -> Unit = { track, queue ->
+				val desktopActive = isDesktopConnected && isDesktopOutputEnabled
+				val localActive = isLocalOutputEnabled
+				val filename = (track.filePath ?: track.uri).substringAfterLast('/').substringAfterLast('\\')
+
+				if (desktopActive) {
+					syncViewModel.sendPlayTrackCommand(
+						trackTitle = track.title,
+						trackArtist = track.artist,
+						trackFilename = filename,
+						trackUri = track.uri
+					)
+				}
+
+				if (localActive) {
+					playbackEngine.playTrack(track, queue)
+				} else {
+					playbackEngine.pause()
+				}
+			}
+
+			val handleTogglePlayPause: () -> Unit = {
+				val desktopActive = isDesktopConnected && isDesktopOutputEnabled
+				val localActive = isLocalOutputEnabled
+
+				if (desktopActive) {
+					syncViewModel.sendRemoteCommand(CommandAction.TOGGLE_PLAY_PAUSE)
+				}
+				if (localActive) {
+					playbackEngine.togglePlayPause()
+				}
+			}
+
+			val handleSeek: (Long) -> Unit = { pos ->
+				val desktopActive = isDesktopConnected && isDesktopOutputEnabled
+				val localActive = isLocalOutputEnabled
+
+				if (desktopActive) {
+					syncViewModel.sendRemoteCommand(CommandAction.SEEK, seekMs = pos)
+				}
+				if (localActive) {
+					playbackEngine.seekTo(pos)
+				}
+			}
+
+			val handleSkipNext: () -> Unit = {
+				val desktopActive = isDesktopConnected && isDesktopOutputEnabled
+				val localActive = isLocalOutputEnabled
+
+				if (desktopActive) {
+					syncViewModel.sendRemoteCommand(CommandAction.SKIP_NEXT)
+				}
+				if (localActive) {
+					playbackEngine.skipNext()
+				}
+			}
+
+			val handleSkipPrevious: () -> Unit = {
+				val desktopActive = isDesktopConnected && isDesktopOutputEnabled
+				val localActive = isLocalOutputEnabled
+
+				if (desktopActive) {
+					syncViewModel.sendRemoteCommand(CommandAction.SKIP_PREVIOUS)
+				}
+				if (localActive) {
+					playbackEngine.skipPrevious()
+				}
+			}
+
+			val handleToggleShuffle: () -> Unit = {
+				val desktopActive = isDesktopConnected && isDesktopOutputEnabled
+				val localActive = isLocalOutputEnabled
+
+				if (desktopActive) {
+					syncViewModel.sendRemoteCommand(CommandAction.TOGGLE_SHUFFLE)
+				}
+				if (localActive) {
+					playbackEngine.toggleShuffle()
+				}
+			}
+
+			val handleCycleRepeatMode: () -> Unit = {
+				val desktopActive = isDesktopConnected && isDesktopOutputEnabled
+				val localActive = isLocalOutputEnabled
+
+				if (desktopActive) {
+					syncViewModel.sendRemoteCommand(CommandAction.SET_REPEAT)
+				}
+				if (localActive) {
+					playbackEngine.setRepeatMode(effectivePlaybackState.repeatMode.next())
+				}
+			}
+
 			var isNowPlayingExpanded by remember { mutableStateOf(false) }
 			var showQrPairingDialog by remember { mutableStateOf(false) }
-
-			val connectionState by syncViewModel.connectionState.collectAsState()
-			val pairingError by syncViewModel.lastPairingError.collectAsState()
-			val discoveredDevices by syncViewModel.discoveredDevices.collectAsState()
 
 			// Fallback demo tracks if device library is empty initially
 			LaunchedEffect(Unit) {
@@ -148,17 +290,14 @@ class MainActivity : ComponentActivity() {
 						preferencesRepository = preferencesRepository,
 						playbackState = effectivePlaybackState,
 						playbackEngine = playbackEngine,
-						onPlayTrack = { track, queue ->
-							if (activeDeviceId == "local") {
-								playbackEngine.playTrack(track, queue)
-							} else {
-								syncViewModel.sendRemoteCommand(CommandAction.PLAY)
-							}
-						},
+						onPlayTrack = handlePlayTrack,
+						onTogglePlayPause = handleTogglePlayPause,
+						onSkipNext = handleSkipNext,
+						onSkipPrevious = handleSkipPrevious,
 						onShuffleAll = {
 							val tracks = libraryViewModel.uiState.value.tracks.ifEmpty { DemoDataProvider.demoTracks }
 							val shuffled = tracks.shuffled()
-							playbackEngine.playTrack(shuffled.first(), shuffled)
+							handlePlayTrack(shuffled.first(), shuffled)
 						},
 						onExpandNowPlaying = {
 							isNowPlayingExpanded = true
@@ -181,52 +320,16 @@ class MainActivity : ComponentActivity() {
 					) {
 						NowPlayingScreen(
 							playbackState = effectivePlaybackState,
-							onTogglePlayPause = {
-								if (activeDeviceId == "local") {
-									playbackEngine.togglePlayPause()
-								} else {
-									syncViewModel.sendRemoteCommand(CommandAction.TOGGLE_PLAY_PAUSE)
-								}
-							},
-							onSeek = { pos ->
-								if (activeDeviceId == "local") {
-									playbackEngine.seekTo(pos)
-								} else {
-									syncViewModel.sendRemoteCommand(CommandAction.SEEK, seekMs = pos)
-								}
-							},
-							onSkipNext = {
-								if (activeDeviceId == "local") {
-									playbackEngine.skipNext()
-								} else {
-									syncViewModel.sendRemoteCommand(CommandAction.SKIP_NEXT)
-								}
-							},
-							onSkipPrevious = {
-								if (activeDeviceId == "local") {
-									playbackEngine.skipPrevious()
-								} else {
-									syncViewModel.sendRemoteCommand(CommandAction.SKIP_PREVIOUS)
-								}
-							},
-							onToggleShuffle = {
-								if (activeDeviceId == "local") {
-									playbackEngine.toggleShuffle()
-								} else {
-									syncViewModel.sendRemoteCommand(CommandAction.TOGGLE_SHUFFLE)
-								}
-							},
-							onCycleRepeatMode = {
-								if (activeDeviceId == "local") {
-									playbackEngine.setRepeatMode(effectivePlaybackState.repeatMode.next())
-								} else {
-									syncViewModel.sendRemoteCommand(CommandAction.SET_REPEAT)
-								}
-							},
+							onTogglePlayPause = handleTogglePlayPause,
+							onSeek = handleSeek,
+							onSkipNext = handleSkipNext,
+							onSkipPrevious = handleSkipPrevious,
+							onToggleShuffle = handleToggleShuffle,
+							onCycleRepeatMode = handleCycleRepeatMode,
 							onDismiss = { isNowPlayingExpanded = false },
 							onSelectQueueIndex = { index ->
 								if (index in effectivePlaybackState.queue.indices) {
-									playbackEngine.playTrack(effectivePlaybackState.queue[index], effectivePlaybackState.queue, index)
+									handlePlayTrack(effectivePlaybackState.queue[index], effectivePlaybackState.queue)
 								}
 							},
 							onRemoveQueueIndex = { playbackEngine.removeFromQueue(it) },
@@ -234,6 +337,15 @@ class MainActivity : ComponentActivity() {
 							onPairQrClick = {
 								showQrPairingDialog = true
 							},
+							isDesktopConnected = isDesktopConnected,
+							isDesktopOutputEnabled = isDesktopOutputEnabled,
+							isLocalOutputEnabled = isLocalOutputEnabled,
+							connectedDeviceName = connectedServerName,
+							connectedEndpointInfo = connectedEndpoint?.let { "ws://${it.host}:${it.port}" },
+							availableDiscoveredDevices = discoveredDevices,
+							onToggleDesktopOutput = { syncViewModel.toggleDesktopOutput(it) },
+							onToggleLocalOutput = { syncViewModel.toggleLocalOutput(it) },
+							onConnectToDevice = { syncViewModel.connectToDevice(it) },
 							sleepTimerState = sleepTimerState,
 							onStartSleepTimerMinutes = { mins, finishLast, endOfQ ->
 								sleepTimerManager.startTimerByMinutes(mins, finishLast, endOfQ)
@@ -273,6 +385,9 @@ fun PrismAppRoot(
 	playbackState: PlaybackState,
 	playbackEngine: PlaybackController,
 	onPlayTrack: (Track, List<Track>) -> Unit,
+	onTogglePlayPause: () -> Unit = { playbackEngine.togglePlayPause() },
+	onSkipNext: () -> Unit = { playbackEngine.skipNext() },
+	onSkipPrevious: () -> Unit = { playbackEngine.skipPrevious() },
 	onShuffleAll: () -> Unit,
 	onExpandNowPlaying: () -> Unit,
 	onOpenQrPairing: () -> Unit
@@ -291,9 +406,9 @@ fun PrismAppRoot(
 				// Spotify-style Floating Now Playing Bar
 				FloatingNowPlayingBar(
 					playbackState = playbackState,
-					onTogglePlayPause = { playbackEngine.togglePlayPause() },
-					onSkipNext = { playbackEngine.skipNext() },
-					onSkipPrevious = { playbackEngine.skipPrevious() },
+					onTogglePlayPause = onTogglePlayPause,
+					onSkipNext = onSkipNext,
+					onSkipPrevious = onSkipPrevious,
 					onBarClick = onExpandNowPlaying
 				)
 
