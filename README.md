@@ -58,10 +58,10 @@ Key capabilities:
 | <img src="docs/screenshots/01_home_screen.png" width="240" alt="Home Dashboard" /> | <img src="docs/screenshots/02_library_screen.png" width="240" alt="Music Library" /> | <img src="docs/screenshots/03_now_playing.png" width="240" alt="Now Playing Screen" /> |
 | *Quick actions, listening stats cards, and floating mini player.* | *Indexed tracks, albums, artists, fast-scroller, and favorite toggles.* | *Color-extracted artwork background, audio badges, and wavy seekbar.* |
 
-| Synchronized Lyrics | Listening Analytics | Library and Storage Settings |
+| Synchronized Lyrics | Listening Analytics | Settings & Preferences |
 | :---: | :---: | :---: |
-| <img src="docs/screenshots/04_lyrics_screen.png" width="240" alt="Synchronized Lyrics" /> | <img src="docs/screenshots/05_listening_stats.png" width="240" alt="Listening Analytics" /> | <img src="docs/screenshots/06_library_settings.png" width="240" alt="Library Settings" /> |
-| *Line-by-line highlight, font size scaling, translation, and romanization.* | *Total playback time, plays logged, top artist, and leaderboards.* | *Folder inclusion/exclusion rules, duration thresholds, and format filters.* |
+| <img src="docs/screenshots/04_lyrics_screen.png" width="240" alt="Synchronized Lyrics" /> | <img src="docs/screenshots/05_listening_stats.png" width="240" alt="Listening Analytics" /> | <img src="docs/screenshots/06_library_settings.png" width="240" alt="Settings & Preferences" /> |
+| *Line-by-line highlight, font size scaling, translation, and romanization.* | *Total playback time, plays logged, top artist, and leaderboards.* | *Storage rules, audio engine options, companion sync, and update checker.* |
 
 | Play Queue Sheet | Sleep Timer Modal |
 | :---: | :---: |
