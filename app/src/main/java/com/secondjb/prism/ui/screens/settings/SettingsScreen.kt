@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -70,6 +71,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.secondjb.prism.core.data.PairedDevice
 import com.secondjb.prism.core.data.PrismPreferences
@@ -526,9 +528,15 @@ fun SettingsScreen(
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                         shape = MaterialTheme.shapes.medium
                     ) {
-                        Icon(Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Scan QR", maxLines = 1)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Scan QR", maxLines = 1)
+                        }
                     }
 
                     if (isDesktopConnected) {
@@ -540,9 +548,15 @@ fun SettingsScreen(
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                             shape = MaterialTheme.shapes.medium
                         ) {
-                            Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Smart File Sync", maxLines = 1)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Smart File Sync", maxLines = 1)
+                            }
                         }
                     }
                 }
@@ -570,7 +584,9 @@ fun SettingsScreen(
                             Surface(
                                 shape = MaterialTheme.shapes.medium,
                                 color = MaterialTheme.colorScheme.surfaceContainer,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .wrapContentHeight()
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -587,27 +603,29 @@ fun SettingsScreen(
                                         Icon(
                                             imageVector = Icons.Default.Computer,
                                             contentDescription = null,
-                                            tint = if (isConnected) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
+                                            tint = if (isConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                         )
-                                        Column {
+                                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                                             ) {
                                                 Text(
-                                                    text = device.name,
+                                                    text = device.name.trim(),
                                                     style = MaterialTheme.typography.titleSmall,
-                                                    fontWeight = FontWeight.SemiBold
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
                                                 )
                                                 if (isConnected) {
                                                     Surface(
                                                         shape = RoundedCornerShape(4.dp),
-                                                        color = Color(0xFF4CAF50).copy(alpha = 0.2f)
+                                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
                                                     ) {
                                                         Text(
                                                             text = "CONNECTED",
                                                             style = MaterialTheme.typography.labelSmall,
-                                                            color = Color(0xFF4CAF50),
+                                                            color = MaterialTheme.colorScheme.primary,
                                                             fontWeight = FontWeight.Bold,
                                                             modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                                                         )
@@ -778,7 +796,6 @@ private fun SettingsCategoryCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(18.dp)
-                .animateContentSize()
         ) {
             Row(
                 modifier = Modifier

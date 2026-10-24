@@ -168,7 +168,7 @@ fun DeviceSwitcherSheet(
                                     modifier = Modifier
                                         .size(8.dp)
                                         .clip(CircleShape)
-                                        .background(Color(0xFF4CAF50))
+                                        .background(MaterialTheme.colorScheme.primary)
                                 )
                             }
                         }
@@ -291,7 +291,7 @@ fun DeviceSwitcherSheet(
                             Icon(
                                 imageVector = Icons.Default.Computer,
                                 contentDescription = null,
-                                tint = if (isThisCurrentlyConnected) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                tint = if (isThisCurrentlyConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(22.dp)
                             )
 
@@ -304,7 +304,7 @@ fun DeviceSwitcherSheet(
                                 Text(
                                     text = if (isThisCurrentlyConnected) "Connected • ${paired.host}:${paired.port}" else "${paired.host}:${paired.port}",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = if (isThisCurrentlyConnected) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = if (isThisCurrentlyConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
 

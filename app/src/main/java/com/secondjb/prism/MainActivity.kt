@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -148,6 +149,25 @@ class MainActivity : ComponentActivity() {
 				}
 			}
 
+			// Wire up SleepTimerManager callbacks for local pause & remote desktop sync
+			LaunchedEffect(sleepTimerManager, isDesktopConnected, isDesktopOutputEnabled) {
+				sleepTimerManager.onStopPlaybackCallback = {
+					if (isDesktopConnected && isDesktopOutputEnabled) {
+						syncViewModel.sendRemoteCommand(CommandAction.PAUSE)
+					}
+				}
+				sleepTimerManager.onStartSleepTimerCallback = { mode, value ->
+					if (isDesktopConnected) {
+						syncViewModel.sendSleepTimerCommand(if (mode == com.secondjb.prism.core.playback.SleepTimerMode.TRACKS) "tracks" else "time", value)
+					}
+				}
+				sleepTimerManager.onCancelSleepTimerCallback = {
+					if (isDesktopConnected) {
+						syncViewModel.sendCancelSleepTimerCommand()
+					}
+				}
+			}
+
 			// Configure MediaSessionBridge so hardware buttons and Android system notifications command desktop (Spotify Connect style)
 			LaunchedEffect(isRemoteOnlyActive, connectedServerName) {
 				com.secondjb.prism.core.service.MediaSessionBridge.isRemoteActive = isRemoteOnlyActive
@@ -245,7 +265,7 @@ class MainActivity : ComponentActivity() {
 				val localActive = isLocalOutputEnabled
 				val filename = (track.filePath ?: track.uri).substringAfterLast('/').substringAfterLast('\\')
 
-				if (desktopActive) {
+				if (isDesktopConnected) {
 					val queueFns = queue.take(150).map {
 						(it.filePath ?: it.uri).substringAfterLast('/').substringAfterLast('\\')
 					}
@@ -256,6 +276,10 @@ class MainActivity : ComponentActivity() {
 						trackUri = track.uri,
 						queueFilenames = queueFns
 					)
+					if (!desktopActive) {
+						// Keep PC in sync with track/queue, but paused so PC audio stays quiet
+						syncViewModel.sendRemoteCommand(CommandAction.PAUSE)
+					}
 				}
 
 				if (localActive) {
@@ -343,13 +367,41 @@ class MainActivity : ComponentActivity() {
 			val trackNotFoundEvent by syncViewModel.trackNotFoundPrompt.collectAsState()
 			val fileSyncState by syncViewModel.fileSyncState.collectAsState()
 
-			// Fallback demo tracks if device library is empty initially
+			// Fallback demo tracks if device library is empty initially - ALWAYS start in paused state
 			LaunchedEffect(Unit) {
 				val tracks = repository.loadAllTracks()
 				if (tracks.isEmpty()) {
 					val demoTrack = DemoDataProvider.demoTracks.first()
-					playbackEngine.playTrack(demoTrack, DemoDataProvider.demoTracks)
-					playbackEngine.pause()
+					playbackEngine.prepareTrack(demoTrack, DemoDataProvider.demoTracks)
+				}
+			}
+
+			// When Desktop Output is toggled on, instantly sync the local playing track and position to PC
+			LaunchedEffect(isDesktopOutputEnabled) {
+				if (isDesktopConnected && isDesktopOutputEnabled) {
+					val localTrack = playbackEngine.playbackState.value.currentTrack
+					if (localTrack != null) {
+						val filename = (localTrack.filePath ?: localTrack.uri).substringAfterLast('/').substringAfterLast('\\')
+						val queueFns = playbackEngine.playbackState.value.queue.take(150).map {
+							(it.filePath ?: it.uri).substringAfterLast('/').substringAfterLast('\\')
+						}
+						syncViewModel.sendPlayTrackCommand(
+							trackTitle = localTrack.title,
+							trackArtist = localTrack.artist,
+							trackFilename = filename,
+							trackUri = localTrack.uri,
+							queueFilenames = queueFns
+						)
+						val currentPos = playbackEngine.playbackState.value.positionMs
+						if (currentPos > 0) {
+							syncViewModel.sendRemoteCommand(CommandAction.SEEK, seekMs = currentPos)
+						}
+						if (playbackEngine.playbackState.value.isPlaying) {
+							syncViewModel.sendRemoteCommand(CommandAction.PLAY)
+						} else {
+							syncViewModel.sendRemoteCommand(CommandAction.PAUSE)
+						}
+					}
 				}
 			}
 
@@ -375,9 +427,21 @@ class MainActivity : ComponentActivity() {
 				}
 			}
 
+			// Retain last valid artwork URI so dynamic theme colors never flash or revert to default
+			var lastValidArtworkUri by remember { mutableStateOf<String?>(null) }
+			LaunchedEffect(effectivePlaybackState.currentTrack?.artworkUri) {
+				val uri = effectivePlaybackState.currentTrack?.artworkUri
+				if (!uri.isNullOrBlank()) {
+					lastValidArtworkUri = uri
+				}
+			}
+			val activeArtworkData = if (userPreferences.isDynamicThemingEnabled) {
+				effectivePlaybackState.currentTrack?.artworkUri ?: lastValidArtworkUri
+			} else null
+
 			// Dynamic Palette Provider adapts all screens to active album art!
 			PrismDynamicThemeProvider(
-				artworkData = if (userPreferences.isDynamicThemingEnabled) effectivePlaybackState.currentTrack?.artworkUri else null
+				artworkData = activeArtworkData
 			) {
 				Box(modifier = Modifier.fillMaxSize()) {
 					PrismAppRoot(
@@ -667,7 +731,11 @@ fun PrismAppRoot(
 		Box(
 			modifier = Modifier
 				.fillMaxSize()
-				.padding(bottom = innerPadding.calculateBottomPadding())
+				.statusBarsPadding()
+				.padding(
+					top = innerPadding.calculateTopPadding() + 6.dp,
+					bottom = innerPadding.calculateBottomPadding()
+				)
 		) {
 			NavHost(
 				navController = navController,

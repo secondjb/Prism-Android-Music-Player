@@ -40,6 +40,10 @@ class SleepTimerManager(
     private var countdownJob: Job? = null
     private var lastObservedTrackId: String? = null
 
+    var onStopPlaybackCallback: (() -> Unit)? = null
+    var onStartSleepTimerCallback: ((SleepTimerMode, Long) -> Unit)? = null
+    var onCancelSleepTimerCallback: (() -> Unit)? = null
+
     init {
         // Observe playback state changes to count track completions
         scope.launch {
@@ -52,6 +56,18 @@ class SleepTimerManager(
     private fun handlePlaybackStateUpdate(state: PlaybackState) {
         val currentTrack = state.currentTrack ?: return
         val currentTrackId = currentTrack.id
+
+        val current = _timerState.value
+        if (current.isActive) {
+            // If waiting for last song to finish or about to expire on track count:
+            if (current.waitingForLastSongToFinish || (current.mode == SleepTimerMode.TRACKS && current.remainingTracks <= 1)) {
+                // If song is within 600ms of finishing, stop playback before transition leaks audio
+                if (state.durationMs > 0 && state.positionMs >= state.durationMs - 600L) {
+                    stopPlayback()
+                    return
+                }
+            }
+        }
 
         if (lastObservedTrackId != null && lastObservedTrackId != currentTrackId) {
             // Track transitioned!
@@ -76,6 +92,7 @@ class SleepTimerManager(
             finishLastSong = finishLastSong,
             playToEndOfQueue = playToEndOfQueue
         )
+        onStartSleepTimerCallback?.invoke(SleepTimerMode.TIME, minutes.toLong())
 
         countdownJob = scope.launch {
             while (isActive && _timerState.value.remainingSeconds > 0) {
@@ -113,12 +130,14 @@ class SleepTimerManager(
             finishLastSong = finishLastSong,
             playToEndOfQueue = playToEndOfQueue
         )
+        onStartSleepTimerCallback?.invoke(SleepTimerMode.TRACKS, tracksCount.toLong())
     }
 
     fun cancelTimer() {
         countdownJob?.cancel()
         countdownJob = null
         _timerState.value = SleepTimerState()
+        onCancelSleepTimerCallback?.invoke()
     }
 
     private fun onTrackFinished() {
@@ -162,5 +181,6 @@ class SleepTimerManager(
     private fun stopPlayback() {
         cancelTimer()
         playbackController.pause()
+        onStopPlaybackCallback?.invoke()
     }
 }

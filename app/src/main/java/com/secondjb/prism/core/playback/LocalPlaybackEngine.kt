@@ -201,6 +201,14 @@ class LocalPlaybackEngine(
     }
 
     override fun playTrack(track: Track, queue: List<Track>, startIndex: Int) {
+        loadTrackInternal(track, queue, startIndex, playWhenReady = true)
+    }
+
+    override fun prepareTrack(track: Track, queue: List<Track>, startIndex: Int) {
+        loadTrackInternal(track, queue, startIndex, playWhenReady = false)
+    }
+
+    private fun loadTrackInternal(track: Track, queue: List<Track>, startIndex: Int, playWhenReady: Boolean) {
         currentQueue = queue
         val targetIndex = if (startIndex != -1 && startIndex in queue.indices) {
             startIndex
@@ -216,13 +224,21 @@ class LocalPlaybackEngine(
                     val ctrl = controllerFuture?.get() ?: return@addListener
                     ctrl.setMediaItems(mediaItems, targetIndex, 0L)
                     ctrl.prepare()
-                    ctrl.play()
+                    if (playWhenReady) {
+                        ctrl.play()
+                    } else {
+                        ctrl.pause()
+                    }
                 } catch (e: Exception) {}
             }, MoreExecutors.directExecutor())
         } else {
             controller.setMediaItems(mediaItems, targetIndex, 0L)
             controller.prepare()
-            controller.play()
+            if (playWhenReady) {
+                controller.play()
+            } else {
+                controller.pause()
+            }
         }
 
         _playbackState.update {
@@ -230,7 +246,7 @@ class LocalPlaybackEngine(
                 currentTrack = track,
                 queue = queue,
                 queueIndex = targetIndex,
-                isPlaying = true
+                isPlaying = playWhenReady
             )
         }
     }

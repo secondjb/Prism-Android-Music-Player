@@ -217,7 +217,7 @@ fun rememberAlbumPalette(artworkData: Any?): PrismAlbumPalette? {
 
     LaunchedEffect(artworkData) {
         if (artworkData == null) {
-            palette = null
+            // NOTE: Retain previous album palette if available to prevent flashing default colors during track or device transitions
             return@LaunchedEffect
         }
 

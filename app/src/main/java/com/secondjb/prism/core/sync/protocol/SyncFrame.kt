@@ -52,7 +52,9 @@ sealed class SyncFrame {
         val trackArtist: String? = null,
         val trackFilename: String? = null,
         val trackUri: String? = null,
-        val queueFilenames: List<String>? = null
+        val queueFilenames: List<String>? = null,
+        val sleepTimerMode: String? = null,
+        val sleepTimerValue: Long? = null
     ) : SyncFrame()
 
     @Serializable
@@ -122,5 +124,7 @@ enum class CommandAction {
     TOGGLE_SHUFFLE,
     SET_REPEAT,
     PLAY_TRACK,
-    REQUEST_FILE_DOWNLOAD
+    REQUEST_FILE_DOWNLOAD,
+    SET_SLEEP_TIMER,
+    CANCEL_SLEEP_TIMER
 }

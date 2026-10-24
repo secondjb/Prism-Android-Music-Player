@@ -13,6 +13,7 @@ interface PlaybackController {
     val playbackState: StateFlow<PlaybackState>
 
     fun playTrack(track: Track, queue: List<Track> = listOf(track), startIndex: Int = -1)
+    fun prepareTrack(track: Track, queue: List<Track> = listOf(track), startIndex: Int = -1) {}
     fun togglePlayPause()
     fun play()
     fun pause()

@@ -23,11 +23,13 @@ import com.secondjb.prism.core.sync.transport.TransportConnectionState
 import com.secondjb.prism.domain.model.PlaybackState
 import com.secondjb.prism.domain.model.Track
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -114,6 +116,7 @@ class SyncViewModel(
         observeIncomingFrames()
         observeConnectionState()
         preloadLocalTracks()
+        startPositionTicker()
         autoConnectRecentPairedDevice()
     }
 
@@ -145,22 +148,46 @@ class SyncViewModel(
         preloadLocalTracks()
     }
 
+    private var positionTickerJob: Job? = null
+
+    private fun startPositionTicker() {
+        positionTickerJob?.cancel()
+        positionTickerJob = viewModelScope.launch(Dispatchers.Default) {
+            while (isActive) {
+                delay(250L)
+                val currentRemote = _remotePlaybackState.value
+                if (currentRemote != null && currentRemote.isPlaying && lastSyncRealtime > 0L) {
+                    val elapsed = SystemClock.elapsedRealtime() - lastSyncRealtime
+                    val interpolatedPos = (basePositionMs + elapsed).coerceAtMost(currentRemote.durationMs)
+                    _remotePlaybackState.update { it?.copy(positionMs = interpolatedPos) }
+                }
+            }
+        }
+    }
+
     private fun observeConnectionState() {
         viewModelScope.launch {
             connectionState.collect { state ->
                 when (state) {
                     is TransportConnectionState.Connected -> {
                         _lastPairingError.value = null
-                        _isDesktopOutputEnabled.value = true
+                        // Default strictly to only the starred device
+                        if (_starredDeviceId.value == "desktop") {
+                            _isDesktopOutputEnabled.value = true
+                            _isLocalOutputEnabled.value = false
+                        } else {
+                            _isDesktopOutputEnabled.value = false
+                            _isLocalOutputEnabled.value = true
+                        }
                     }
                     is TransportConnectionState.Error -> {
                         _lastPairingError.value = state.message
                         _isDesktopOutputEnabled.value = false
-                        _isLocalOutputEnabled.value = true
+                        // Keep non-playing device quiet; never auto-blast audio on disconnect
                     }
                     is TransportConnectionState.Disconnected -> {
                         _isDesktopOutputEnabled.value = false
-                        _isLocalOutputEnabled.value = true
+                        // Keep non-playing device quiet; never auto-blast audio on disconnect
                     }
                     else -> {}
                 }
@@ -326,7 +353,35 @@ class SyncViewModel(
 
     fun setStarredDevice(deviceId: String) {
         _starredDeviceId.value = deviceId
+        // Default output follows the newly starred device
+        if (deviceId == "desktop") {
+            _isDesktopOutputEnabled.value = true
+            _isLocalOutputEnabled.value = false
+        } else {
+            _isDesktopOutputEnabled.value = false
+            _isLocalOutputEnabled.value = true
+        }
         sendOutputRoutingSync()
+    }
+
+    fun sendSleepTimerCommand(mode: String, value: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val frame = SyncFrame.PlaybackCommand(
+                action = CommandAction.SET_SLEEP_TIMER,
+                sleepTimerMode = mode,
+                sleepTimerValue = value
+            )
+            transport.sendFrame(frame)
+        }
+    }
+
+    fun sendCancelSleepTimerCommand() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val frame = SyncFrame.PlaybackCommand(
+                action = CommandAction.CANCEL_SLEEP_TIMER
+            )
+            transport.sendFrame(frame)
+        }
     }
 
     private fun sendOutputRoutingSync() {
