@@ -8,7 +8,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,6 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
@@ -46,6 +46,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -69,7 +70,9 @@ fun FloatingNowPlayingBar(
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
     onBarClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isRemoteActive: Boolean = false,
+    remoteDeviceName: String = "Prism Desktop"
 ) {
     val track = playbackState.currentTrack
     val isVisible = track != null
@@ -84,48 +87,13 @@ fun FloatingNowPlayingBar(
 
         val coroutineScope = rememberCoroutineScope()
         val offsetX = remember { Animatable(0f) }
-        val swipeThreshold = 180f
+        val swipeThreshold = 140f
 
         ElevatedCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 6.dp)
-                .offset { IntOffset(offsetX.value.roundToInt(), 0) }
-                .pointerInput(track.id) {
-                    detectHorizontalDragGestures(
-                        onDragEnd = {
-                            coroutineScope.launch {
-                                when {
-                                    offsetX.value < -swipeThreshold -> {
-                                        onSkipNext()
-                                    }
-                                    offsetX.value > swipeThreshold -> {
-                                        onSkipPrevious()
-                                    }
-                                }
-                                offsetX.animateTo(
-                                    targetValue = 0f,
-                                    animationSpec = spring(
-                                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                                        stiffness = Spring.StiffnessMedium
-                                    )
-                                )
-                            }
-                        },
-                        onDragCancel = {
-                            coroutineScope.launch {
-                                offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
-                            }
-                        },
-                        onHorizontalDrag = { _, dragAmount ->
-                            coroutineScope.launch {
-                                offsetX.snapTo(offsetX.value + dragAmount)
-                            }
-                        }
-                    )
-                }
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f), MaterialTheme.shapes.large)
-                .clickable(onClick = onBarClick),
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f), MaterialTheme.shapes.large),
             shape = MaterialTheme.shapes.large,
             colors = CardDefaults.elevatedCardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
@@ -138,40 +106,108 @@ fun FloatingNowPlayingBar(
                         .padding(horizontal = 10.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Artwork Thumbnail
-                    Box(
+                    // Tap / Swipe Area: Artwork + Info
+                    Row(
                         modifier = Modifier
-                            .size(46.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .weight(1f)
+                            .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+                            .pointerInput(track.id) {
+                                detectHorizontalDragGestures(
+                                    onDragEnd = {
+                                        coroutineScope.launch {
+                                            when {
+                                                offsetX.value < -swipeThreshold -> {
+                                                    onSkipNext()
+                                                }
+                                                offsetX.value > swipeThreshold -> {
+                                                    onSkipPrevious()
+                                                }
+                                            }
+                                            offsetX.animateTo(
+                                                targetValue = 0f,
+                                                animationSpec = spring(
+                                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                    stiffness = Spring.StiffnessMedium
+                                                )
+                                            )
+                                        }
+                                    },
+                                    onDragCancel = {
+                                        coroutineScope.launch {
+                                            offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+                                        }
+                                    },
+                                    onHorizontalDrag = { _, dragAmount ->
+                                        coroutineScope.launch {
+                                            offsetX.snapTo(offsetX.value + dragAmount)
+                                        }
+                                    }
+                                )
+                            }
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(onClick = onBarClick),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        AsyncImage(
-                            model = track.artworkUri,
-                            contentDescription = "Track Artwork",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
+                        // Artwork Thumbnail
+                        Box(
+                            modifier = Modifier
+                                .size(46.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            AsyncImage(
+                                model = track.artworkUri,
+                                contentDescription = "Track Artwork",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+
+                        Spacer(Modifier.width(12.dp))
+
+                        // Title & Artist & Spotify-style Remote Indicator
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = track.title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+
+                            if (isRemoteActive) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Devices,
+                                        contentDescription = "Playing on $remoteDeviceName",
+                                        tint = Color(0xFF4CAF50),
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Text(
+                                        text = "Playing on $remoteDeviceName",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(0xFF4CAF50),
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            } else {
+                                Text(
+                                    text = track.artist,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
                     }
 
-                    Spacer(Modifier.width(12.dp))
-
-                    // Title & Artist
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = track.title,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = track.artist,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+                    Spacer(Modifier.width(6.dp))
 
                     // Rewind / Previous Button
                     IconButton(
@@ -201,7 +237,7 @@ fun FloatingNowPlayingBar(
                         )
                     }
 
-                    Spacer(Modifier.width(4.dp))
+                    Spacer(Modifier.width(2.dp))
 
                     // Next Button
                     IconButton(

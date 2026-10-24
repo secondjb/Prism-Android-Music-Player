@@ -115,6 +115,75 @@ class MainActivity : ComponentActivity() {
 				localPlaybackState
 			}
 
+			val isRemoteOnlyActive = isDesktopConnected && isDesktopOutputEnabled && !isLocalOutputEnabled
+
+			// Immediately pause local audio when local output is toggled off; restore and resync when toggled on
+			LaunchedEffect(isLocalOutputEnabled) {
+				if (!isLocalOutputEnabled) {
+					if (playbackEngine.playbackState.value.isPlaying) {
+						playbackEngine.pause()
+					}
+				} else {
+					playbackEngine.restoreLocalOutput()
+					if (isDesktopConnected && isDesktopOutputEnabled) {
+						val remote = remotePlaybackState
+						val remoteTrack = remote?.currentTrack
+						if (remote != null && remoteTrack != null && remote.isPlaying) {
+							val match = syncViewModel.findLocalMatch(remoteTrack)
+							if (match != null) {
+								playbackEngine.playTrack(match, syncViewModel.getAllLocalTracks())
+								playbackEngine.seekTo(remote.positionMs)
+							}
+						}
+					}
+				}
+			}
+
+			// Configure MediaSessionBridge so hardware buttons and Android system notifications command desktop (Spotify Connect style)
+			LaunchedEffect(isRemoteOnlyActive, connectedServerName) {
+				com.secondjb.prism.core.service.MediaSessionBridge.isRemoteActive = isRemoteOnlyActive
+				com.secondjb.prism.core.service.MediaSessionBridge.remoteServerName = connectedServerName?.ifBlank { "Prism Desktop" } ?: "Prism Desktop"
+				com.secondjb.prism.core.service.MediaSessionBridge.onRemotePlay = {
+					syncViewModel.sendRemoteCommand(CommandAction.PLAY)
+				}
+				com.secondjb.prism.core.service.MediaSessionBridge.onRemotePause = {
+					syncViewModel.sendRemoteCommand(CommandAction.PAUSE)
+				}
+				com.secondjb.prism.core.service.MediaSessionBridge.onRemoteSkipNext = {
+					syncViewModel.sendRemoteCommand(CommandAction.SKIP_NEXT)
+				}
+				com.secondjb.prism.core.service.MediaSessionBridge.onRemoteSkipPrevious = {
+					syncViewModel.sendRemoteCommand(CommandAction.SKIP_PREVIOUS)
+				}
+				com.secondjb.prism.core.service.MediaSessionBridge.onRemoteSeek = { pos ->
+					syncViewModel.sendRemoteCommand(CommandAction.SEEK, seekMs = pos)
+				}
+			}
+
+			// Keep Android Quick Settings & Lockscreen media notification in sync with PC track
+			LaunchedEffect(
+				remotePlaybackState?.currentTrack?.title,
+				remotePlaybackState?.isPlaying,
+				isRemoteOnlyActive,
+				isDesktopConnected
+			) {
+				if (isRemoteOnlyActive) {
+					val remote = remotePlaybackState ?: return@LaunchedEffect
+					val remoteTrack = remote.currentTrack ?: return@LaunchedEffect
+					val localMatch = syncViewModel.findLocalMatch(remoteTrack)
+					val playableUri = localMatch?.uri ?: syncViewModel.getAllLocalTracks().firstOrNull()?.uri ?: remoteTrack.uri
+					playbackEngine.syncRemoteMetadata(
+						remoteTrack = remoteTrack,
+						playableUri = playableUri,
+						isPlaying = remote.isPlaying,
+						positionMs = remote.positionMs,
+						serverName = connectedServerName?.ifBlank { "Prism Desktop" } ?: "Prism Desktop"
+					)
+				} else if (isLocalOutputEnabled) {
+					playbackEngine.restoreLocalOutput()
+				}
+			}
+
 			// Multi-room synchronization: when both Windows and Phone outputs are enabled, keep them in sync!
 			LaunchedEffect(remotePlaybackState?.currentTrack?.title, remotePlaybackState?.isPlaying, isDesktopOutputEnabled, isLocalOutputEnabled, isDesktopConnected) {
 				if (!isDesktopConnected || !isDesktopOutputEnabled || !isLocalOutputEnabled) return@LaunchedEffect
@@ -306,7 +375,9 @@ class MainActivity : ComponentActivity() {
 						},
 						onOpenQrPairing = {
 							showQrPairingDialog = true
-						}
+						},
+						isRemoteActive = isRemoteOnlyActive,
+						remoteDeviceName = connectedServerName?.ifBlank { "Prism Desktop" } ?: "Prism Desktop"
 					)
 
 					// BackHandler collapses now playing before exiting app
@@ -408,7 +479,9 @@ fun PrismAppRoot(
 	onSkipPrevious: () -> Unit = { playbackEngine.skipPrevious() },
 	onShuffleAll: () -> Unit,
 	onExpandNowPlaying: () -> Unit,
-	onOpenQrPairing: () -> Unit
+	onOpenQrPairing: () -> Unit,
+	isRemoteActive: Boolean = false,
+	remoteDeviceName: String = "Prism Desktop"
 ) {
 	val navController = rememberNavController()
 	val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -427,7 +500,9 @@ fun PrismAppRoot(
 					onTogglePlayPause = onTogglePlayPause,
 					onSkipNext = onSkipNext,
 					onSkipPrevious = onSkipPrevious,
-					onBarClick = onExpandNowPlaying
+					onBarClick = onExpandNowPlaying,
+					isRemoteActive = isRemoteActive,
+					remoteDeviceName = remoteDeviceName
 				)
 
 				NavigationBar {

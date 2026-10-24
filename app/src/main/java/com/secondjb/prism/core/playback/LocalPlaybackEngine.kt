@@ -351,6 +351,58 @@ class LocalPlaybackEngine(
         controllerFuture = null
     }
 
+    fun syncRemoteMetadata(
+        remoteTrack: Track,
+        playableUri: String,
+        isPlaying: Boolean,
+        positionMs: Long,
+        serverName: String
+    ) {
+        val controller = mediaController ?: return
+
+        // Mute local volume while running in remote-only output mode
+        controller.volume = 0f
+
+        val currentItem = controller.currentMediaItem
+        val targetArtist = "${remoteTrack.artist} • Playing on $serverName"
+        val needsNewItem = currentItem?.mediaId != remoteTrack.id ||
+                currentItem.mediaMetadata.title?.toString() != remoteTrack.title
+
+        if (needsNewItem) {
+            val metadata = MediaMetadata.Builder()
+                .setTitle(remoteTrack.title)
+                .setArtist(targetArtist)
+                .setAlbumTitle(remoteTrack.album)
+                .setArtworkUri(remoteTrack.artworkUri?.let { Uri.parse(it) })
+                .build()
+
+            val mediaItem = MediaItem.Builder()
+                .setMediaId(remoteTrack.id)
+                .setUri(Uri.parse(playableUri))
+                .setMediaMetadata(metadata)
+                .build()
+
+            controller.setMediaItem(mediaItem)
+            controller.prepare()
+        }
+
+        if (isPlaying && !controller.isPlaying) {
+            controller.play()
+        } else if (!isPlaying && controller.isPlaying) {
+            controller.pause()
+        }
+
+        val drift = Math.abs(controller.currentPosition - positionMs)
+        if (drift > 2000L) {
+            controller.seekTo(positionMs)
+        }
+    }
+
+    fun restoreLocalOutput() {
+        val controller = mediaController ?: return
+        controller.volume = 1f
+    }
+
     companion object {
         fun Track.toMediaItem(): MediaItem {
             return MediaItem.Builder()

@@ -99,8 +99,8 @@ fun ModernLyricsView(
     // Keep active lyric line centered in the preview card viewport
     LaunchedEffect(activeIndex) {
         if (activeIndex in parsedLines.indices) {
-            val targetScroll = (activeIndex - 2).coerceAtLeast(0)
-            listState.animateScrollToItem(targetScroll)
+            val targetScroll = (activeIndex - 1).coerceAtLeast(0)
+            listState.animateScrollToItem(index = targetScroll, scrollOffset = -80)
         }
     }
 

@@ -270,6 +270,8 @@ class SyncViewModel(
         _isDesktopOutputEnabled.value = enabled
         if (!enabled) {
             sendRemoteCommand(CommandAction.PAUSE)
+        } else {
+            sendRemoteCommand(CommandAction.PLAY)
         }
     }
 
