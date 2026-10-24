@@ -983,48 +983,13 @@ private fun PairedDeviceItem(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = device.name.trim().ifBlank { "Prism Desktop" },
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false) // Leaves room for the badge!
-                    )
-                    if (isConnected) {
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-                            modifier = Modifier.align(Alignment.CenterVertically)
-                        ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                            ) {
-                                Text(
-                                    text = "CONNECTED",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        platformStyle = PlatformTextStyle(includeFontPadding = false),
-                                        lineHeightStyle = LineHeightStyle(
-                                            alignment = LineHeightStyle.Alignment.Center,
-                                            trim = LineHeightStyle.Trim.Both
-                                        )
-                                    ),
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    textAlign = TextAlign.Center
-                                )
-                            }
-                        }
-                    }
-                }
+                Text(
+                    text = device.name.trim().ifBlank { "Prism Desktop" },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
                 Text(
                     text = "${device.host}:${device.port}",
                     style = MaterialTheme.typography.bodySmall,
@@ -1038,6 +1003,33 @@ private fun PairedDeviceItem(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                if (isConnected) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                        ) {
+                            Text(
+                                text = "CONNECTED",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    platformStyle = PlatformTextStyle(includeFontPadding = false),
+                                    lineHeightStyle = LineHeightStyle(
+                                        alignment = LineHeightStyle.Alignment.Center,
+                                        trim = LineHeightStyle.Trim.Both
+                                    )
+                                ),
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
                 if (!isConnected) {
                     FilledTonalButton(
                         onClick = onConnect,
