@@ -3,6 +3,7 @@ package com.secondjb.prism.ui.screens.library
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.secondjb.prism.core.data.MediaStoreAudioRepository
+import com.secondjb.prism.core.data.PlaylistRepository
 import com.secondjb.prism.domain.model.Album
 import com.secondjb.prism.domain.model.Artist
 import com.secondjb.prism.domain.model.Playlist
@@ -29,6 +30,8 @@ data class LibraryUiState(
     val albums: List<Album> = emptyList(),
     val artists: List<Artist> = emptyList(),
     val playlists: List<Playlist> = emptyList(),
+    val likedTrackIds: Set<String> = emptySet(),
+    val activePlaylist: Playlist? = null,
     val pinnedIds: Set<String> = emptySet(),
     val isLoading: Boolean = false
 ) {
@@ -66,10 +69,18 @@ data class LibraryUiState(
         } else {
             playlists.filter { it.name.contains(searchQuery, ignoreCase = true) }
         }
+
+    val activePlaylistTracks: List<Track>
+        get() {
+            val pl = activePlaylist ?: return emptyList()
+            val idSet = pl.trackIds.toSet()
+            return tracks.filter { idSet.contains(it.id) }
+        }
 }
 
 class LibraryViewModel(
-    private val repository: MediaStoreAudioRepository
+    private val repository: MediaStoreAudioRepository,
+    private val playlistRepository: PlaylistRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LibraryUiState())
@@ -77,6 +88,18 @@ class LibraryViewModel(
 
     init {
         loadLibrary()
+        playlistRepository?.let { plRepo ->
+            viewModelScope.launch {
+                plRepo.playlists.collect { plList ->
+                    _uiState.update { it.copy(playlists = plList) }
+                }
+            }
+            viewModelScope.launch {
+                plRepo.likedTrackIds.collect { likedSet ->
+                    _uiState.update { it.copy(likedTrackIds = likedSet) }
+                }
+            }
+        }
     }
 
     fun loadLibrary() {
@@ -86,28 +109,11 @@ class LibraryViewModel(
             val albums = repository.loadAlbums()
             val artists = repository.loadArtists()
 
-            // Built-in initial playlists
-            val defaultPlaylists = listOf(
-                Playlist(
-                    id = "favorites",
-                    name = "Favorites",
-                    description = "Your favorite tracks",
-                    isPinned = true
-                ),
-                Playlist(
-                    id = "hi_res",
-                    name = "Hi-Res Collection",
-                    description = "Lossless FLAC and 24-bit audio",
-                    isPinned = true
-                )
-            )
-
             _uiState.update {
                 it.copy(
                     tracks = tracks,
                     albums = albums,
                     artists = artists,
-                    playlists = defaultPlaylists,
                     isLoading = false
                 )
             }
@@ -115,7 +121,7 @@ class LibraryViewModel(
     }
 
     fun setFilterChip(chip: LibraryFilterChip) {
-        _uiState.update { it.copy(selectedChip = chip) }
+        _uiState.update { it.copy(selectedChip = chip, activePlaylist = null) }
     }
 
     fun toggleViewMode() {
@@ -130,23 +136,60 @@ class LibraryViewModel(
         _uiState.update { it.copy(isSearchActive = active, searchQuery = if (!active) "" else it.searchQuery) }
     }
 
+    fun openPlaylist(playlist: Playlist?) {
+        _uiState.update { it.copy(activePlaylist = playlist) }
+    }
+
     fun togglePin(id: String) {
-        _uiState.update {
-            val updated = if (it.pinnedIds.contains(id)) {
-                it.pinnedIds - id
-            } else {
-                it.pinnedIds + id
+        playlistRepository?.let {
+            viewModelScope.launch { it.togglePinPlaylist(id) }
+        } ?: run {
+            _uiState.update {
+                val updated = if (it.pinnedIds.contains(id)) it.pinnedIds - id else it.pinnedIds + id
+                it.copy(pinnedIds = updated)
             }
-            it.copy(pinnedIds = updated)
         }
     }
 
     fun createPlaylist(name: String, description: String? = null) {
-        val newPlaylist = Playlist(
-            id = "pl_${System.currentTimeMillis()}",
-            name = name,
-            description = description
-        )
-        _uiState.update { it.copy(playlists = it.playlists + newPlaylist) }
+        playlistRepository?.let {
+            viewModelScope.launch { it.createPlaylist(name, description) }
+        } ?: run {
+            val newPlaylist = Playlist(
+                id = "pl_${System.currentTimeMillis()}",
+                name = name,
+                description = description
+            )
+            _uiState.update { it.copy(playlists = it.playlists + newPlaylist) }
+        }
+    }
+
+    fun deletePlaylist(playlistId: String) {
+        playlistRepository?.let {
+            viewModelScope.launch {
+                it.deletePlaylist(playlistId)
+                if (_uiState.value.activePlaylist?.id == playlistId) {
+                    _uiState.update { s -> s.copy(activePlaylist = null) }
+                }
+            }
+        }
+    }
+
+    fun addTrackToPlaylist(playlistId: String, trackId: String) {
+        playlistRepository?.let {
+            viewModelScope.launch { it.addTrackToPlaylist(playlistId, trackId) }
+        }
+    }
+
+    fun removeTrackFromPlaylist(playlistId: String, trackId: String) {
+        playlistRepository?.let {
+            viewModelScope.launch { it.removeTrackFromPlaylist(playlistId, trackId) }
+        }
+    }
+
+    fun toggleLikeTrack(trackId: String) {
+        playlistRepository?.let {
+            viewModelScope.launch { it.toggleLikeTrack(trackId) }
+        }
     }
 }

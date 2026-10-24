@@ -37,7 +37,8 @@ class MediaStoreAudioRepository(private val context: Context) {
             MediaStore.Audio.Media.MIME_TYPE,
             MediaStore.Audio.Media.YEAR,
             MediaStore.Audio.Media.TRACK,
-            MediaStore.Audio.Media.DATE_ADDED
+            MediaStore.Audio.Media.DATE_ADDED,
+            MediaStore.Audio.Media.DATA
         )
 
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} >= 10000"
@@ -55,6 +56,7 @@ class MediaStoreAudioRepository(private val context: Context) {
                 val yearCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR)
                 val trackCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
                 val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+                val dataCol = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
 
                 while (cursor.moveToNext()) {
                     val id = cursor.getLong(idCol)
@@ -69,6 +71,7 @@ class MediaStoreAudioRepository(private val context: Context) {
                     val year = cursor.getInt(yearCol).takeIf { it > 0 }
                     val trackNum = cursor.getInt(trackCol).takeIf { it > 0 }
                     val dateAdded = cursor.getLong(dateCol)
+                    val filePath = if (dataCol != -1) cursor.getString(dataCol) else null
 
                     val format = resolveFormatFromMime(mimeType)
 
@@ -86,6 +89,7 @@ class MediaStoreAudioRepository(private val context: Context) {
                             bitRateKbps = if (format == "FLAC") 1411 else 320,
                             format = format,
                             artworkUri = artworkUri,
+                            filePath = filePath,
                             year = year,
                             trackNumber = trackNum,
                             dateAdded = dateAdded

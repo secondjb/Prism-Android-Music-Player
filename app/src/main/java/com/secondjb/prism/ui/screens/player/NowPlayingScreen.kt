@@ -44,6 +44,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,11 +56,13 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.secondjb.prism.core.lyrics.PrismLyricsEngine
 import com.secondjb.prism.domain.model.DeviceNode
 import com.secondjb.prism.domain.model.PlaybackState
 import com.secondjb.prism.domain.model.RepeatMode
@@ -95,6 +98,16 @@ fun NowPlayingScreen(
     var showQueueSheet by remember { mutableStateOf(false) }
     var showDeviceSheet by remember { mutableStateOf(false) }
     var isLyricsFullscreen by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val lyricsEngine = remember { PrismLyricsEngine(context) }
+    var resolvedLyrics by remember(track.id) { mutableStateOf(track.lyrics) }
+
+    LaunchedEffect(track.id) {
+        if (resolvedLyrics.isNullOrBlank()) {
+            resolvedLyrics = lyricsEngine.resolveLyrics(track, allowOnlineFetch = false)
+        }
+    }
 
     val scrollState = rememberScrollState()
 
@@ -364,7 +377,7 @@ fun NowPlayingScreen(
 
             // Scroll down to see Lyrics Card
             ModernLyricsView(
-                lyricsText = track.lyrics,
+                lyricsText = resolvedLyrics,
                 currentPositionMs = playbackState.positionMs,
                 onSeek = onSeek,
                 isFullScreen = isLyricsFullscreen,

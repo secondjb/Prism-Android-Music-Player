@@ -68,54 +68,69 @@ fun extractPaletteFromBitmap(bitmap: Bitmap): PrismAlbumPalette {
 }
 
 /**
- * Builds a harmonious Material 3 ColorScheme from album art swatches.
+ * Builds a harmonious Material 3 ColorScheme from album art swatches, modeled after PixelPlayer and LastWave.
+ * Keeps surface/background anchored to legible Material 3 tokens while using the album palette strictly
+ * for vibrant accents (primary, primaryContainer, secondary, tertiary).
  */
 fun buildDynamicColorScheme(palette: PrismAlbumPalette, isDark: Boolean): ColorScheme {
     return if (isDark) {
-        val primary = palette.primary.adjustLuminance(1.1f)
-        val surface = palette.dominant.adjustLuminance(0.14f)
-        val surfaceVariant = palette.dominant.adjustLuminance(0.22f)
+        // Guarantee accessible primary color with high contrast on dark surface
+        val primary = palette.primary.adjustLuminance(1.15f)
+        val primaryContainer = palette.primary.adjustLuminance(0.28f)
+        val secondary = palette.secondary.adjustLuminance(1.1f)
+        val secondaryContainer = palette.secondary.adjustLuminance(0.24f)
+
+        // Maintain rock-solid dark surface hierarchy (never black-out)
+        val surfaceBase = Color(0xFF141519)
+        val surfaceContainer = Color(0xFF1E2026)
+        val surfaceVariant = Color(0xFF282A32)
+
         darkColorScheme(
             primary = primary,
             onPrimary = primary.contrastContentColor(),
-            primaryContainer = palette.primary.adjustLuminance(0.35f),
-            onPrimaryContainer = Color.White,
-            secondary = palette.secondary.adjustLuminance(1.15f),
-            onSecondary = palette.secondary.contrastContentColor(),
-            secondaryContainer = palette.secondary.adjustLuminance(0.30f),
-            onSecondaryContainer = Color.White,
+            primaryContainer = primaryContainer,
+            onPrimaryContainer = Color(0xFFEDEAEF),
+            secondary = secondary,
+            onSecondary = secondary.contrastContentColor(),
+            secondaryContainer = secondaryContainer,
+            onSecondaryContainer = Color(0xFFEDEAEF),
             tertiary = palette.tertiary,
             onTertiary = palette.tertiary.contrastContentColor(),
-            background = palette.dominant.adjustLuminance(0.08f),
+            background = surfaceBase,
             onBackground = Color(0xFFEDEAEF),
-            surface = surface,
+            surface = surfaceContainer,
             onSurface = Color(0xFFEDEAEF),
             surfaceVariant = surfaceVariant,
-            onSurfaceVariant = Color(0xFFCAC4D0),
-            surfaceContainer = surfaceVariant
+            onSurfaceVariant = Color(0xFFC7C5D0),
+            surfaceContainer = surfaceContainer,
+            surfaceContainerHigh = Color(0xFF2A2C34),
+            surfaceContainerHighest = Color(0xFF33353E)
         )
     } else {
         val primary = palette.primary.adjustLuminance(0.85f)
-        val surface = palette.dominant.adjustLuminance(0.96f)
-        val surfaceVariant = palette.dominant.adjustLuminance(0.90f)
+        val primaryContainer = palette.primary.adjustLuminance(0.92f)
+        val secondary = palette.secondary.adjustLuminance(0.80f)
+
         lightColorScheme(
             primary = primary,
             onPrimary = primary.contrastContentColor(),
-            primaryContainer = palette.primary.adjustLuminance(0.90f),
+            primaryContainer = primaryContainer,
             onPrimaryContainer = palette.primary.adjustLuminance(0.2f),
-            secondary = palette.secondary.adjustLuminance(0.8f),
-            onSecondary = palette.secondary.contrastContentColor(),
+            secondary = secondary,
+            onSecondary = secondary.contrastContentColor(),
             secondaryContainer = palette.secondary.adjustLuminance(0.92f),
             onSecondaryContainer = palette.secondary.adjustLuminance(0.2f),
             tertiary = palette.tertiary,
             onTertiary = palette.tertiary.contrastContentColor(),
-            background = Color(0xFFFAF8FD),
-            onBackground = Color(0xFF1D1B20),
-            surface = surface,
-            onSurface = Color(0xFF1D1B20),
-            surfaceVariant = surfaceVariant,
-            onSurfaceVariant = Color(0xFF49454F),
-            surfaceContainer = surfaceVariant
+            background = Color(0xFFF9F9FC),
+            onBackground = Color(0xFF1B1B1F),
+            surface = Color(0xFFFFFFFF),
+            onSurface = Color(0xFF1B1B1F),
+            surfaceVariant = Color(0xFFE2E1EC),
+            onSurfaceVariant = Color(0xFF45464F),
+            surfaceContainer = Color(0xFFF0EFF6),
+            surfaceContainerHigh = Color(0xFFEAE9F0),
+            surfaceContainerHighest = Color(0xFFE4E3EA)
         )
     }
 }

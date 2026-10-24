@@ -20,6 +20,7 @@ data class Track(
     val format: String = "MP3",
     val artworkUri: String? = null,
     val lyrics: String? = null,
+    val filePath: String? = null,
     val genre: String? = null,
     val year: Int? = null,
     val trackNumber: Int? = null,

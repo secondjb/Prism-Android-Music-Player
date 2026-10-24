@@ -8,7 +8,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -29,6 +31,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -120,8 +124,12 @@ fun FloatingNowPlayingBar(
                         }
                     )
                 }
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f), MaterialTheme.shapes.large)
                 .clickable(onClick = onBarClick),
-            shape = MaterialTheme.shapes.large
+            shape = MaterialTheme.shapes.large,
+            colors = CardDefaults.elevatedCardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            )
         ) {
             Column {
                 Row(
@@ -164,6 +172,21 @@ fun FloatingNowPlayingBar(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
+
+                    // Rewind / Previous Button
+                    IconButton(
+                        onClick = onSkipPrevious,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SkipPrevious,
+                            contentDescription = "Previous Track",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    Spacer(Modifier.width(2.dp))
 
                     // Play/Pause Button
                     FilledTonalIconButton(

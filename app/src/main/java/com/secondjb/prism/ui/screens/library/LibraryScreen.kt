@@ -26,17 +26,25 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -75,10 +83,43 @@ fun LibraryScreen(
     onTogglePin: (String) -> Unit,
     onCreatePlaylist: (String) -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
+    onOpenPlaylist: (Playlist?) -> Unit = {},
+    onDeletePlaylist: (String) -> Unit = {},
+    onAddTrackToPlaylist: (String, String) -> Unit = { _, _ -> },
+    onRemoveTrackFromPlaylist: (String, String) -> Unit = { _, _ -> },
+    onToggleLikeTrack: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
+    var trackForPlaylistDialog by remember { mutableStateOf<Track?>(null) }
+
+    // If viewing a single playlist detail
+    if (uiState.activePlaylist != null) {
+        PlaylistDetailScreen(
+            playlist = uiState.activePlaylist,
+            tracks = uiState.activePlaylistTracks,
+            onBack = { onOpenPlaylist(null) },
+            onPlayTrack = onTrackClick,
+            onPlayAll = { tracks ->
+                if (tracks.isNotEmpty()) onTrackClick(tracks.first(), tracks)
+            },
+            onShuffleAll = { tracks ->
+                if (tracks.isNotEmpty()) {
+                    val shuffled = tracks.shuffled()
+                    onTrackClick(shuffled.first(), shuffled)
+                }
+            },
+            onRemoveTrack = { trackId ->
+                onRemoveTrackFromPlaylist(uiState.activePlaylist.id, trackId)
+            },
+            onDeletePlaylist = {
+                onDeletePlaylist(uiState.activePlaylist.id)
+            },
+            modifier = modifier
+        )
+        return
+    }
 
     Column(
         modifier = modifier
@@ -138,9 +179,8 @@ fun LibraryScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(LibraryFilterChip.entries.toTypedArray()) { chip ->
-                val selected = uiState.selectedChip == chip
                 FilterChip(
-                    selected = selected,
+                    selected = uiState.selectedChip == chip,
                     onClick = { onFilterSelect(chip) },
                     label = { Text(chip.label) },
                     shape = PillShape,
@@ -152,7 +192,7 @@ fun LibraryScreen(
             }
         }
 
-        // Subheader (Item count + Grid/List toggle)
+        // Controls bar: count & Grid/List view toggle
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -172,21 +212,19 @@ fun LibraryScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            IconButton(onClick = onToggleViewMode) {
-                Icon(
-                    imageVector = if (uiState.isGridView) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
-                    contentDescription = "Toggle Grid/List View",
-                    tint = MaterialTheme.colorScheme.primary
-                )
+            if (uiState.selectedChip == LibraryFilterChip.ALL_SONGS || uiState.selectedChip == LibraryFilterChip.PLAYLISTS) {
+                IconButton(onClick = onToggleViewMode, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        imageVector = if (uiState.isGridView) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
+                        contentDescription = "Toggle Grid/List",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 
-        // Content Area
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-        ) {
+        // Content Area based on selected filter
+        Box(modifier = Modifier.fillMaxSize()) {
             when (uiState.selectedChip) {
                 LibraryFilterChip.ALL_SONGS -> {
                     if (uiState.isGridView) {
@@ -200,7 +238,10 @@ fun LibraryScreen(
                         TrackListView(
                             tracks = uiState.filteredTracks,
                             pinnedIds = uiState.pinnedIds,
+                            likedTrackIds = uiState.likedTrackIds,
                             onTogglePin = onTogglePin,
+                            onToggleLike = onToggleLikeTrack,
+                            onAddToPlaylist = { trackForPlaylistDialog = it },
                             onTrackClick = onTrackClick
                         )
                     }
@@ -210,7 +251,8 @@ fun LibraryScreen(
                         playlists = uiState.filteredPlaylists,
                         pinnedIds = uiState.pinnedIds,
                         isGrid = uiState.isGridView,
-                        onTogglePin = onTogglePin
+                        onTogglePin = onTogglePin,
+                        onSelectPlaylist = onOpenPlaylist
                     )
                 }
                 LibraryFilterChip.ALBUMS -> {
@@ -266,13 +308,301 @@ fun LibraryScreen(
             }
         )
     }
+
+    // Add Track to Playlist Dialog
+    trackForPlaylistDialog?.let { track ->
+        AddToPlaylistDialog(
+            track = track,
+            playlists = uiState.playlists,
+            onDismiss = { trackForPlaylistDialog = null },
+            onSelectPlaylist = { pl ->
+                onAddTrackToPlaylist(pl.id, track.id)
+                trackForPlaylistDialog = null
+            },
+            onCreateNewPlaylist = { name ->
+                onCreatePlaylist(name)
+            }
+        )
+    }
+}
+
+@Composable
+private fun PlaylistDetailScreen(
+    playlist: Playlist,
+    tracks: List<Track>,
+    onBack: () -> Unit,
+    onPlayTrack: (Track, List<Track>) -> Unit,
+    onPlayAll: (List<Track>) -> Unit,
+    onShuffleAll: (List<Track>) -> Unit,
+    onRemoveTrack: (String) -> Unit,
+    onDeletePlaylist: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(top = 16.dp)
+    ) {
+        // Header Row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text(
+                        text = playlist.name,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "${tracks.size} songs",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            if (playlist.id != "favorites") {
+                IconButton(onClick = { showDeleteConfirm = true }) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete Playlist", tint = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // Play All / Shuffle Row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Button(
+                onClick = { onPlayAll(tracks) },
+                modifier = Modifier.weight(1f),
+                shape = PillShape,
+                enabled = tracks.isNotEmpty()
+            ) {
+                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Play All")
+            }
+
+            FilledTonalButton(
+                onClick = { onShuffleAll(tracks) },
+                modifier = Modifier.weight(1f),
+                shape = PillShape,
+                enabled = tracks.isNotEmpty()
+            ) {
+                Icon(Icons.Default.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Shuffle")
+            }
+        }
+
+        Spacer(Modifier.height(14.dp))
+
+        if (tracks.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "No tracks in this playlist yet.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 120.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(tracks, key = { it.id }) { track ->
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onPlayTrack(track, tracks) },
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surfaceContainer
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                            ) {
+                                AsyncImage(
+                                    model = track.artworkUri,
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = track.title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = track.artist,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            IconButton(onClick = { onRemoveTrack(track.id) }) {
+                                Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete Playlist") },
+            text = { Text("Are you sure you want to delete '${playlist.name}'?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        onDeletePlaylist()
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun AddToPlaylistDialog(
+    track: Track,
+    playlists: List<Playlist>,
+    onDismiss: () -> Unit,
+    onSelectPlaylist: (Playlist) -> Unit,
+    onCreateNewPlaylist: (String) -> Unit
+) {
+    var isCreatingNew by remember { mutableStateOf(false) }
+    var newName by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add to Playlist") },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "${track.title} • ${track.artist}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(12.dp))
+
+                if (isCreatingNew) {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        label = { Text("New Playlist Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    LazyColumn(modifier = Modifier.height(200.dp)) {
+                        items(playlists) { pl ->
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onSelectPlaylist(pl) }
+                                    .padding(vertical = 4.dp),
+                                shape = MaterialTheme.shapes.small,
+                                color = MaterialTheme.colorScheme.surfaceContainer
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.PlaylistAdd, contentDescription = null, modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(text = pl.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (isCreatingNew) {
+                TextButton(
+                    onClick = {
+                        if (newName.isNotBlank()) {
+                            onCreateNewPlaylist(newName.trim())
+                            isCreatingNew = false
+                            newName = ""
+                        }
+                    }
+                ) {
+                    Text("Create & Add")
+                }
+            } else {
+                TextButton(onClick = { isCreatingNew = true }) {
+                    Text("New Playlist")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable
 private fun TrackListView(
     tracks: List<Track>,
     pinnedIds: Set<String>,
+    likedTrackIds: Set<String> = emptySet(),
     onTogglePin: (String) -> Unit,
+    onToggleLike: (String) -> Unit = {},
+    onAddToPlaylist: (Track) -> Unit = {},
     onTrackClick: (Track, List<Track>) -> Unit
 ) {
     val sortedTracks = remember(tracks, pinnedIds) {
@@ -281,17 +611,18 @@ private fun TrackListView(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(sortedTracks, key = { it.id }) { track ->
             val isPinned = pinnedIds.contains(track.id)
+            val isLiked = likedTrackIds.contains(track.id)
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onTrackClick(track, tracks) },
                 shape = MaterialTheme.shapes.medium,
-                color = if (isPinned) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surface
+                color = if (isPinned) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer
             ) {
                 Row(
                     modifier = Modifier
@@ -301,7 +632,7 @@ private fun TrackListView(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(52.dp)
+                            .size(50.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant)
                     ) {
@@ -313,20 +644,20 @@ private fun TrackListView(
                         )
                     }
 
-                    Spacer(Modifier.width(14.dp))
+                    Spacer(Modifier.width(12.dp))
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = track.title,
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = track.artist,
-                                style = MaterialTheme.typography.bodyMedium,
+                                style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -350,18 +681,29 @@ private fun TrackListView(
                         }
                     }
 
-                    Text(
-                        text = formatDuration(track.durationMs),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    IconButton(onClick = { onTogglePin(track.id) }) {
+                    // Like Toggle
+                    IconButton(
+                        onClick = { onToggleLike(track.id) },
+                        modifier = Modifier.size(36.dp)
+                    ) {
                         Icon(
-                            imageVector = if (isPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
-                            contentDescription = "Pin Track",
-                            tint = if (isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                            modifier = Modifier.size(18.dp)
+                            imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            contentDescription = "Like",
+                            tint = if (isLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // Add to Playlist Button
+                    IconButton(
+                        onClick = { onAddToPlaylist(track) },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlaylistAdd,
+                            contentDescription = "Add to playlist",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
@@ -384,7 +726,7 @@ private fun TrackGridView(
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(20.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 120.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
@@ -456,20 +798,23 @@ private fun PlaylistView(
     playlists: List<Playlist>,
     pinnedIds: Set<String>,
     isGrid: Boolean,
-    onTogglePin: (String) -> Unit
+    onTogglePin: (String) -> Unit,
+    onSelectPlaylist: (Playlist) -> Unit = {}
 ) {
     if (isGrid) {
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(20.dp),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 120.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             items(playlists, key = { it.id }) { playlist ->
                 ElevatedCard(
                     shape = MaterialTheme.shapes.large,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelectPlaylist(playlist) }
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
@@ -478,14 +823,11 @@ private fun PlaylistView(
                             fontWeight = FontWeight.Bold,
                             maxLines = 1
                         )
-                        playlist.description?.let {
-                            Text(
-                                text = it,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1
-                            )
-                        }
+                        Text(
+                            text = "${playlist.trackIds.size} songs",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -493,14 +835,16 @@ private fun PlaylistView(
     } else {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 120.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(playlists, key = { it.id }) { playlist ->
                 Surface(
                     shape = MaterialTheme.shapes.medium,
                     color = MaterialTheme.colorScheme.surfaceContainer,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelectPlaylist(playlist) }
                 ) {
                     Row(
                         modifier = Modifier
@@ -515,13 +859,11 @@ private fun PlaylistView(
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
-                            playlist.description?.let {
-                                Text(
-                                    text = it,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                            Text(
+                                text = "${playlist.trackIds.size} songs",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
@@ -539,7 +881,7 @@ private fun AlbumGridView(
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(20.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 120.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
@@ -592,7 +934,7 @@ private fun ArtistListView(
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(artists, key = { it.id }) { artist ->

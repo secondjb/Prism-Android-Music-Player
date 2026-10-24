@@ -1,5 +1,7 @@
 package com.secondjb.prism
 
+import com.secondjb.prism.core.data.PlaylistRepositoryTest
+import com.secondjb.prism.core.metadata.AudioTagMetadataExtractorTest
 import com.secondjb.prism.data.MediaStoreAudioRepositoryTest
 import com.secondjb.prism.domain.DomainModelsTest
 import com.secondjb.prism.playback.PlaybackEngineTest
@@ -27,6 +29,8 @@ import org.junit.runners.Suite
     LibraryUiStateTest::class,
     ComponentsTest::class,
     LrcParserTest::class,
+    AudioTagMetadataExtractorTest::class,
+    PlaylistRepositoryTest::class,
     SyncProtocolTest::class
 )
 class PrismRegressionTestSuite

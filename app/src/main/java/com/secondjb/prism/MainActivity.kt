@@ -39,6 +39,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.secondjb.prism.core.data.MediaStoreAudioRepository
+import com.secondjb.prism.core.data.PlaylistRepository
+import com.secondjb.prism.core.data.PrismPreferencesRepository
 import com.secondjb.prism.core.playback.LocalPlaybackEngine
 import com.secondjb.prism.core.sync.discovery.NsdDiscoveryManager
 import com.secondjb.prism.core.sync.protocol.CommandAction
@@ -70,12 +72,16 @@ class MainActivity : ComponentActivity() {
 		setContent {
 			val context = LocalContext.current
 			val repository = remember { MediaStoreAudioRepository(context) }
+			val playlistRepository = remember { PlaylistRepository(context) }
+			val preferencesRepository = remember { PrismPreferencesRepository(context) }
 			val playbackEngine = remember { LocalPlaybackEngine(context) }
 			val discoveryManager = remember { NsdDiscoveryManager(context) }
 			val syncViewModel = remember { SyncViewModel(discoveryManager = discoveryManager) }
 
 			val mainViewModel = remember { MainViewModel(repository) }
-			val libraryViewModel = remember { LibraryViewModel(repository) }
+			val libraryViewModel = remember { LibraryViewModel(repository, playlistRepository) }
+
+			val userPreferences by preferencesRepository.preferences.collectAsState()
 
 			val localPlaybackState by playbackEngine.playbackState.collectAsState()
 			val remotePlaybackState by syncViewModel.remotePlaybackState.collectAsState()
@@ -129,12 +135,13 @@ class MainActivity : ComponentActivity() {
 
 			// Dynamic Palette Provider adapts all screens to active album art!
 			PrismDynamicThemeProvider(
-				artworkData = effectivePlaybackState.currentTrack?.artworkUri
+				artworkData = if (userPreferences.isDynamicThemingEnabled) effectivePlaybackState.currentTrack?.artworkUri else null
 			) {
 				Box(modifier = Modifier.fillMaxSize()) {
 					PrismAppRoot(
 						mainViewModel = mainViewModel,
 						libraryViewModel = libraryViewModel,
+						preferencesRepository = preferencesRepository,
 						playbackState = effectivePlaybackState,
 						playbackEngine = playbackEngine,
 						onPlayTrack = { track, queue ->
@@ -252,6 +259,7 @@ class MainActivity : ComponentActivity() {
 fun PrismAppRoot(
 	mainViewModel: MainViewModel,
 	libraryViewModel: LibraryViewModel,
+	preferencesRepository: PrismPreferencesRepository,
 	playbackState: PlaybackState,
 	playbackEngine: PlaybackController,
 	onPlayTrack: (Track, List<Track>) -> Unit,
@@ -328,12 +336,20 @@ fun PrismAppRoot(
 					onToggleSearch = libraryViewModel::toggleSearchActive,
 					onTogglePin = libraryViewModel::togglePin,
 					onCreatePlaylist = libraryViewModel::createPlaylist,
-					onTrackClick = onPlayTrack
+					onTrackClick = onPlayTrack,
+					onOpenPlaylist = libraryViewModel::openPlaylist,
+					onDeletePlaylist = libraryViewModel::deletePlaylist,
+					onAddTrackToPlaylist = libraryViewModel::addTrackToPlaylist,
+					onRemoveTrackFromPlaylist = libraryViewModel::removeTrackFromPlaylist,
+					onToggleLikeTrack = libraryViewModel::toggleLikeTrack
 				)
 			}
 
 			composable(Screen.Settings.route) {
 				SettingsScreen(
+					preferencesRepository = preferencesRepository,
+					totalTrackCount = libraryState.tracks.size,
+					onRescanLibrary = { libraryViewModel.loadLibrary() },
 					onScanQrClick = onOpenQrPairing
 				)
 			}
