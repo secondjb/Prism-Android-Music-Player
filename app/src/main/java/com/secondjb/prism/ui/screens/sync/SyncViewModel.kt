@@ -684,14 +684,20 @@ class SyncViewModel(
     fun sendRemoteCommand(action: CommandAction, seekMs: Long? = null, volume: Float? = null) {
         when (action) {
             CommandAction.PAUSE -> {
+                val currentPos = _remotePlaybackState.value?.positionMs ?: basePositionMs
+                basePositionMs = currentPos
                 _remotePlaybackState.update { it?.copy(isPlaying = false) }
             }
             CommandAction.PLAY -> {
+                val currentPos = _remotePlaybackState.value?.positionMs ?: basePositionMs
+                basePositionMs = currentPos
                 lastSyncRealtime = SystemClock.elapsedRealtime()
                 _remotePlaybackState.update { it?.copy(isPlaying = true) }
             }
             CommandAction.TOGGLE_PLAY_PAUSE -> {
                 val currentPlaying = _remotePlaybackState.value?.isPlaying == true
+                val currentPos = _remotePlaybackState.value?.positionMs ?: basePositionMs
+                basePositionMs = currentPos
                 lastSyncRealtime = SystemClock.elapsedRealtime()
                 _remotePlaybackState.update { it?.copy(isPlaying = !currentPlaying) }
             }

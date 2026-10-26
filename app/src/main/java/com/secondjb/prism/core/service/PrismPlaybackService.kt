@@ -37,6 +37,7 @@ object MediaSessionBridge {
     var onRemoteSkipPrevious: (() -> Unit)? = null
     var onRemoteSeek: ((Long) -> Unit)? = null
     var onStateChanged: (() -> Unit)? = null
+    var suppressRemoteCallback: Boolean = false
 }
 
 /**
@@ -140,7 +141,9 @@ class PrismPlaybackService : MediaSessionService() {
             override fun play() {
                 if (MediaSessionBridge.isRemoteActive) {
                     player.pause()
-                    MediaSessionBridge.onRemotePlay?.invoke()
+                    if (!MediaSessionBridge.suppressRemoteCallback) {
+                        MediaSessionBridge.onRemotePlay?.invoke()
+                    }
                 } else {
                     super.play()
                 }
@@ -149,7 +152,9 @@ class PrismPlaybackService : MediaSessionService() {
             override fun pause() {
                 if (MediaSessionBridge.isRemoteActive) {
                     player.pause()
-                    MediaSessionBridge.onRemotePause?.invoke()
+                    if (!MediaSessionBridge.suppressRemoteCallback) {
+                        MediaSessionBridge.onRemotePause?.invoke()
+                    }
                 } else {
                     super.pause()
                 }

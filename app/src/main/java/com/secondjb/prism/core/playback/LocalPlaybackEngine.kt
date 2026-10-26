@@ -714,6 +714,16 @@ class LocalPlaybackEngine(
         }
     }
 
+    fun silenceLocalOutput() {
+        com.secondjb.prism.core.service.MediaSessionBridge.suppressRemoteCallback = true
+        try {
+            mediaController?.pause()
+            _playbackState.update { it.copy(isPlaying = false, lastActionTimestampMs = System.currentTimeMillis()) }
+        } finally {
+            com.secondjb.prism.core.service.MediaSessionBridge.suppressRemoteCallback = false
+        }
+    }
+
     fun restoreLocalOutput() {
         // Volume was never mutated; local playback can resume immediately
     }

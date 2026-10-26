@@ -192,7 +192,7 @@ class MainActivity : ComponentActivity() {
 			// Immediately pause local audio when local output is toggled off; restore and resync when toggled on
 			LaunchedEffect(isLocalOutputEnabled) {
 				if (!isLocalOutputEnabled) {
-					playbackEngine.pause()
+					playbackEngine.silenceLocalOutput()
 				} else {
 					playbackEngine.restoreLocalOutput()
 					if (isDesktopConnected && isDesktopOutputEnabled) {
@@ -344,8 +344,6 @@ class MainActivity : ComponentActivity() {
 				if (localActive || !isDesktopConnected) {
 					playbackEngine.restoreLocalOutput()
 					playbackEngine.playTrack(track, queue, activePlaylistId)
-				} else {
-					playbackEngine.pause()
 				}
 			}
 
@@ -359,8 +357,6 @@ class MainActivity : ComponentActivity() {
 				if (localActive || !isDesktopConnected) {
 					playbackEngine.restoreLocalOutput()
 					playbackEngine.togglePlayPause()
-				} else {
-					playbackEngine.pause()
 				}
 			}
 
