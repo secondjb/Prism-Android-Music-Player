@@ -124,91 +124,102 @@ fun DeviceSwitcherSheet(
                 }
             }
 
-            // 1. Currently Connected Windows PC Output
-            val desktopActive = isDesktopConnected && isDesktopOutputEnabled
-            val isDesktopStarred = starredDeviceId == "desktop"
-            Surface(
-                shape = MaterialTheme.shapes.medium,
-                color = if (desktopActive) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.surfaceContainer,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        if (isDesktopConnected) {
-                            onToggleDesktopOutput(!isDesktopOutputEnabled)
-                        } else {
-                            onPairQrClick()
-                        }
-                    }
-            ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Computer,
-                        contentDescription = null,
-                        tint = if (desktopActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(28.dp)
-                    )
+            // 1. Connected or Paired Device Output
+            val hasRemoteDevice = isDesktopConnected || pairedDevices.isNotEmpty()
+            if (hasRemoteDevice) {
+                val desktopActive = isDesktopConnected && isDesktopOutputEnabled
+                val isDesktopStarred = starredDeviceId == "desktop"
+                val remoteDeviceDisplayName = if (isDesktopConnected) {
+                    connectedServerName ?: "Prism Device"
+                } else {
+                    pairedDevices.firstOrNull()?.name ?: "Prism Device"
+                }
 
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                text = connectedServerName ?: "Prism Windows PC",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = if (desktopActive) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
                             if (isDesktopConnected) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primary)
-                                )
+                                onToggleDesktopOutput(!isDesktopOutputEnabled)
+                            } else if (pairedDevices.isNotEmpty()) {
+                                onConnectToPairedDevice(pairedDevices.first())
+                            } else {
+                                onPairQrClick()
                             }
                         }
-
-                        Text(
-                            text = if (isDesktopConnected) {
-                                "Connected • ${connectedEndpointInfo ?: "LAN Synced"}"
-                            } else {
-                                "Not Connected • Tap to pair or auto-connect below"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (isDesktopConnected) {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            } else {
-                                MaterialTheme.colorScheme.error
-                            }
-                        )
-                    }
-
-                    // Star button to designate as queue authority
-                    IconButton(
-                        onClick = { onSetStarredDevice("desktop") },
-                        modifier = Modifier.size(36.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Icon(
-                            imageVector = if (isDesktopStarred) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                            contentDescription = if (isDesktopStarred) "Starred queue authority" else "Set as queue authority",
-                            tint = if (isDesktopStarred) Color(0xFFFFB300) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                            modifier = Modifier.size(22.dp)
+                            imageVector = Icons.Default.Computer,
+                            contentDescription = null,
+                            tint = if (desktopActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(28.dp)
+                        )
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = remoteDeviceDisplayName,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                if (isDesktopConnected) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primary)
+                                    )
+                                }
+                            }
+
+                            Text(
+                                text = if (isDesktopConnected) {
+                                    "Connected • ${connectedEndpointInfo ?: "LAN Synced"}"
+                                } else {
+                                    "Not Connected • Tap to connect"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isDesktopConnected) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                } else {
+                                    MaterialTheme.colorScheme.error
+                                }
+                            )
+                        }
+
+                        // Star button to designate as queue authority
+                        IconButton(
+                            onClick = { onSetStarredDevice("desktop") },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isDesktopStarred) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                                contentDescription = if (isDesktopStarred) "Starred queue authority" else "Set as queue authority",
+                                tint = if (isDesktopStarred) Color(0xFFFFB300) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        Checkbox(
+                            checked = desktopActive,
+                            onCheckedChange = { onToggleDesktopOutput(it) },
+                            enabled = isDesktopConnected,
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = MaterialTheme.colorScheme.primary
+                            )
                         )
                     }
-
-                    Checkbox(
-                        checked = desktopActive,
-                        onCheckedChange = { onToggleDesktopOutput(it) },
-                        enabled = isDesktopConnected,
-                        colors = CheckboxDefaults.colors(
-                            checkedColor = MaterialTheme.colorScheme.primary
-                        )
-                    )
                 }
             }
 
@@ -265,10 +276,25 @@ fun DeviceSwitcherSheet(
                 }
             }
 
-            // 3. Previously Paired PCs (Stored Pairings)
+            if (!hasRemoteDevice && availableDiscoveredDevices.isEmpty()) {
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "No other devices connected or found on LAN.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            }
+
+            // 3. Previously Paired Devices (Stored Pairings)
             if (pairedDevices.isNotEmpty()) {
                 Text(
-                    text = "Paired Computers",
+                    text = "Paired Devices",
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold,

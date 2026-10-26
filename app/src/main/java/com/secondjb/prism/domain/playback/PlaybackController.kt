@@ -13,6 +13,12 @@ interface PlaybackController {
     val playbackState: StateFlow<PlaybackState>
 
     fun playTrack(track: Track, queue: List<Track> = listOf(track), startIndex: Int = -1)
+    fun playTrack(track: Track, queue: List<Track>, playlistId: String?) {
+        playTrack(track, queue, -1, playlistId)
+    }
+    fun playTrack(track: Track, queue: List<Track>, startIndex: Int, playlistId: String?) {
+        playTrack(track, queue, startIndex)
+    }
     fun prepareTrack(track: Track, queue: List<Track> = listOf(track), startIndex: Int = -1) {}
     fun togglePlayPause()
     fun play()
@@ -22,10 +28,13 @@ interface PlaybackController {
     fun skipPrevious()
     fun setRepeatMode(mode: RepeatMode)
     fun toggleShuffle()
+    fun reshuffleUpcomingContext() {}
     fun setVolume(volume: Float)
     fun addToQueue(track: Track)
     fun playNext(track: Track)
     fun removeFromQueue(index: Int)
+    fun removeFromUserQueue(index: Int) {}
     fun reorderQueue(fromIndex: Int, toIndex: Int)
     fun clearQueue()
+    fun addTrackToActivePlaylist(track: Track, playlistId: String) {}
 }

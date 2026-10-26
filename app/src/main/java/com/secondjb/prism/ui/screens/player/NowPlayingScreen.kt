@@ -101,6 +101,8 @@ fun NowPlayingScreen(
     onDismiss: () -> Unit,
     onSelectQueueIndex: (Int) -> Unit = {},
     onRemoveQueueIndex: (Int) -> Unit = {},
+    onRemoveUserQueueIndex: (Int) -> Unit = {},
+    onReshuffleUpcoming: () -> Unit = {},
     onClearQueue: () -> Unit = {},
     onPairQrClick: () -> Unit = {},
     sleepTimerState: SleepTimerState = SleepTimerState(),
@@ -528,13 +530,17 @@ fun NowPlayingScreen(
     // Queue Bottom Sheet
     if (showQueueSheet) {
         QueueBottomSheet(
-            queue = playbackState.queue,
+            currentTrack = playbackState.currentTrack,
+            userQueue = playbackState.userQueue,
+            contextQueue = playbackState.queue,
             currentIndex = playbackState.queueIndex,
             onSelectIndex = {
                 onSelectQueueIndex(it)
                 showQueueSheet = false
             },
+            onRemoveUserQueueIndex = onRemoveUserQueueIndex,
             onRemoveIndex = onRemoveQueueIndex,
+            onReshuffleUpcoming = onReshuffleUpcoming,
             onClearQueue = onClearQueue,
             onDismiss = { showQueueSheet = false }
         )

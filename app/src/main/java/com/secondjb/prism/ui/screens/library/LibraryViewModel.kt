@@ -83,6 +83,9 @@ class LibraryViewModel(
     private val playlistRepository: PlaylistRepository? = null
 ) : ViewModel() {
 
+    var onTrackAddedToPlaylist: ((Track, String) -> Unit)? = null
+    var onPlaylistsChanged: (() -> Unit)? = null
+
     private val _uiState = MutableStateFlow(LibraryUiState())
     val uiState: StateFlow<LibraryUiState> = _uiState.asStateFlow()
 
@@ -153,7 +156,10 @@ class LibraryViewModel(
 
     fun createPlaylist(name: String, description: String? = null) {
         playlistRepository?.let {
-            viewModelScope.launch { it.createPlaylist(name, description) }
+            viewModelScope.launch {
+                it.createPlaylist(name, description)
+                onPlaylistsChanged?.invoke()
+            }
         } ?: run {
             val newPlaylist = Playlist(
                 id = "pl_${System.currentTimeMillis()}",
@@ -161,6 +167,7 @@ class LibraryViewModel(
                 description = description
             )
             _uiState.update { it.copy(playlists = it.playlists + newPlaylist) }
+            onPlaylistsChanged?.invoke()
         }
     }
 
@@ -171,19 +178,30 @@ class LibraryViewModel(
                 if (_uiState.value.activePlaylist?.id == playlistId) {
                     _uiState.update { s -> s.copy(activePlaylist = null) }
                 }
+                onPlaylistsChanged?.invoke()
             }
         }
     }
 
     fun addTrackToPlaylist(playlistId: String, trackId: String) {
         playlistRepository?.let {
-            viewModelScope.launch { it.addTrackToPlaylist(playlistId, trackId) }
+            viewModelScope.launch {
+                it.addTrackToPlaylist(playlistId, trackId)
+                val track = _uiState.value.tracks.find { t -> t.id == trackId }
+                if (track != null) {
+                    onTrackAddedToPlaylist?.invoke(track, playlistId)
+                }
+                onPlaylistsChanged?.invoke()
+            }
         }
     }
 
     fun removeTrackFromPlaylist(playlistId: String, trackId: String) {
         playlistRepository?.let {
-            viewModelScope.launch { it.removeTrackFromPlaylist(playlistId, trackId) }
+            viewModelScope.launch {
+                it.removeTrackFromPlaylist(playlistId, trackId)
+                onPlaylistsChanged?.invoke()
+            }
         }
     }
 

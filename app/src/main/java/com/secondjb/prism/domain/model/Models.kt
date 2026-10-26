@@ -98,13 +98,16 @@ data class PlaybackState(
     val volume: Float = 1.0f,
     val queue: List<Track> = emptyList(),
     val queueIndex: Int = -1,
-    val activeDeviceId: String = "local"
+    val activeDeviceId: String = "local",
+    val userQueue: List<Track> = emptyList(),
+    val activePlaylistId: String? = null,
+    val lastActionTimestampMs: Long = 0L
 ) {
     val progressFraction: Float
         get() = if (durationMs > 0) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
 
     val hasNext: Boolean
-        get() = queue.isNotEmpty() && (queueIndex < queue.lastIndex || repeatMode == RepeatMode.ALL)
+        get() = userQueue.isNotEmpty() || (queue.isNotEmpty() && (queueIndex < queue.lastIndex || repeatMode == RepeatMode.ALL))
 
     val hasPrevious: Boolean
         get() = queue.isNotEmpty() && (queueIndex > 0 || positionMs > 3000L)

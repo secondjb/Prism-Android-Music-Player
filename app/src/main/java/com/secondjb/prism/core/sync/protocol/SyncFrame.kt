@@ -109,12 +109,37 @@ sealed class SyncFrame {
     ) : SyncFrame()
 
     @Serializable
+    @SerialName("playlist_sync")
+    data class PlaylistSync(
+        val playlists: List<SyncPlaylistDto>
+    ) : SyncFrame()
+
+    @Serializable
     @SerialName("enc")
     data class Encrypted(
         val n: String,
         val d: String
     ) : SyncFrame()
 }
+
+@Serializable
+data class SyncPlaylistDto(
+    val id: String,
+    val name: String,
+    val description: String? = null,
+    val isPinned: Boolean = false,
+    val tracks: List<SyncTrackKeyDto> = emptyList(),
+    val createdAt: Long = 0L,
+    val updatedAt: Long = 0L
+)
+
+@Serializable
+data class SyncTrackKeyDto(
+    val title: String,
+    val artist: String,
+    val filename: String,
+    val durationMs: Long = 0L
+)
 
 @Serializable
 data class SyncListeningEventItem(

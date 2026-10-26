@@ -189,6 +189,29 @@ class PlaylistRepository(
         persistToDisk(updated)
     }
 
+    suspend fun syncIncomingPlaylists(incomingPlaylists: List<Playlist>) = mutex.withLock {
+        val current = _playlists.value.toMutableList()
+        for (incoming in incomingPlaylists) {
+            val existingIndex = current.indexOfFirst {
+                it.id == incoming.id || it.name.equals(incoming.name, ignoreCase = true)
+            }
+            if (existingIndex >= 0) {
+                val existing = current[existingIndex]
+                current[existingIndex] = existing.copy(
+                    name = incoming.name,
+                    description = incoming.description ?: existing.description,
+                    trackIds = incoming.trackIds,
+                    isPinned = incoming.isPinned
+                )
+            } else {
+                current.add(incoming)
+            }
+        }
+        _playlists.value = current
+        _likedTrackIds.value = current.find { it.id == FAVORITES_ID }?.trackIds?.toSet() ?: emptySet()
+        persistToDisk(current)
+    }
+
     companion object {
         const val FAVORITES_ID = "favorites"
     }

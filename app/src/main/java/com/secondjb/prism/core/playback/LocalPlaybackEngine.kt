@@ -11,6 +11,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import com.secondjb.prism.core.data.PrismPreferencesRepository
 import com.secondjb.prism.core.service.PrismPlaybackService
 import com.secondjb.prism.domain.model.PlaybackState
 import com.secondjb.prism.domain.model.RepeatMode
@@ -29,10 +30,13 @@ import kotlinx.coroutines.launch
 
 /**
  * Local implementation of PlaybackController backed by AndroidX Media3 MediaController.
+ * Supports distinct Priority User Queue ("Next Up") and Context Queue ("Next from Playlist / Album"),
+ * reliable shuffling, queue persistence across restarts, and listening analytics.
  */
 class LocalPlaybackEngine(
     private val context: Context,
     private val statsRepository: com.secondjb.prism.core.stats.ListeningStatsRepository? = null,
+    private val preferencesRepository: PrismPreferencesRepository? = null,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.Main + Job())
 ) : PlaybackController {
 
@@ -42,7 +46,13 @@ class LocalPlaybackEngine(
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController: MediaController? = null
 
-    private var currentQueue: List<Track> = emptyList()
+    // Two-tier queue matching Prism Windows desktop logic
+    private var userQueue: MutableList<Track> = mutableListOf()
+    private var contextQueue: MutableList<Track> = mutableListOf()
+    private var originalQueue: MutableList<Track> = mutableListOf()
+    private var currentQueueIndex: Int = -1
+    private var activePlaylistId: String? = null
+
     val customQueueIds = mutableSetOf<String>()
     private var positionTickerJob: Job? = null
 
@@ -58,6 +68,39 @@ class LocalPlaybackEngine(
 
     init {
         initializeController()
+        hydratePersistedQueue()
+    }
+
+    private fun hydratePersistedQueue() {
+        val persisted = preferencesRepository?.loadPersistedQueueState() ?: return
+        if (persisted.contextQueue.isNotEmpty() || persisted.userQueue.isNotEmpty()) {
+            userQueue = persisted.userQueue.toMutableList()
+            contextQueue = persisted.contextQueue.toMutableList()
+            originalQueue = persisted.contextQueue.toMutableList()
+            currentQueueIndex = persisted.currentIndex
+            activePlaylistId = persisted.activePlaylistId
+            val activeTrack = if (currentQueueIndex in contextQueue.indices) contextQueue[currentQueueIndex] else contextQueue.firstOrNull()
+            _playbackState.update {
+                it.copy(
+                    currentTrack = activeTrack,
+                    queue = contextQueue.toList(),
+                    userQueue = userQueue.toList(),
+                    queueIndex = currentQueueIndex,
+                    activePlaylistId = activePlaylistId,
+                    isPlaying = false
+                )
+            }
+        }
+    }
+
+    private fun persistQueue() {
+        preferencesRepository?.saveQueueState(
+            userQueue = userQueue.toList(),
+            contextQueue = contextQueue.toList(),
+            currentIndex = currentQueueIndex,
+            currentTrackId = _playbackState.value.currentTrack?.id,
+            activePlaylistId = activePlaylistId
+        )
     }
 
     private fun initializeController() {
@@ -93,39 +136,11 @@ class LocalPlaybackEngine(
                 }
             }
 
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                // If previous track had accumulated listening time, check if it reached threshold
-                val prevTrack = currentScrobbleTrack
-                val prevMs = activeListeningMs
-                val wasAutoTransition = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO
-                commitActiveListeningEvent(prevTrack, prevMs, isCompleted = wasAutoTransition)
-
-                val currentMediaId = mediaItem?.mediaId
-                val trackIndex = currentQueue.indexOfFirst { it.id == currentMediaId }
-                val track = if (trackIndex != -1) currentQueue[trackIndex] else null
-
-                currentScrobbleTrack = track
-                activeListeningMs = 0L
-                lastPlayTickRealtime = if (controller.isPlaying) SystemClock.elapsedRealtime() else 0L
-
-                _playbackState.update {
-                    it.copy(
-                        currentTrack = track,
-                        queueIndex = trackIndex,
-                        durationMs = controller.duration.coerceAtLeast(0L),
-                        positionMs = controller.currentPosition.coerceAtLeast(0L)
-                    )
-                }
-            }
-
             override fun onPlaybackStateChanged(playbackStateInt: Int) {
                 val duration = controller.duration.coerceAtLeast(0L)
                 _playbackState.update { it.copy(durationMs = duration) }
                 if (playbackStateInt == Player.STATE_ENDED) {
-                    commitActiveListeningEvent(currentScrobbleTrack, activeListeningMs, isCompleted = true)
-                    activeListeningMs = 0L
-                    lastPlayTickRealtime = 0L
-                    _playbackState.update { it.copy(isPlaying = false) }
+                    advanceNextTrack(isUserInitiated = false)
                 }
             }
 
@@ -137,35 +152,30 @@ class LocalPlaybackEngine(
                 }
                 _playbackState.update { it.copy(repeatMode = mode) }
             }
-
-            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
-                _playbackState.update { it.copy(isShuffled = shuffleModeEnabled) }
-            }
         })
     }
 
     private fun syncFromController(controller: MediaController) {
-        val currentMediaId = controller.currentMediaItem?.mediaId
-        val trackIndex = currentQueue.indexOfFirst { it.id == currentMediaId }
-        val track = if (trackIndex != -1) currentQueue[trackIndex] else null
-
         val repeatMode = when (controller.repeatMode) {
             Player.REPEAT_MODE_ALL -> RepeatMode.ALL
             Player.REPEAT_MODE_ONE -> RepeatMode.ONE
             else -> RepeatMode.OFF
         }
 
+        val activeTrack = _playbackState.value.currentTrack
+
         _playbackState.update {
             it.copy(
-                currentTrack = track,
-                queueIndex = trackIndex,
+                currentTrack = activeTrack,
+                queueIndex = currentQueueIndex,
                 isPlaying = controller.isPlaying,
                 positionMs = controller.currentPosition.coerceAtLeast(0L),
                 durationMs = controller.duration.coerceAtLeast(0L),
-                isShuffled = controller.shuffleModeEnabled,
                 repeatMode = repeatMode,
                 volume = controller.volume,
-                queue = currentQueue
+                queue = contextQueue.toList(),
+                userQueue = userQueue.toList(),
+                activePlaylistId = activePlaylistId
             )
         }
     }
@@ -200,7 +210,7 @@ class LocalPlaybackEngine(
         if (track == null || statsRepository == null) return
         if (!isStatsCollectionEnabled) return
         if (isRemoteOnlyActive && preventDoubleCounting) {
-            // Audio rendered by desktop companion; desktop logs this playback session. Prevent double counting.
+            // Audio rendered by remote desktop; remote logs this playback session. Prevent double counting.
             return
         }
 
@@ -225,35 +235,79 @@ class LocalPlaybackEngine(
     }
 
     override fun playTrack(track: Track, queue: List<Track>, startIndex: Int) {
-        loadTrackInternal(track, queue, startIndex, playWhenReady = true)
+        playTrack(track, queue, startIndex, playlistId = null)
+    }
+
+    override fun playTrack(track: Track, queue: List<Track>, playlistId: String?) {
+        playTrack(track, queue, -1, playlistId)
+    }
+
+    override fun playTrack(track: Track, queue: List<Track>, startIndex: Int, playlistId: String?) {
+        loadTrackInternal(track, queue, startIndex, playlistId, playWhenReady = true)
     }
 
     override fun prepareTrack(track: Track, queue: List<Track>, startIndex: Int) {
-        loadTrackInternal(track, queue, startIndex, playWhenReady = false)
+        loadTrackInternal(track, queue, startIndex, playlistId = null, playWhenReady = false)
     }
 
-    private fun loadTrackInternal(track: Track, queue: List<Track>, startIndex: Int, playWhenReady: Boolean) {
+    private fun loadTrackInternal(
+        track: Track,
+        queue: List<Track>,
+        startIndex: Int,
+        playlistId: String?,
+        playWhenReady: Boolean
+    ) {
         val prevTrack = currentScrobbleTrack
         val prevMs = activeListeningMs
         commitActiveListeningEvent(prevTrack, prevMs, isCompleted = false)
 
-        currentQueue = queue
-        currentScrobbleTrack = track
-        activeListeningMs = 0L
-        lastPlayTickRealtime = 0L
-        val targetIndex = if (startIndex != -1 && startIndex in queue.indices) {
+        userQueue.clear()
+        customQueueIds.clear()
+        contextQueue = queue.toMutableList()
+        originalQueue = queue.toMutableList()
+        activePlaylistId = playlistId
+
+        var targetIndex = if (startIndex != -1 && startIndex in contextQueue.indices) {
             startIndex
         } else {
-            queue.indexOfFirst { it.id == track.id }.takeIf { it != -1 } ?: 0
+            contextQueue.indexOfFirst { it.id == track.id }.takeIf { it != -1 } ?: 0
         }
-        val mediaItems = queue.map { it.toMediaItem() }
 
+        if (_playbackState.value.isShuffled && contextQueue.size > 1) {
+            val otherTracks = contextQueue.filterIndexed { idx, _ -> idx != targetIndex }.shuffled()
+            contextQueue = (listOf(track) + otherTracks).toMutableList()
+            targetIndex = 0
+        }
+
+        currentQueueIndex = targetIndex
+        currentScrobbleTrack = track
+        activeListeningMs = 0L
+        lastPlayTickRealtime = if (playWhenReady) SystemClock.elapsedRealtime() else 0L
+
+        playSingleTrack(track, playWhenReady)
+
+        _playbackState.update {
+            it.copy(
+                currentTrack = track,
+                queue = contextQueue.toList(),
+                userQueue = emptyList(),
+                queueIndex = targetIndex,
+                activePlaylistId = playlistId,
+                isPlaying = playWhenReady,
+                lastActionTimestampMs = System.currentTimeMillis()
+            )
+        }
+        persistQueue()
+    }
+
+    private fun playSingleTrack(track: Track, playWhenReady: Boolean) {
         val controller = mediaController
+        val mediaItem = track.toMediaItem()
         if (controller == null) {
             controllerFuture?.addListener({
                 try {
                     val ctrl = controllerFuture?.get() ?: return@addListener
-                    ctrl.setMediaItems(mediaItems, targetIndex, 0L)
+                    ctrl.setMediaItem(mediaItem)
                     ctrl.prepare()
                     if (playWhenReady) {
                         ctrl.play()
@@ -263,7 +317,7 @@ class LocalPlaybackEngine(
                 } catch (e: Exception) {}
             }, MoreExecutors.directExecutor())
         } else {
-            controller.setMediaItems(mediaItems, targetIndex, 0L)
+            controller.setMediaItem(mediaItem)
             controller.prepare()
             if (playWhenReady) {
                 controller.play()
@@ -271,54 +325,145 @@ class LocalPlaybackEngine(
                 controller.pause()
             }
         }
-
-        _playbackState.update {
-            it.copy(
-                currentTrack = track,
-                queue = queue,
-                queueIndex = targetIndex,
-                isPlaying = playWhenReady
-            )
-        }
     }
 
     override fun togglePlayPause() {
         val controller = mediaController ?: return
         if (controller.isPlaying) {
-            controller.pause()
+            pause()
         } else {
-            controller.play()
+            play()
         }
     }
 
     override fun play() {
         mediaController?.play()
+        _playbackState.update { it.copy(isPlaying = true, lastActionTimestampMs = System.currentTimeMillis()) }
     }
 
     override fun pause() {
         mediaController?.pause()
+        _playbackState.update { it.copy(isPlaying = false, lastActionTimestampMs = System.currentTimeMillis()) }
     }
 
     override fun seekTo(positionMs: Long) {
         val controller = mediaController ?: return
         controller.seekTo(positionMs)
-        _playbackState.update { it.copy(positionMs = positionMs) }
+        _playbackState.update { it.copy(positionMs = positionMs, lastActionTimestampMs = System.currentTimeMillis()) }
     }
 
     override fun skipNext() {
-        val controller = mediaController ?: return
-        if (controller.hasNextMediaItem()) {
-            controller.seekToNextMediaItem()
+        advanceNextTrack(isUserInitiated = true)
+    }
+
+    private fun advanceNextTrack(isUserInitiated: Boolean) {
+        val prevTrack = currentScrobbleTrack
+        val prevMs = activeListeningMs
+        commitActiveListeningEvent(prevTrack, prevMs, isCompleted = !isUserInitiated)
+
+        if (_playbackState.value.repeatMode == RepeatMode.ONE) {
+            if (isUserInitiated) {
+                setRepeatMode(RepeatMode.ALL)
+            } else {
+                _playbackState.value.currentTrack?.let { playSingleTrack(it, playWhenReady = true) }
+                return
+            }
+        }
+
+        // 1. Priority User Queue ("Next Up") takes precedence over context queue
+        if (userQueue.isNotEmpty()) {
+            val nextUserTrack = userQueue.removeAt(0)
+            customQueueIds.remove(nextUserTrack.id)
+            currentScrobbleTrack = nextUserTrack
+            activeListeningMs = 0L
+            lastPlayTickRealtime = SystemClock.elapsedRealtime()
+            playSingleTrack(nextUserTrack, playWhenReady = true)
+            _playbackState.update {
+                it.copy(
+                    currentTrack = nextUserTrack,
+                    userQueue = userQueue.toList(),
+                    isPlaying = true,
+                    lastActionTimestampMs = System.currentTimeMillis()
+                )
+            }
+            persistQueue()
+            return
+        }
+
+        // 2. Context Queue
+        if (contextQueue.isEmpty()) return
+
+        val effectiveRepeat = if (_playbackState.value.repeatMode == RepeatMode.ONE) RepeatMode.ALL else _playbackState.value.repeatMode
+        val nextIdx = currentQueueIndex + 1
+        if (nextIdx >= contextQueue.size) {
+            if (effectiveRepeat == RepeatMode.ALL) {
+                currentQueueIndex = 0
+                val next = contextQueue[0]
+                currentScrobbleTrack = next
+                activeListeningMs = 0L
+                lastPlayTickRealtime = SystemClock.elapsedRealtime()
+                playSingleTrack(next, playWhenReady = true)
+                _playbackState.update {
+                    it.copy(
+                        currentTrack = next,
+                        queueIndex = 0,
+                        isPlaying = true,
+                        lastActionTimestampMs = System.currentTimeMillis()
+                    )
+                }
+                persistQueue()
+            } else {
+                _playbackState.update {
+                    it.copy(isPlaying = false, positionMs = 0L, lastActionTimestampMs = System.currentTimeMillis())
+                }
+                mediaController?.pause()
+            }
+        } else {
+            currentQueueIndex = nextIdx
+            val next = contextQueue[nextIdx]
+            currentScrobbleTrack = next
+            activeListeningMs = 0L
+            lastPlayTickRealtime = SystemClock.elapsedRealtime()
+            playSingleTrack(next, playWhenReady = true)
+            _playbackState.update {
+                it.copy(
+                    currentTrack = next,
+                    queueIndex = nextIdx,
+                    isPlaying = true,
+                    lastActionTimestampMs = System.currentTimeMillis()
+                )
+            }
+            persistQueue()
         }
     }
 
     override fun skipPrevious() {
-        val controller = mediaController ?: return
-        if (controller.currentPosition > 3000L || !controller.hasPreviousMediaItem()) {
-            controller.seekTo(0L)
-        } else {
-            controller.seekToPreviousMediaItem()
+        val controller = mediaController
+        val currentPos = controller?.currentPosition ?: _playbackState.value.positionMs
+        if (currentPos > 3000L) {
+            seekTo(0L)
+            return
         }
+        if (_playbackState.value.repeatMode == RepeatMode.ONE) {
+            setRepeatMode(RepeatMode.ALL)
+        }
+        if (contextQueue.isEmpty()) return
+        val prevIdx = if (currentQueueIndex > 0) currentQueueIndex - 1 else contextQueue.lastIndex
+        currentQueueIndex = prevIdx
+        val prevTrack = contextQueue[prevIdx]
+        currentScrobbleTrack = prevTrack
+        activeListeningMs = 0L
+        lastPlayTickRealtime = SystemClock.elapsedRealtime()
+        playSingleTrack(prevTrack, playWhenReady = true)
+        _playbackState.update {
+            it.copy(
+                currentTrack = prevTrack,
+                queueIndex = prevIdx,
+                isPlaying = true,
+                lastActionTimestampMs = System.currentTimeMillis()
+            )
+        }
+        persistQueue()
     }
 
     override fun setRepeatMode(mode: RepeatMode) {
@@ -329,14 +474,53 @@ class LocalPlaybackEngine(
             RepeatMode.ONE -> Player.REPEAT_MODE_ONE
         }
         controller.repeatMode = exoMode
-        _playbackState.update { it.copy(repeatMode = mode) }
+        _playbackState.update { it.copy(repeatMode = mode, lastActionTimestampMs = System.currentTimeMillis()) }
     }
 
     override fun toggleShuffle() {
-        val controller = mediaController ?: return
-        val newShuffle = !controller.shuffleModeEnabled
-        controller.shuffleModeEnabled = newShuffle
-        _playbackState.update { it.copy(isShuffled = newShuffle) }
+        val newShuffle = !_playbackState.value.isShuffled
+        if (newShuffle) {
+            originalQueue = contextQueue.toMutableList()
+            val current = _playbackState.value.currentTrack
+            val currentIdx = currentQueueIndex
+            if (current != null && contextQueue.isNotEmpty()) {
+                val others = contextQueue.filterIndexed { idx, _ -> idx != currentIdx }.shuffled()
+                contextQueue = (listOf(current) + others).toMutableList()
+                currentQueueIndex = 0
+            } else {
+                contextQueue = contextQueue.shuffled().toMutableList()
+            }
+        } else {
+            val current = _playbackState.value.currentTrack
+            if (originalQueue.isNotEmpty()) {
+                contextQueue = originalQueue.toMutableList()
+                currentQueueIndex = if (current != null) {
+                    contextQueue.indexOfFirst { it.id == current.id }.coerceAtLeast(0)
+                } else 0
+                originalQueue.clear()
+            }
+        }
+        _playbackState.update {
+            it.copy(
+                isShuffled = newShuffle,
+                queue = contextQueue.toList(),
+                queueIndex = currentQueueIndex,
+                lastActionTimestampMs = System.currentTimeMillis()
+            )
+        }
+        persistQueue()
+    }
+
+    override fun reshuffleUpcomingContext() {
+        if (currentQueueIndex in 0 until contextQueue.lastIndex) {
+            val head = contextQueue.take(currentQueueIndex + 1)
+            val upcoming = contextQueue.drop(currentQueueIndex + 1).shuffled()
+            contextQueue = (head + upcoming).toMutableList()
+            _playbackState.update {
+                it.copy(queue = contextQueue.toList(), lastActionTimestampMs = System.currentTimeMillis())
+            }
+            persistQueue()
+        }
     }
 
     override fun setVolume(volume: Float) {
@@ -347,47 +531,102 @@ class LocalPlaybackEngine(
     }
 
     override fun addToQueue(track: Track) {
-        val updatedQueue = currentQueue + track
-        currentQueue = updatedQueue
+        userQueue.add(track)
         customQueueIds.add(track.id)
-        mediaController?.addMediaItem(track.toMediaItem())
-        _playbackState.update { it.copy(queue = updatedQueue) }
+        _playbackState.update {
+            it.copy(userQueue = userQueue.toList(), lastActionTimestampMs = System.currentTimeMillis())
+        }
+        persistQueue()
     }
 
     override fun playNext(track: Track) {
-        val currentIndex = _playbackState.value.queueIndex
-        val insertIndex = if (currentIndex != -1 && currentIndex in currentQueue.indices) currentIndex + 1 else currentQueue.size
-        val updatedQueue = currentQueue.toMutableList().apply { add(insertIndex, track) }
-        currentQueue = updatedQueue
+        userQueue.add(0, track)
         customQueueIds.add(track.id)
-        mediaController?.addMediaItem(insertIndex, track.toMediaItem())
-        _playbackState.update { it.copy(queue = updatedQueue) }
+        _playbackState.update {
+            it.copy(userQueue = userQueue.toList(), lastActionTimestampMs = System.currentTimeMillis())
+        }
+        persistQueue()
+    }
+
+    override fun removeFromUserQueue(index: Int) {
+        if (index in userQueue.indices) {
+            userQueue.removeAt(index)
+            _playbackState.update {
+                it.copy(userQueue = userQueue.toList(), lastActionTimestampMs = System.currentTimeMillis())
+            }
+            persistQueue()
+        }
     }
 
     override fun removeFromQueue(index: Int) {
-        if (index in currentQueue.indices) {
-            val updatedQueue = currentQueue.toMutableList().apply { removeAt(index) }
-            currentQueue = updatedQueue
-            mediaController?.removeMediaItem(index)
-            _playbackState.update { it.copy(queue = updatedQueue) }
+        if (index in contextQueue.indices) {
+            contextQueue.removeAt(index)
+            if (index < currentQueueIndex) {
+                currentQueueIndex = (currentQueueIndex - 1).coerceAtLeast(0)
+            } else if (index == currentQueueIndex) {
+                currentQueueIndex = currentQueueIndex.coerceAtMost(contextQueue.lastIndex)
+            }
+            _playbackState.update {
+                it.copy(
+                    queue = contextQueue.toList(),
+                    queueIndex = currentQueueIndex,
+                    lastActionTimestampMs = System.currentTimeMillis()
+                )
+            }
+            persistQueue()
         }
     }
 
     override fun reorderQueue(fromIndex: Int, toIndex: Int) {
-        if (fromIndex in currentQueue.indices && toIndex in currentQueue.indices) {
-            val updatedQueue = currentQueue.toMutableList()
-            val item = updatedQueue.removeAt(fromIndex)
-            updatedQueue.add(toIndex, item)
-            currentQueue = updatedQueue
-            mediaController?.moveMediaItem(fromIndex, toIndex)
-            _playbackState.update { it.copy(queue = updatedQueue) }
+        if (fromIndex in contextQueue.indices && toIndex in contextQueue.indices) {
+            val item = contextQueue.removeAt(fromIndex)
+            contextQueue.add(toIndex, item)
+            _playbackState.update {
+                it.copy(queue = contextQueue.toList(), lastActionTimestampMs = System.currentTimeMillis())
+            }
+            persistQueue()
         }
     }
 
     override fun clearQueue() {
-        currentQueue = emptyList()
+        userQueue.clear()
+        contextQueue.clear()
+        originalQueue.clear()
+        currentQueueIndex = -1
+        activePlaylistId = null
         mediaController?.clearMediaItems()
-        _playbackState.update { it.copy(queue = emptyList(), currentTrack = null, queueIndex = -1) }
+        _playbackState.update {
+            it.copy(
+                queue = emptyList(),
+                userQueue = emptyList(),
+                currentTrack = null,
+                queueIndex = -1,
+                isPlaying = false,
+                lastActionTimestampMs = System.currentTimeMillis()
+            )
+        }
+        persistQueue()
+    }
+
+    override fun addTrackToActivePlaylist(track: Track, playlistId: String) {
+        if (activePlaylistId == playlistId) {
+            if (_playbackState.value.isShuffled) {
+                val minIdx = (currentQueueIndex + 1).coerceAtMost(contextQueue.size)
+                val insertIdx = if (minIdx < contextQueue.size) {
+                    minIdx + (0..(contextQueue.size - minIdx)).random()
+                } else {
+                    contextQueue.size
+                }
+                contextQueue.add(insertIdx.coerceIn(0, contextQueue.size), track)
+            } else {
+                contextQueue.add(track)
+            }
+            originalQueue.add(track)
+            _playbackState.update {
+                it.copy(queue = contextQueue.toList(), lastActionTimestampMs = System.currentTimeMillis())
+            }
+            persistQueue()
+        }
     }
 
     fun release() {
@@ -414,8 +653,10 @@ class LocalPlaybackEngine(
     ) {
         val controller = mediaController ?: return
 
-        // Mute local volume while running in remote-only output mode
-        controller.volume = 0f
+        // Pause local playback while remote companion is active; do NOT mutate volume
+        if (controller.isPlaying) {
+            controller.pause()
+        }
 
         val currentItem = controller.currentMediaItem
         val targetArtist = "${remoteTrack.artist} • Playing on $serverName"
@@ -439,17 +680,10 @@ class LocalPlaybackEngine(
             controller.setMediaItem(mediaItem)
             controller.prepare()
         }
-
-        // Note: Do NOT call controller.play(), controller.pause(), or controller.seekTo() here.
-        // In remote-only mode, ForwardingPlayer intercepts those methods and routes them back to
-        // the desktop companion (MediaSessionBridge.onRemoteSeek / onRemotePlay), causing a feedback loop
-        // that glitches, rewinds, and stutters PC playback on connection.
-        // MediaSession already queries MediaSessionBridge directly for isPlaying, remotePositionMs, and duration.
     }
 
     fun restoreLocalOutput() {
-        val controller = mediaController ?: return
-        controller.volume = 1f
+        // Volume was never mutated; local playback can resume immediately
     }
 
     companion object {

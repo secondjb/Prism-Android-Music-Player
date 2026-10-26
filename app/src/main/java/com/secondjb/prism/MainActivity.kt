@@ -30,6 +30,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +40,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -103,7 +106,7 @@ class MainActivity : ComponentActivity() {
 			val repository = remember { MediaStoreAudioRepository(context, preferencesRepository) }
 			val playlistRepository = remember { PlaylistRepository(context) }
 			val statsRepository = remember { com.secondjb.prism.core.stats.ListeningStatsRepository(context) }
-			val playbackEngine = remember { LocalPlaybackEngine(context, statsRepository) }
+			val playbackEngine = remember { LocalPlaybackEngine(context, statsRepository, preferencesRepository) }
 			val sleepTimerManager = remember { com.secondjb.prism.core.playback.SleepTimerManager(playbackEngine) }
 			val sleepTimerState by sleepTimerManager.timerState.collectAsState()
 			val discoveryManager = remember { NsdDiscoveryManager(context) }
@@ -113,6 +116,7 @@ class MainActivity : ComponentActivity() {
 					localTracksProvider = { repository.loadAllTracks() },
 					preferencesRepository = preferencesRepository,
 					statsRepository = statsRepository,
+					playlistRepository = playlistRepository,
 					cacheDir = context.cacheDir,
 					context = context
 				)
@@ -120,6 +124,15 @@ class MainActivity : ComponentActivity() {
 
 			val mainViewModel = remember { MainViewModel(repository, statsRepository) }
 			val libraryViewModel = remember { LibraryViewModel(repository, playlistRepository) }
+
+			LaunchedEffect(Unit) {
+				libraryViewModel.onTrackAddedToPlaylist = { track, playlistId ->
+					playbackEngine.addTrackToActivePlaylist(track, playlistId)
+				}
+				libraryViewModel.onPlaylistsChanged = {
+					syncViewModel.sendPlaylistSync()
+				}
+			}
 
 			val userPreferences by preferencesRepository.preferences.collectAsState()
 
@@ -141,12 +154,27 @@ class MainActivity : ComponentActivity() {
 
 			// Effective playback state prefers remote companion state when desktop output is active
 			val effectivePlaybackState = if (isDesktopConnected && isDesktopOutputEnabled && remotePlaybackState != null) {
-				remotePlaybackState!!
+				val remote = remotePlaybackState!!
+				val conflictMode = userPreferences.simultaneousConflictMode
+				if (localPlaybackState.isPlaying && remote.isPlaying && conflictMode == "DESYNC") {
+					localPlaybackState
+				} else if (localPlaybackState.lastActionTimestampMs > remote.lastActionTimestampMs && (conflictMode == "PREFER_LOCAL" || !remote.isPlaying)) {
+					localPlaybackState
+				} else {
+					remote
+				}
 			} else {
 				localPlaybackState
 			}
 
 			val isRemoteOnlyActive = isDesktopConnected && isDesktopOutputEnabled && !isLocalOutputEnabled
+
+			LaunchedEffect(isDesktopConnected) {
+				if (!isDesktopConnected) {
+					playbackEngine.restoreLocalOutput()
+					playbackEngine.isRemoteOnlyActive = false
+				}
+			}
 
 			LaunchedEffect(isRemoteOnlyActive, userPreferences.preventDoubleCounting, userPreferences.isStatsCollectionEnabled) {
 				playbackEngine.isRemoteOnlyActive = isRemoteOnlyActive
@@ -290,6 +318,7 @@ class MainActivity : ComponentActivity() {
 
 			// Unified command handlers for single or simultaneous dual output
 			val handlePlayTrack: (Track, List<Track>) -> Unit = { track, queue ->
+				val activePlaylistId = libraryViewModel.uiState.value.activePlaylist?.id
 				val desktopActive = isDesktopConnected && isDesktopOutputEnabled
 				val localActive = isLocalOutputEnabled
 				val filename = (track.filePath ?: track.uri).substringAfterLast('/').substringAfterLast('\\')
@@ -311,8 +340,9 @@ class MainActivity : ComponentActivity() {
 					}
 				}
 
-				if (localActive) {
-					playbackEngine.playTrack(track, queue)
+				if (localActive || !isDesktopConnected) {
+					playbackEngine.restoreLocalOutput()
+					playbackEngine.playTrack(track, queue, activePlaylistId)
 				} else {
 					playbackEngine.pause()
 				}
@@ -325,7 +355,8 @@ class MainActivity : ComponentActivity() {
 				if (desktopActive) {
 					syncViewModel.sendRemoteCommand(CommandAction.TOGGLE_PLAY_PAUSE)
 				}
-				if (localActive) {
+				if (localActive || !isDesktopConnected) {
+					playbackEngine.restoreLocalOutput()
 					playbackEngine.togglePlayPause()
 				}
 			}
@@ -337,7 +368,8 @@ class MainActivity : ComponentActivity() {
 				if (desktopActive) {
 					syncViewModel.sendRemoteCommand(CommandAction.SEEK, seekMs = pos)
 				}
-				if (localActive) {
+				if (localActive || !isDesktopConnected) {
+					playbackEngine.restoreLocalOutput()
 					playbackEngine.seekTo(pos)
 				}
 			}
@@ -349,7 +381,8 @@ class MainActivity : ComponentActivity() {
 				if (desktopActive) {
 					syncViewModel.sendRemoteCommand(CommandAction.SKIP_NEXT)
 				}
-				if (localActive) {
+				if (localActive || !isDesktopConnected) {
+					playbackEngine.restoreLocalOutput()
 					playbackEngine.skipNext()
 				}
 			}
@@ -361,7 +394,8 @@ class MainActivity : ComponentActivity() {
 				if (desktopActive) {
 					syncViewModel.sendRemoteCommand(CommandAction.SKIP_PREVIOUS)
 				}
-				if (localActive) {
+				if (localActive || !isDesktopConnected) {
+					playbackEngine.restoreLocalOutput()
 					playbackEngine.skipPrevious()
 				}
 			}
@@ -373,7 +407,8 @@ class MainActivity : ComponentActivity() {
 				if (desktopActive) {
 					syncViewModel.sendRemoteCommand(CommandAction.TOGGLE_SHUFFLE)
 				}
-				if (localActive) {
+				if (localActive || !isDesktopConnected) {
+					playbackEngine.restoreLocalOutput()
 					playbackEngine.toggleShuffle()
 				}
 			}
@@ -385,7 +420,8 @@ class MainActivity : ComponentActivity() {
 				if (desktopActive) {
 					syncViewModel.sendRemoteCommand(CommandAction.SET_REPEAT)
 				}
-				if (localActive) {
+				if (localActive || !isDesktopConnected) {
+					playbackEngine.restoreLocalOutput()
 					playbackEngine.setRepeatMode(effectivePlaybackState.repeatMode.next())
 				}
 			}
@@ -568,7 +604,9 @@ class MainActivity : ComponentActivity() {
 								}
 							},
 							onRemoveQueueIndex = { playbackEngine.removeFromQueue(it) },
+							onRemoveUserQueueIndex = { playbackEngine.removeFromUserQueue(it) },
 							onClearQueue = { playbackEngine.clearQueue() },
+							onReshuffleUpcoming = { playbackEngine.reshuffleUpcomingContext() },
 							onPairQrClick = {
 								showQrPairingDialog = true
 							},
@@ -608,6 +646,41 @@ class MainActivity : ComponentActivity() {
 							onDismiss = {
 								syncViewModel.clearPairingError()
 								showQrPairingDialog = false
+							}
+						)
+					}
+
+					// Device Family First-Pairing Invitation Dialog
+					val pendingFamilyDevice by syncViewModel.pendingFamilyPairingDevice.collectAsState()
+					pendingFamilyDevice?.let { dev ->
+						AlertDialog(
+							onDismissRequest = { syncViewModel.dismissFamilyPairingPrompt() },
+							title = {
+								Text(
+									text = "Add to Device Family?",
+									style = MaterialTheme.typography.titleMedium,
+									fontWeight = FontWeight.Bold
+								)
+							},
+							text = {
+								Text(
+									text = "Would you like to add '${dev.name}' to your Device Family? Playlists, queues, and listening statistics will automatically synchronize between both devices.",
+									style = MaterialTheme.typography.bodyMedium
+								)
+							},
+							confirmButton = {
+								Button(
+									onClick = { syncViewModel.confirmAddToDeviceFamily(dev, true) }
+								) {
+									Text("Add to Family")
+								}
+							},
+							dismissButton = {
+								TextButton(
+									onClick = { syncViewModel.confirmAddToDeviceFamily(dev, false) }
+								) {
+									Text("Not Now")
+								}
 							}
 						)
 					}
