@@ -132,6 +132,21 @@ class MainActivity : ComponentActivity() {
 				libraryViewModel.onPlaylistsChanged = {
 					syncViewModel.sendPlaylistSync()
 				}
+				syncViewModel.onRemoteStateReconciled = { remoteState ->
+					val remoteTrack = remoteState.currentTrack
+					if (remoteTrack != null) {
+						val localMatch = syncViewModel.findLocalMatch(remoteTrack) ?: remoteTrack
+						val matchedQueue = remoteState.queue.map { syncViewModel.findLocalMatch(it) ?: it }
+						val matchedUserQueue = remoteState.userQueue.map { syncViewModel.findLocalMatch(it) ?: it }
+						playbackEngine.syncFromRemoteQueue(
+							currentTrack = localMatch,
+							queue = matchedQueue,
+							userQueue = matchedUserQueue,
+							positionMs = remoteState.positionMs,
+							isPlaying = remoteState.isPlaying
+						)
+					}
+				}
 			}
 
 			val userPreferences by preferencesRepository.preferences.collectAsState()
@@ -154,15 +169,7 @@ class MainActivity : ComponentActivity() {
 
 			// Effective playback state prefers remote companion state when desktop output is active
 			val effectivePlaybackState = if (isDesktopConnected && isDesktopOutputEnabled && remotePlaybackState != null) {
-				val remote = remotePlaybackState!!
-				val conflictMode = userPreferences.simultaneousConflictMode
-				if (localPlaybackState.isPlaying && remote.isPlaying && conflictMode == "DESYNC") {
-					localPlaybackState
-				} else if (localPlaybackState.lastActionTimestampMs > remote.lastActionTimestampMs && (conflictMode == "PREFER_LOCAL" || !remote.isPlaying)) {
-					localPlaybackState
-				} else {
-					remote
-				}
+				remotePlaybackState!!
 			} else {
 				localPlaybackState
 			}
@@ -445,7 +452,7 @@ class MainActivity : ComponentActivity() {
 			// Fallback demo tracks if device library is empty initially - ALWAYS start in paused state
 			LaunchedEffect(Unit) {
 				val tracks = repository.loadAllTracks()
-				if (tracks.isEmpty()) {
+				if (tracks.isEmpty() && playbackEngine.playbackState.value.currentTrack == null) {
 					val demoTrack = DemoDataProvider.demoTracks.first()
 					playbackEngine.prepareTrack(demoTrack, DemoDataProvider.demoTracks)
 				}

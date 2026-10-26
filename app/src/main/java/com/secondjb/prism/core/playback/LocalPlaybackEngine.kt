@@ -337,7 +337,20 @@ class LocalPlaybackEngine(
     }
 
     override fun play() {
-        mediaController?.play()
+        val controller = mediaController
+        if (controller != null) {
+            val currentTrack = _playbackState.value.currentTrack
+            if (currentTrack != null && (controller.currentMediaItem == null || controller.currentMediaItem?.mediaId != currentTrack.id)) {
+                val mediaItem = currentTrack.toMediaItem()
+                controller.setMediaItem(mediaItem)
+                controller.prepare()
+                val targetPos = _playbackState.value.positionMs
+                if (targetPos > 0) {
+                    controller.seekTo(targetPos)
+                }
+            }
+            controller.play()
+        }
         _playbackState.update { it.copy(isPlaying = true, lastActionTimestampMs = System.currentTimeMillis()) }
     }
 
@@ -627,6 +640,33 @@ class LocalPlaybackEngine(
             }
             persistQueue()
         }
+    }
+
+    fun syncFromRemoteQueue(
+        currentTrack: Track?,
+        queue: List<Track>,
+        userQueue: List<Track>,
+        positionMs: Long,
+        isPlaying: Boolean
+    ) {
+        if (currentTrack == null && queue.isEmpty()) return
+        this.contextQueue = queue.toMutableList()
+        this.userQueue = userQueue.toMutableList()
+        this.originalQueue = queue.toMutableList()
+        this.currentQueueIndex = if (currentTrack != null) queue.indexOfFirst { it.id == currentTrack.id } else -1
+        _playbackState.update {
+            it.copy(
+                currentTrack = currentTrack,
+                queue = queue,
+                userQueue = userQueue,
+                queueIndex = currentQueueIndex,
+                positionMs = positionMs,
+                durationMs = currentTrack?.durationMs ?: it.durationMs,
+                isPlaying = if (isRemoteOnlyActive) false else isPlaying,
+                lastActionTimestampMs = System.currentTimeMillis()
+            )
+        }
+        persistQueue()
     }
 
     fun release() {

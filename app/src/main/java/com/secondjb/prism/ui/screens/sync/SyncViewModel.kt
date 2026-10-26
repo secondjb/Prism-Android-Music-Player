@@ -2,6 +2,10 @@ package com.secondjb.prism.ui.screens.sync
 
 import android.content.Context
 import android.media.MediaScannerConnection
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.Environment
 import android.os.SystemClock
 import android.util.Base64
@@ -123,21 +127,82 @@ class SyncViewModel(
     private var basePositionMs: Long = 0L
     private var lastPairingToken: String = ""
 
+    var onRemoteStateReconciled: ((PlaybackState) -> Unit)? = null
+
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var autoReconnectJob: Job? = null
+
     init {
         discoveryManager?.startDiscovery()
         observeIncomingFrames()
         observeConnectionState()
         preloadLocalTracks()
         startPositionTicker()
+        registerNetworkCallback()
+        startAutoReconnectLoop()
         autoConnectRecentPairedDevice()
     }
 
+    private fun registerNetworkCallback() {
+        val ctx = context ?: return
+        val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                Log.i("PrismSync", "Wi-Fi/Network available! Triggering auto-reconnect...")
+                autoConnectRecentPairedDevice()
+            }
+        }
+        networkCallback = callback
+        try {
+            cm.registerNetworkCallback(request, callback)
+        } catch (e: Exception) {
+            Log.w("PrismSync", "Could not register network callback: ${e.message}")
+        }
+    }
+
+    private fun startAutoReconnectLoop() {
+        autoReconnectJob?.cancel()
+        autoReconnectJob = viewModelScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                delay(3500L)
+                val currentConn = connectionState.value
+                val isConnected = currentConn is TransportConnectionState.Connected || currentConn is TransportConnectionState.Connecting
+                if (!isConnected) {
+                    val devices = preferencesRepository?.pairedDevices?.value ?: emptyList()
+                    if (devices.isNotEmpty()) {
+                        val mostRecent = devices.maxByOrNull { it.lastConnectedTimeMs } ?: devices.first()
+                        val resolver = endpointResolver
+                        val liveEndpoint = resolver?.resolveEndpoint(mostRecent) { updatedIp ->
+                            preferencesRepository?.savePairedDevice(
+                                mostRecent.copy(host = updatedIp, lastConnectedTimeMs = System.currentTimeMillis())
+                            )
+                        }
+                        if (liveEndpoint != null && isActive && connectionState.value !is TransportConnectionState.Connected && connectionState.value !is TransportConnectionState.Connecting) {
+                            Log.i("PrismSync", "Auto-reconnecting to ${mostRecent.name} at ${liveEndpoint.host}:${liveEndpoint.port}")
+                            _connectedEndpoint.value = liveEndpoint
+                            _connectedServerName.value = mostRecent.name
+                            lastPairingToken = mostRecent.token
+                            transport.connect(liveEndpoint)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private fun autoConnectRecentPairedDevice() {
+        val currentConn = connectionState.value
+        if (currentConn is TransportConnectionState.Connected || currentConn is TransportConnectionState.Connecting) {
+            return
+        }
         viewModelScope.launch {
             val devices = preferencesRepository?.pairedDevices?.value ?: return@launch
             if (devices.isNotEmpty()) {
                 val mostRecent = devices.maxByOrNull { it.lastConnectedTimeMs } ?: devices.first()
-                Log.i("PrismSync", "Auto-connecting to previously paired desktop: ${mostRecent.name} (${mostRecent.host}:${mostRecent.port})")
+                Log.i("PrismSync", "Auto-connecting to previously paired device: ${mostRecent.name} (${mostRecent.host}:${mostRecent.port})")
                 connectToPairedDevice(mostRecent)
             }
         }
@@ -223,6 +288,7 @@ class SyncViewModel(
 
                         _remotePlaybackState.value = reconciled
                         _activeDeviceId.value = "remote"
+                        onRemoteStateReconciled?.invoke(reconciled)
                     }
                     is SyncFrame.SwapDeviceTarget -> {
                         _activeDeviceId.value = frame.targetDeviceId
@@ -946,6 +1012,13 @@ class SyncViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        autoReconnectJob?.cancel()
+        networkCallback?.let { cb ->
+            try {
+                val cm = context?.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                cm?.unregisterNetworkCallback(cb)
+            } catch (_: Exception) {}
+        }
         discoveryManager?.stopDiscovery()
         viewModelScope.launch {
             transport.disconnect()

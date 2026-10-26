@@ -232,9 +232,9 @@ fun LibraryScreen(
             pageCount = { chips.size }
         )
 
-        // Sync pager swipes with uiState filter chip
-        androidx.compose.runtime.LaunchedEffect(pagerState.currentPage) {
-            val newChip = chips[pagerState.currentPage]
+        // Sync pager swipes with uiState filter chip when page settles
+        androidx.compose.runtime.LaunchedEffect(pagerState.settledPage) {
+            val newChip = chips[pagerState.settledPage]
             if (uiState.selectedChip != newChip) {
                 onFilterSelect(newChip)
             }
@@ -243,10 +243,10 @@ fun LibraryScreen(
             }
         }
 
-        // Sync external filter chip selection to pager
+        // Sync external filter chip selection to pager only when not already scrolling
         androidx.compose.runtime.LaunchedEffect(uiState.selectedChip) {
             val targetPage = chips.indexOf(uiState.selectedChip)
-            if (targetPage >= 0 && pagerState.currentPage != targetPage) {
+            if (!pagerState.isScrollInProgress && targetPage >= 0 && pagerState.currentPage != targetPage) {
                 pagerState.animateScrollToPage(targetPage)
             }
         }
@@ -265,7 +265,7 @@ fun LibraryScreen(
                     onClick = {
                         coroutineScope.launch {
                             val idx = chips.indexOf(chip)
-                            if (idx >= 0) {
+                            if (idx >= 0 && pagerState.currentPage != idx) {
                                 pagerState.animateScrollToPage(idx)
                             }
                         }
