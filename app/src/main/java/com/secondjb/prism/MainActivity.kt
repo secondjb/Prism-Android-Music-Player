@@ -185,9 +185,7 @@ class MainActivity : ComponentActivity() {
 			// Immediately pause local audio when local output is toggled off; restore and resync when toggled on
 			LaunchedEffect(isLocalOutputEnabled) {
 				if (!isLocalOutputEnabled) {
-					if (playbackEngine.playbackState.value.isPlaying) {
-						playbackEngine.pause()
-					}
+					playbackEngine.pause()
 				} else {
 					playbackEngine.restoreLocalOutput()
 					if (isDesktopConnected && isDesktopOutputEnabled) {
@@ -257,9 +255,6 @@ class MainActivity : ComponentActivity() {
 				if (isRemoteOnlyActive) {
 					val remote = remotePlaybackState ?: return@LaunchedEffect
 					val remoteTrack = remote.currentTrack ?: return@LaunchedEffect
-					val localMatch = syncViewModel.findLocalMatch(remoteTrack)
-					val playableUri = localMatch?.uri ?: syncViewModel.getAllLocalTracks().firstOrNull()?.uri ?: remoteTrack.uri
-
 					com.secondjb.prism.core.service.MediaSessionBridge.isRemotePlaying = remote.isPlaying
 					com.secondjb.prism.core.service.MediaSessionBridge.remotePositionMs = remote.positionMs
 					com.secondjb.prism.core.service.MediaSessionBridge.remoteDurationMs = remote.durationMs
@@ -267,7 +262,6 @@ class MainActivity : ComponentActivity() {
 
 					playbackEngine.syncRemoteMetadata(
 						remoteTrack = remoteTrack,
-						playableUri = playableUri,
 						isPlaying = remote.isPlaying,
 						positionMs = remote.positionMs,
 						serverName = connectedServerName?.ifBlank { "Prism Desktop" } ?: "Prism Desktop"
@@ -358,6 +352,8 @@ class MainActivity : ComponentActivity() {
 				if (localActive || !isDesktopConnected) {
 					playbackEngine.restoreLocalOutput()
 					playbackEngine.togglePlayPause()
+				} else {
+					playbackEngine.pause()
 				}
 			}
 

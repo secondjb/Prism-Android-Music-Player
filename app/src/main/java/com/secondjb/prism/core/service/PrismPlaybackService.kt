@@ -129,8 +129,17 @@ class PrismPlaybackService : MediaSessionService() {
                 }
             }
 
+            override fun prepare() {
+                if (MediaSessionBridge.isRemoteActive) {
+                    player.pause()
+                } else {
+                    super.prepare()
+                }
+            }
+
             override fun play() {
                 if (MediaSessionBridge.isRemoteActive) {
+                    player.pause()
                     MediaSessionBridge.onRemotePlay?.invoke()
                 } else {
                     super.play()
@@ -139,6 +148,7 @@ class PrismPlaybackService : MediaSessionService() {
 
             override fun pause() {
                 if (MediaSessionBridge.isRemoteActive) {
+                    player.pause()
                     MediaSessionBridge.onRemotePause?.invoke()
                 } else {
                     super.pause()
@@ -226,6 +236,7 @@ class PrismPlaybackService : MediaSessionService() {
 
         MediaSessionBridge.onStateChanged = {
             if (MediaSessionBridge.isRemoteActive) {
+                player.pause()
                 val desktopCmd = SessionCommand("OUTPUT_ROUTED_TO_DESKTOP", Bundle.EMPTY)
                 val desktopBtn = CommandButton.Builder()
                     .setDisplayName(MediaSessionBridge.remoteServerName)

@@ -403,6 +403,9 @@ class SyncViewModel(
             return
         }
         _isLocalOutputEnabled.value = enabled
+        if (!enabled && _isDesktopOutputEnabled.value) {
+            sendRemoteCommand(CommandAction.PLAY)
+        }
         sendOutputRoutingSync()
     }
 
@@ -412,9 +415,11 @@ class SyncViewModel(
         if (deviceId == "desktop") {
             _isDesktopOutputEnabled.value = true
             _isLocalOutputEnabled.value = false
+            sendRemoteCommand(CommandAction.PLAY)
         } else {
             _isDesktopOutputEnabled.value = false
             _isLocalOutputEnabled.value = true
+            sendRemoteCommand(CommandAction.PAUSE)
         }
         sendOutputRoutingSync()
     }

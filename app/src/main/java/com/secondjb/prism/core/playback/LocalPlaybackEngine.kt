@@ -646,17 +646,11 @@ class LocalPlaybackEngine(
 
     fun syncRemoteMetadata(
         remoteTrack: Track,
-        playableUri: String,
         isPlaying: Boolean,
         positionMs: Long,
         serverName: String
     ) {
         val controller = mediaController ?: return
-
-        // Pause local playback while remote companion is active; do NOT mutate volume
-        if (controller.isPlaying) {
-            controller.pause()
-        }
 
         val currentItem = controller.currentMediaItem
         val targetArtist = "${remoteTrack.artist} • Playing on $serverName"
@@ -673,12 +667,10 @@ class LocalPlaybackEngine(
 
             val mediaItem = MediaItem.Builder()
                 .setMediaId(remoteTrack.id)
-                .setUri(Uri.parse(playableUri))
                 .setMediaMetadata(metadata)
                 .build()
 
             controller.setMediaItem(mediaItem)
-            controller.prepare()
         }
     }
 
