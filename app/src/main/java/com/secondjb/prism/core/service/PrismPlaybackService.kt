@@ -271,6 +271,12 @@ class PrismPlaybackService : MediaSessionService() {
                 controllerInfo: MediaSession.ControllerInfo,
                 playerCommand: Int
             ): Int {
+                // If the command is from our own app's MediaController, do not intercept it!
+                // Let ExoPlayer handle it directly to avoid infinite recursion.
+                if (controllerInfo.packageName == applicationContext.packageName) {
+                    return super.onPlayerCommandRequest(session, controllerInfo, playerCommand)
+                }
+
                 when (playerCommand) {
                     Player.COMMAND_PLAY_PAUSE -> {
                         MediaSessionBridge.onPlayPause?.invoke()
@@ -305,6 +311,9 @@ class PrismPlaybackService : MediaSessionService() {
                 controllerInfo: MediaSession.ControllerInfo,
                 intent: Intent
             ): Boolean {
+                if (controllerInfo.packageName == applicationContext.packageName) {
+                    return super.onMediaButtonEvent(session, controllerInfo, intent)
+                }
                 val keyEvent: KeyEvent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
                 } else {
