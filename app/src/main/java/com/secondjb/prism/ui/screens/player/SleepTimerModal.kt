@@ -18,6 +18,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
@@ -118,12 +120,13 @@ fun SleepTimerModal(
         }
     }
 
-    // Custom Queue estimation (strictly userQueue tracks, NOT the general playlist)
+    // Custom Queue estimation (strictly userQueue tracks PLUS current track progress, NOT the general playlist)
     val userQueueCount = userQueue.size
-    val userQueueEstimateStr = remember(userQueue) {
-        if (userQueue.isEmpty()) ""
+    val currentTrackRemainingSecs = ((currentTrackDurationMs - currentTrackPositionMs).coerceAtLeast(0L) / 1000L).coerceAtLeast(0L)
+    val userQueueEstimateStr = remember(userQueue, currentTrackRemainingSecs) {
+        val totalSecs = currentTrackRemainingSecs + userQueue.sumOf { it.durationSecs }
+        if (totalSecs <= 0) "0m"
         else {
-            val totalSecs = userQueue.sumOf { it.durationSecs }
             val mins = (totalSecs + 30) / 60
             if (mins < 60) "~${mins}m"
             else {
@@ -131,6 +134,14 @@ fun SleepTimerModal(
                 val rem = mins % 60
                 if (rem == 0L) "~${hrs}h" else "~${hrs}h ${rem}m"
             }
+        }
+    }
+
+    fun triggerAutoStart() {
+        if (isTrackMode) {
+            onStartTracks(tracksSlider.roundToInt(), finishLastSong, playToEndOfQueue)
+        } else {
+            onStartMinutes(minutesSlider.roundToInt(), finishLastSong, playToEndOfQueue)
         }
     }
 
@@ -143,11 +154,11 @@ fun SleepTimerModal(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 36.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Header Row: Title, Mode toggle chips ("Time" & "Tracks"), Action icon button (check or trash), Close icon
+            // Header Row: Title, Mode toggle switch ("Time" vs "Tracks"), Action icon button (check or trash), Close icon
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -161,31 +172,33 @@ fun SleepTimerModal(
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Mode Toggle Chips ("Time" and "Tracks")
-                    FilterChip(
-                        selected = !isTrackMode,
-                        onClick = { isTrackMode = false },
-                        label = { Text("Time") },
-                        shape = PillShape,
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    )
-                    FilterChip(
-                        selected = isTrackMode,
-                        onClick = { isTrackMode = true },
-                        label = { Text("Tracks") },
-                        shape = PillShape,
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    // Mode Toggle Switch (Time icon vs LibraryMusic icon)
+                    Switch(
+                        checked = isTrackMode,
+                        onCheckedChange = {
+                            isTrackMode = it
+                            if (it) {
+                                onStartTracks(tracksSlider.roundToInt(), finishLastSong, playToEndOfQueue)
+                            } else {
+                                onStartMinutes(minutesSlider.roundToInt(), finishLastSong, playToEndOfQueue)
+                            }
+                        },
+                        thumbContent = {
+                            Icon(
+                                imageVector = if (isTrackMode) Icons.Filled.LibraryMusic else Icons.Default.Schedule,
+                                contentDescription = if (isTrackMode) "Track based" else "Time based",
+                                modifier = Modifier.size(SwitchDefaults.IconSize)
+                            )
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.primary,
+                            checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
                         )
                     )
 
-                    // Action Button: Trash can if active (clears timer), Checkmark if not active (starts timer)
+                    // Action Button: Trash can if active (clears timer), Checkmark (confirms & closes)
                     if (timerState.isActive) {
                         FilledTonalIconButton(
                             onClick = onCancelTimer,
@@ -200,11 +213,7 @@ fun SleepTimerModal(
                     } else {
                         FilledIconButton(
                             onClick = {
-                                if (isTrackMode) {
-                                    onStartTracks(tracksSlider.roundToInt(), finishLastSong, playToEndOfQueue)
-                                } else {
-                                    onStartMinutes(minutesSlider.roundToInt(), finishLastSong, playToEndOfQueue)
-                                }
+                                triggerAutoStart()
                                 onDismiss()
                             },
                             colors = IconButtonDefaults.filledIconButtonColors(
@@ -213,7 +222,7 @@ fun SleepTimerModal(
                             ),
                             modifier = Modifier.size(38.dp)
                         ) {
-                            Icon(Icons.Default.Check, contentDescription = "Start sleep timer", modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.Check, contentDescription = "Confirm sleep timer", modifier = Modifier.size(20.dp))
                         }
                     }
 
@@ -285,11 +294,11 @@ fun SleepTimerModal(
             // Discrete Slider Section
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(14.dp),
                 color = MaterialTheme.colorScheme.surfaceContainer
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     if (isTrackMode) {
@@ -306,11 +315,14 @@ fun SleepTimerModal(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(8.dp))
 
                         Slider(
                             value = tracksSlider,
                             onValueChange = { tracksSlider = it },
+                            onValueChangeFinished = {
+                                onStartTracks(tracksSlider.roundToInt(), finishLastSong, playToEndOfQueue)
+                            },
                             valueRange = 1f..20f,
                             steps = 18, // 1 track increments from 1 to 20
                             colors = SliderDefaults.colors(
@@ -330,12 +342,14 @@ fun SleepTimerModal(
                         }
                     } else {
                         val currentMins = minutesSlider.roundToInt()
-                        val formattedTime = if (currentMins < 60) {
+                        val formattedTime = if (currentMins == 1) {
+                            "1 minute"
+                        } else if (currentMins < 60) {
                             "$currentMins minutes"
                         } else {
                             val hrs = currentMins / 60
                             val rem = currentMins % 60
-                            if (rem == 0) "$hrs hour" else "$hrs hr $rem mins"
+                            if (rem == 0) if (hrs == 1) "1 hour" else "$hrs hours" else "$hrs hr $rem mins"
                         }
 
                         // Press time to enter custom time!
@@ -357,12 +371,15 @@ fun SleepTimerModal(
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                         )
 
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(8.dp))
 
                         // Discrete 1-min increments from 1 to 60 mins
                         Slider(
                             value = minutesSlider,
                             onValueChange = { minutesSlider = it },
+                            onValueChangeFinished = {
+                                onStartMinutes(minutesSlider.roundToInt(), finishLastSong, playToEndOfQueue)
+                            },
                             valueRange = 1f..60f,
                             steps = 58, // 1 min increments from 1 to 60: 60 - 1 - 1 = 58 steps
                             colors = SliderDefaults.colors(
@@ -388,19 +405,22 @@ fun SleepTimerModal(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
             // Options: Finish Last Song & End of Custom Queue
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 // Switch 1: Finish Last Song Before Stopping
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { finishLastSong = !finishLastSong }
+                        .clickable {
+                            finishLastSong = !finishLastSong
+                            triggerAutoStart()
+                        }
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(14.dp),
+                            .padding(10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -418,7 +438,10 @@ fun SleepTimerModal(
                         }
                         Switch(
                             checked = finishLastSong,
-                            onCheckedChange = { finishLastSong = it },
+                            onCheckedChange = {
+                                finishLastSong = it
+                                triggerAutoStart()
+                            },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = MaterialTheme.colorScheme.primary,
                                 checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
@@ -433,12 +456,15 @@ fun SleepTimerModal(
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { playToEndOfQueue = !playToEndOfQueue }
+                        .clickable {
+                            playToEndOfQueue = !playToEndOfQueue
+                            triggerAutoStart()
+                        }
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(14.dp),
+                            .padding(10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -461,7 +487,10 @@ fun SleepTimerModal(
                         }
                         Switch(
                             checked = playToEndOfQueue,
-                            onCheckedChange = { playToEndOfQueue = it },
+                            onCheckedChange = {
+                                playToEndOfQueue = it
+                                triggerAutoStart()
+                            },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = MaterialTheme.colorScheme.primary,
                                 checkedTrackColor = MaterialTheme.colorScheme.primaryContainer

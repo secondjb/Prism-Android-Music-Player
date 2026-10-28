@@ -37,6 +37,14 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import android.content.Context
+import android.util.Log
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
+import java.io.File
+import java.io.FileOutputStream
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
@@ -173,6 +181,13 @@ fun LibraryScreen(
                 onRemoveTrackFromPlaylist(playlistId, trackId)
             }
         }
+    }
+
+    // Intercept back gesture if in search mode
+    BackHandler(enabled = uiState.isSearchActive) {
+        keyboardController?.hide()
+        onToggleSearch(false)
+        onSearchChange("")
     }
 
     // Intercept back gesture if in multi-select mode
@@ -439,6 +454,7 @@ fun LibraryScreen(
                                 tracks = uiState.filteredTracks,
                                 pinnedIds = uiState.pinnedIds,
                                 selectedTrackIds = selectedTrackIds,
+                                searchQuery = uiState.searchQuery,
                                 onToggleSelectTrack = { id ->
                                     selectedTrackIds = if (selectedTrackIds.contains(id)) {
                                         selectedTrackIds - id
@@ -455,6 +471,7 @@ fun LibraryScreen(
                                 pinnedIds = uiState.pinnedIds,
                                 likedTrackIds = uiState.likedTrackIds,
                                 selectedTrackIds = selectedTrackIds,
+                                searchQuery = uiState.searchQuery,
                                 onToggleSelectTrack = { id ->
                                     selectedTrackIds = if (selectedTrackIds.contains(id)) {
                                         selectedTrackIds - id
@@ -616,24 +633,23 @@ fun LibraryScreen(
             hostState = snackbarHostState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 76.dp)
+                .padding(bottom = 150.dp)
+                .padding(horizontal = 24.dp)
                 .zIndex(4f)
         ) { data ->
             Surface(
                 shape = PillShape,
                 color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                shadowElevation = 6.dp,
-                modifier = Modifier.padding(horizontal = 16.dp)
+                shadowElevation = 4.dp
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = data.visuals.message,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f)
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     data.visuals.actionLabel?.let { actionLabel ->
                         Spacer(Modifier.width(8.dp))
@@ -643,6 +659,7 @@ fun LibraryScreen(
                         ) {
                             Text(
                                 text = actionLabel,
+                                style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.Bold
                             )
@@ -779,12 +796,34 @@ private fun PlaylistCover(
     modifier: Modifier = Modifier
 ) {
     if (!playlist.customCoverUri.isNullOrBlank()) {
-        AsyncImage(
-            model = playlist.customCoverUri,
-            contentDescription = playlist.name,
-            modifier = modifier.clip(RoundedCornerShape(12.dp)),
-            contentScale = ContentScale.Crop
-        )
+        if (playlist.customCoverUri.startsWith("color:")) {
+            val hex = playlist.customCoverUri.removePrefix("color:")
+            val color = try {
+                androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor(hex))
+            } catch (_: Exception) {
+                MaterialTheme.colorScheme.primaryContainer
+            }
+            Box(
+                modifier = modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(color),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                    contentDescription = null,
+                    modifier = Modifier.size(36.dp),
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+        } else {
+            AsyncImage(
+                model = playlist.customCoverUri,
+                contentDescription = playlist.name,
+                modifier = modifier.clip(RoundedCornerShape(12.dp)),
+                contentScale = ContentScale.Crop
+            )
+        }
         return
     }
 
@@ -892,6 +931,23 @@ private fun PlaylistCover(
     }
 }
 
+private fun copyPlaylistImageToAppStorage(context: Context, uri: Uri, playlistId: String): String? {
+    return try {
+        val coversDir = File(context.filesDir, "playlist_covers")
+        if (!coversDir.exists()) coversDir.mkdirs()
+        val destFile = File(coversDir, "pl_${playlistId}.jpg")
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            FileOutputStream(destFile).use { output ->
+                input.copyTo(output)
+            }
+        }
+        "file://${destFile.absolutePath}"
+    } catch (e: Exception) {
+        Log.e("PlaylistArt", "Failed to copy playlist image to internal storage: ${e.message}")
+        null
+    }
+}
+
 @Composable
 private fun PlaylistDetailScreen(
     playlist: Playlist,
@@ -902,15 +958,22 @@ private fun PlaylistDetailScreen(
     onShuffleAll: (List<Track>) -> Unit,
     onRemoveTrack: (String) -> Unit,
     onDeletePlaylist: () -> Unit,
-    onUpdateCover: (String) -> Unit = {},
+    onUpdateCover: (String?) -> Unit = {},
     onMoreClick: (Track) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showCoverOptionsDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let { onUpdateCover(it.toString()) }
+        if (uri != null) {
+            val localPath = copyPlaylistImageToAppStorage(context, uri, playlist.id)
+            if (localPath != null) {
+                onUpdateCover(localPath)
+            }
+        }
     }
     val listState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
 
@@ -962,7 +1025,7 @@ private fun PlaylistDetailScreen(
                                     .padding(4.dp)
                                     .size(32.dp)
                                     .clickable {
-                                        imagePickerLauncher.launch("image/*")
+                                        showCoverOptionsDialog = true
                                     }
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
@@ -1132,6 +1195,82 @@ private fun PlaylistDetailScreen(
             }
         )
     }
+
+    if (showCoverOptionsDialog) {
+        val themeColorHex = String.format("#%06X", (0xFFFFFF and MaterialTheme.colorScheme.primaryContainer.toArgb()))
+        AlertDialog(
+            onDismissRequest = { showCoverOptionsDialog = false },
+            title = { Text("Playlist Artwork") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Choose how to display artwork for this playlist:",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(Modifier.height(4.dp))
+
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                showCoverOptionsDialog = false
+                                imagePickerLauncher.launch("image/*")
+                            }
+                    ) {
+                        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Edit, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(12.dp))
+                            Text("Upload custom image", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                showCoverOptionsDialog = false
+                                onUpdateCover("color:$themeColorHex")
+                            }
+                    ) {
+                        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Palette, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                            Spacer(Modifier.width(12.dp))
+                            Text("Use theme color", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        }
+                    }
+
+                    if (!playlist.customCoverUri.isNullOrBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    showCoverOptionsDialog = false
+                                    onUpdateCover(null)
+                                }
+                        ) {
+                            Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                                Spacer(Modifier.width(12.dp))
+                                Text("Reset to default collage", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showCoverOptionsDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -1226,6 +1365,7 @@ private fun TrackListView(
     pinnedIds: Set<String>,
     likedTrackIds: Set<String> = emptySet(),
     selectedTrackIds: Set<String> = emptySet(),
+    searchQuery: String = "",
     onToggleSelectTrack: (String) -> Unit = {},
     onTogglePin: (String) -> Unit,
     onToggleLike: (String) -> Unit = {},
@@ -1237,6 +1377,12 @@ private fun TrackListView(
         tracks.sortedByDescending { pinnedIds.contains(it.id) }
     }
     val listState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+
+    LaunchedEffect(searchQuery) {
+        if (searchQuery.isEmpty()) {
+            listState.scrollToItem(0)
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -1371,6 +1517,7 @@ private fun TrackGridView(
     tracks: List<Track>,
     pinnedIds: Set<String>,
     selectedTrackIds: Set<String> = emptySet(),
+    searchQuery: String = "",
     onToggleSelectTrack: (String) -> Unit = {},
     onTogglePin: (String) -> Unit,
     onMoreClick: (Track) -> Unit = {},
@@ -1380,6 +1527,12 @@ private fun TrackGridView(
         tracks.sortedByDescending { pinnedIds.contains(it.id) }
     }
     val gridState = rememberSaveable(saver = LazyGridState.Saver) { LazyGridState() }
+
+    LaunchedEffect(searchQuery) {
+        if (searchQuery.isEmpty()) {
+            gridState.scrollToItem(0)
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyVerticalGrid(
@@ -1771,13 +1924,22 @@ private fun ArtistListView(
                             color = MaterialTheme.colorScheme.primaryContainer,
                             modifier = Modifier.size(44.dp)
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = artist.name.take(1).uppercase(),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                            if (!artist.artworkUri.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = artist.artworkUri,
+                                    contentDescription = artist.name,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
                                 )
+                            } else {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = artist.name.take(1).uppercase(),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
                             }
                         }
                         Spacer(Modifier.width(14.dp))
@@ -2155,13 +2317,22 @@ private fun ArtistDetailScreen(
                             color = MaterialTheme.colorScheme.primaryContainer,
                             modifier = Modifier.size(110.dp)
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = artist.name.take(1).uppercase(),
-                                    style = MaterialTheme.typography.displaySmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                            if (!artist.artworkUri.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = artist.artworkUri,
+                                    contentDescription = artist.name,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
                                 )
+                            } else {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = artist.name.take(1).uppercase(),
+                                        style = MaterialTheme.typography.displaySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
                             }
                         }
 

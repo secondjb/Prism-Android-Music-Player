@@ -130,7 +130,8 @@ data class SyncPlaylistDto(
     val isPinned: Boolean = false,
     val tracks: List<SyncTrackKeyDto> = emptyList(),
     val createdAt: Long = 0L,
-    val updatedAt: Long = 0L
+    val updatedAt: Long = 0L,
+    val customCoverUri: String? = null
 )
 
 @Serializable

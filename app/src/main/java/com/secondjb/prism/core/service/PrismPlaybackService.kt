@@ -35,6 +35,9 @@ object MediaSessionBridge {
     var remotePositionMs: Long = 0L
     var remoteDurationMs: Long = 0L
 
+    var onPlayPause: (() -> Unit)? = null
+    var onSkipNext: (() -> Unit)? = null
+    var onSkipPrevious: (() -> Unit)? = null
     var onRemotePlay: (() -> Unit)? = null
     var onRemotePause: (() -> Unit)? = null
     var onRemoteSkipNext: (() -> Unit)? = null
@@ -200,23 +203,13 @@ class PrismPlaybackService : MediaSessionService() {
             override fun play() {
                 if (MediaSessionBridge.isRemoteActive) {
                     player.pause()
-                    if (!MediaSessionBridge.suppressRemoteCallback) {
-                        MediaSessionBridge.onRemotePlay?.invoke()
-                    }
                 } else {
                     super.play()
                 }
             }
 
             override fun pause() {
-                if (MediaSessionBridge.isRemoteActive) {
-                    player.pause()
-                    if (!MediaSessionBridge.suppressRemoteCallback) {
-                        MediaSessionBridge.onRemotePause?.invoke()
-                    }
-                } else {
-                    super.pause()
-                }
+                super.pause()
             }
 
             override fun seekToNext() {
@@ -279,22 +272,28 @@ class PrismPlaybackService : MediaSessionService() {
                 playerCommand: Int
             ): Int {
                 when (playerCommand) {
+                    Player.COMMAND_PLAY_PAUSE -> {
+                        MediaSessionBridge.onPlayPause?.invoke()
+                        return SessionResult.RESULT_SUCCESS
+                    }
                     Player.COMMAND_SEEK_TO_NEXT,
                     Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> {
-                        if (MediaSessionBridge.isRemoteActive) {
-                            MediaSessionBridge.onRemoteSkipNext?.invoke()
-                        } else {
-                            MediaSessionBridge.onLocalSkipNext?.invoke()
-                        }
+                        MediaSessionBridge.onSkipNext?.invoke()
+                            ?: if (MediaSessionBridge.isRemoteActive) {
+                                MediaSessionBridge.onRemoteSkipNext?.invoke()
+                            } else {
+                                MediaSessionBridge.onLocalSkipNext?.invoke()
+                            }
                         return SessionResult.RESULT_SUCCESS
                     }
                     Player.COMMAND_SEEK_TO_PREVIOUS,
                     Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> {
-                        if (MediaSessionBridge.isRemoteActive) {
-                            MediaSessionBridge.onRemoteSkipPrevious?.invoke()
-                        } else {
-                            MediaSessionBridge.onLocalSkipPrevious?.invoke()
-                        }
+                        MediaSessionBridge.onSkipPrevious?.invoke()
+                            ?: if (MediaSessionBridge.isRemoteActive) {
+                                MediaSessionBridge.onRemoteSkipPrevious?.invoke()
+                            } else {
+                                MediaSessionBridge.onLocalSkipPrevious?.invoke()
+                            }
                         return SessionResult.RESULT_SUCCESS
                     }
                 }
@@ -314,22 +313,31 @@ class PrismPlaybackService : MediaSessionService() {
                 }
                 if (keyEvent != null && keyEvent.action == KeyEvent.ACTION_DOWN) {
                     when (keyEvent.keyCode) {
+                        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                        KeyEvent.KEYCODE_MEDIA_PLAY,
+                        KeyEvent.KEYCODE_MEDIA_PAUSE,
+                        KeyEvent.KEYCODE_HEADSETHOOK -> {
+                            MediaSessionBridge.onPlayPause?.invoke()
+                            return true
+                        }
                         KeyEvent.KEYCODE_MEDIA_NEXT,
                         KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
-                            if (MediaSessionBridge.isRemoteActive) {
-                                MediaSessionBridge.onRemoteSkipNext?.invoke()
-                            } else {
-                                MediaSessionBridge.onLocalSkipNext?.invoke()
-                            }
+                            MediaSessionBridge.onSkipNext?.invoke()
+                                ?: if (MediaSessionBridge.isRemoteActive) {
+                                    MediaSessionBridge.onRemoteSkipNext?.invoke()
+                                } else {
+                                    MediaSessionBridge.onLocalSkipNext?.invoke()
+                                }
                             return true
                         }
                         KeyEvent.KEYCODE_MEDIA_PREVIOUS,
                         KeyEvent.KEYCODE_MEDIA_REWIND -> {
-                            if (MediaSessionBridge.isRemoteActive) {
-                                MediaSessionBridge.onRemoteSkipPrevious?.invoke()
-                            } else {
-                                MediaSessionBridge.onLocalSkipPrevious?.invoke()
-                            }
+                            MediaSessionBridge.onSkipPrevious?.invoke()
+                                ?: if (MediaSessionBridge.isRemoteActive) {
+                                    MediaSessionBridge.onRemoteSkipPrevious?.invoke()
+                                } else {
+                                    MediaSessionBridge.onLocalSkipPrevious?.invoke()
+                                }
                             return true
                         }
                     }

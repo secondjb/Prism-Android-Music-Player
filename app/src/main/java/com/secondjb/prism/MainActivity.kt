@@ -126,7 +126,23 @@ class MainActivity : ComponentActivity() {
 			}
 
 			val mainViewModel = remember { MainViewModel(repository, statsRepository) }
-			val libraryViewModel = remember { LibraryViewModel(repository, playlistRepository) }
+			val initialStartupScreen = preferencesRepository.preferences.value.defaultStartupScreen
+			val initialChip = when (initialStartupScreen) {
+				"Library: Songs" -> com.secondjb.prism.ui.screens.library.LibraryFilterChip.ALL_SONGS
+				"Library: Playlists" -> com.secondjb.prism.ui.screens.library.LibraryFilterChip.PLAYLISTS
+				"Library: Albums" -> com.secondjb.prism.ui.screens.library.LibraryFilterChip.ALBUMS
+				"Library: Artists" -> com.secondjb.prism.ui.screens.library.LibraryFilterChip.ARTISTS
+				else -> com.secondjb.prism.ui.screens.library.LibraryFilterChip.ALL_SONGS
+			}
+			val artistImageRepository = remember { com.secondjb.prism.core.data.ArtistImageRepository(context, preferencesRepository) }
+			val libraryViewModel = remember {
+				LibraryViewModel(
+					repository = repository,
+					playlistRepository = playlistRepository,
+					artistImageRepository = artistImageRepository,
+					initialFilterChip = initialChip
+				)
+			}
 
 			LaunchedEffect(Unit) {
 				libraryViewModel.onTrackAddedToPlaylist = { track, playlistId ->
@@ -181,6 +197,9 @@ class MainActivity : ComponentActivity() {
 			}
 
 			val isRemoteOnlyActive = isDesktopConnected && isDesktopOutputEnabled && !isLocalOutputEnabled
+			val shouldShowRemoteInNotification = isDesktopConnected && isDesktopOutputEnabled && (
+				!isLocalOutputEnabled || remotePlaybackState?.isPlaying == true || !localPlaybackState.isPlaying
+			)
 
 			LaunchedEffect(isDesktopConnected) {
 				if (!isDesktopConnected) {
@@ -237,35 +256,14 @@ class MainActivity : ComponentActivity() {
 				}
 			}
 
-			// Configure MediaSessionBridge so hardware buttons and Android system notifications command desktop (Spotify Connect style)
-			LaunchedEffect(isRemoteOnlyActive, connectedServerName) {
-				com.secondjb.prism.core.service.MediaSessionBridge.isRemoteActive = isRemoteOnlyActive
-				com.secondjb.prism.core.service.MediaSessionBridge.remoteServerName = connectedServerName?.ifBlank { "Prism Desktop" } ?: "Prism Desktop"
-				com.secondjb.prism.core.service.MediaSessionBridge.onRemotePlay = {
-					syncViewModel.sendRemoteCommand(CommandAction.PLAY)
-				}
-				com.secondjb.prism.core.service.MediaSessionBridge.onRemotePause = {
-					syncViewModel.sendRemoteCommand(CommandAction.PAUSE)
-				}
-				com.secondjb.prism.core.service.MediaSessionBridge.onRemoteSkipNext = {
-					syncViewModel.sendRemoteCommand(CommandAction.SKIP_NEXT)
-				}
-				com.secondjb.prism.core.service.MediaSessionBridge.onRemoteSkipPrevious = {
-					syncViewModel.sendRemoteCommand(CommandAction.SKIP_PREVIOUS)
-				}
-				com.secondjb.prism.core.service.MediaSessionBridge.onRemoteSeek = { pos ->
-					syncViewModel.sendRemoteCommand(CommandAction.SEEK, seekMs = pos)
-				}
-			}
-
 			// Keep Android Quick Settings & Lockscreen media notification in sync with PC track
 			LaunchedEffect(
 				remotePlaybackState?.currentTrack?.title,
 				remotePlaybackState?.isPlaying,
-				isRemoteOnlyActive,
+				shouldShowRemoteInNotification,
 				isDesktopConnected
 			) {
-				if (isRemoteOnlyActive) {
+				if (shouldShowRemoteInNotification) {
 					val remote = remotePlaybackState ?: return@LaunchedEffect
 					val remoteTrack = remote.currentTrack ?: return@LaunchedEffect
 					com.secondjb.prism.core.service.MediaSessionBridge.isRemotePlaying = remote.isPlaying
@@ -419,15 +417,16 @@ class MainActivity : ComponentActivity() {
 			}
 
 			val handleCycleRepeatMode: () -> Unit = {
+				val nextMode = effectivePlaybackState.repeatMode.next()
 				val desktopActive = isDesktopConnected && isDesktopOutputEnabled
 				val localActive = isLocalOutputEnabled
 
 				if (desktopActive) {
-					syncViewModel.sendRemoteCommand(CommandAction.SET_REPEAT)
+					syncViewModel.sendRemoteCommand(CommandAction.SET_REPEAT, repeatMode = nextMode)
 				}
 				if (localActive || !isDesktopConnected) {
 					playbackEngine.restoreLocalOutput()
-					playbackEngine.setRepeatMode(effectivePlaybackState.repeatMode.next())
+					playbackEngine.setRepeatMode(nextMode)
 				}
 			}
 
@@ -442,6 +441,35 @@ class MainActivity : ComponentActivity() {
 				playbackEngine.addToQueue(track)
 				if (isDesktopConnected) {
 					syncViewModel.sendAddToQueueCommand(track)
+				}
+			}
+
+			LaunchedEffect(shouldShowRemoteInNotification, connectedServerName) {
+				com.secondjb.prism.core.service.MediaSessionBridge.isRemoteActive = shouldShowRemoteInNotification
+				com.secondjb.prism.core.service.MediaSessionBridge.remoteServerName = connectedServerName?.ifBlank { "Prism Desktop" } ?: "Prism Desktop"
+				com.secondjb.prism.core.service.MediaSessionBridge.onPlayPause = {
+					handleTogglePlayPause()
+				}
+				com.secondjb.prism.core.service.MediaSessionBridge.onSkipNext = {
+					handleSkipNext()
+				}
+				com.secondjb.prism.core.service.MediaSessionBridge.onSkipPrevious = {
+					handleSkipPrevious()
+				}
+				com.secondjb.prism.core.service.MediaSessionBridge.onRemotePlay = {
+					syncViewModel.sendRemoteCommand(CommandAction.PLAY)
+				}
+				com.secondjb.prism.core.service.MediaSessionBridge.onRemotePause = {
+					syncViewModel.sendRemoteCommand(CommandAction.PAUSE)
+				}
+				com.secondjb.prism.core.service.MediaSessionBridge.onRemoteSkipNext = {
+					handleSkipNext()
+				}
+				com.secondjb.prism.core.service.MediaSessionBridge.onRemoteSkipPrevious = {
+					handleSkipPrevious()
+				}
+				com.secondjb.prism.core.service.MediaSessionBridge.onRemoteSeek = { pos ->
+					syncViewModel.sendRemoteCommand(CommandAction.SEEK, seekMs = pos)
 				}
 			}
 

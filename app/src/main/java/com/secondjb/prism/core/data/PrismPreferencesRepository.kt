@@ -54,6 +54,8 @@ data class PrismPreferences(
     // Navigation & View
     val defaultStartupScreen: String = "Home",
     val librarySortOrder: String = "title_asc",
+    val downloadArtistImages: Boolean = true,
+    val artistImagesWifiOnly: Boolean = true,
 
     // Lyrics & Visuals
     val lrclibAutoFetch: Boolean = false, // Offline-first default
@@ -114,8 +116,20 @@ class PrismPreferencesRepository(context: Context) {
             isShuffleEnabled = prefs.getBoolean(KEY_SHUFFLE_ENABLED, false),
             repeatMode = prefs.getString(KEY_REPEAT_MODE, "OFF") ?: "OFF",
             defaultStartupScreen = prefs.getString(KEY_DEFAULT_STARTUP_SCREEN, "Home") ?: "Home",
-            librarySortOrder = prefs.getString(KEY_LIBRARY_SORT_ORDER, "title_asc") ?: "title_asc"
+            librarySortOrder = prefs.getString(KEY_LIBRARY_SORT_ORDER, "title_asc") ?: "title_asc",
+            downloadArtistImages = prefs.getBoolean(KEY_DOWNLOAD_ARTIST_IMAGES, true),
+            artistImagesWifiOnly = prefs.getBoolean(KEY_ARTIST_IMAGES_WIFI_ONLY, true)
         )
+    }
+
+    fun setDownloadArtistImages(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_DOWNLOAD_ARTIST_IMAGES, enabled).apply()
+        _preferences.value = _preferences.value.copy(downloadArtistImages = enabled)
+    }
+
+    fun setArtistImagesWifiOnly(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_ARTIST_IMAGES_WIFI_ONLY, enabled).apply()
+        _preferences.value = _preferences.value.copy(artistImagesWifiOnly = enabled)
     }
 
     fun setShuffleEnabled(enabled: Boolean) {
@@ -358,5 +372,7 @@ class PrismPreferencesRepository(context: Context) {
         private const val KEY_REPEAT_MODE = "key_repeat_mode"
         private const val KEY_DEFAULT_STARTUP_SCREEN = "key_default_startup_screen"
         private const val KEY_LIBRARY_SORT_ORDER = "key_library_sort_order"
+        private const val KEY_DOWNLOAD_ARTIST_IMAGES = "key_download_artist_images"
+        private const val KEY_ARTIST_IMAGES_WIFI_ONLY = "key_artist_images_wifi_only"
     }
 }

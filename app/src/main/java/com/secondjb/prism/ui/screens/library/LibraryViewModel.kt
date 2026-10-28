@@ -8,6 +8,7 @@ import com.secondjb.prism.domain.model.Album
 import com.secondjb.prism.domain.model.Artist
 import com.secondjb.prism.domain.model.Playlist
 import com.secondjb.prism.domain.model.Track
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -103,8 +104,8 @@ data class LibraryUiState(
                 SongSortOption.ALBUM_DESC -> base.sortedWith(compareByDescending<Track> { it.album.lowercase() }.thenBy { it.trackNumber ?: 0 }.thenBy { it.title.lowercase() })
                 SongSortOption.DATE_ADDED_DESC -> base.sortedByDescending { it.dateAdded }
                 SongSortOption.DATE_ADDED_ASC -> base.sortedBy { it.dateAdded }
-                SongSortOption.DURATION_DESC -> base.sortedByDescending { it.durationMs }
-                SongSortOption.DURATION_ASC -> base.sortedBy { it.durationMs }
+                SongSortOption.DURATION_DESC -> base.sortedWith(compareByDescending<Track> { it.durationMs }.thenBy { it.title.lowercase() })
+                SongSortOption.DURATION_ASC -> base.sortedWith(compareBy<Track> { it.durationMs }.thenBy { it.title.lowercase() })
                 SongSortOption.YEAR_DESC -> base.sortedWith(compareByDescending<Track> { it.year ?: 0 }.thenBy { it.title.lowercase() })
                 SongSortOption.YEAR_ASC -> base.sortedWith(compareBy<Track> { it.year ?: 9999 }.thenBy { it.title.lowercase() })
             }
@@ -188,13 +189,15 @@ data class LibraryUiState(
 
 class LibraryViewModel(
     private val repository: MediaStoreAudioRepository,
-    private val playlistRepository: PlaylistRepository? = null
+    private val playlistRepository: PlaylistRepository? = null,
+    private val artistImageRepository: com.secondjb.prism.core.data.ArtistImageRepository? = null,
+    initialFilterChip: LibraryFilterChip = LibraryFilterChip.ALL_SONGS
 ) : ViewModel() {
 
     var onTrackAddedToPlaylist: ((Track, String) -> Unit)? = null
     var onPlaylistsChanged: (() -> Unit)? = null
 
-    private val _uiState = MutableStateFlow(LibraryUiState())
+    private val _uiState = MutableStateFlow(LibraryUiState(selectedChip = initialFilterChip))
     val uiState: StateFlow<LibraryUiState> = _uiState.asStateFlow()
 
     init {
@@ -227,6 +230,26 @@ class LibraryViewModel(
                     artists = artists,
                     isLoading = false
                 )
+            }
+
+            // Asynchronously resolve Deezer artist artwork for artist cards
+            artistImageRepository?.let { artistRepo ->
+                viewModelScope.launch(Dispatchers.IO) {
+                    artists.forEach { artist ->
+                        val art = artistRepo.getArtistArtworkUri(artist.name)
+                        if (art != null && art != artist.artworkUri) {
+                            _uiState.update { curr ->
+                                val updatedArtists = curr.artists.map { a ->
+                                    if (a.id == artist.id) a.copy(artworkUri = art) else a
+                                }
+                                val updatedActiveArtist = if (curr.activeArtist?.id == artist.id) {
+                                    curr.activeArtist.copy(artworkUri = art)
+                                } else curr.activeArtist
+                                curr.copy(artists = updatedArtists, activeArtist = updatedActiveArtist)
+                            }
+                        }
+                    }
+                }
             }
         }
     }

@@ -681,7 +681,7 @@ class SyncViewModel(
 
     fun getAllLocalTracks(): List<Track> = cachedLocalTracks
 
-    fun sendRemoteCommand(action: CommandAction, seekMs: Long? = null, volume: Float? = null) {
+    fun sendRemoteCommand(action: CommandAction, seekMs: Long? = null, volume: Float? = null, repeatMode: com.secondjb.prism.domain.model.RepeatMode? = null) {
         when (action) {
             CommandAction.PAUSE -> {
                 val currentPos = _remotePlaybackState.value?.positionMs ?: basePositionMs
@@ -708,6 +708,11 @@ class SyncViewModel(
                     _remotePlaybackState.update { it?.copy(positionMs = seekMs) }
                 }
             }
+            CommandAction.SET_REPEAT -> {
+                if (repeatMode != null) {
+                    _remotePlaybackState.update { it?.copy(repeatMode = repeatMode) }
+                }
+            }
             else -> {}
         }
 
@@ -715,7 +720,8 @@ class SyncViewModel(
             val command = SyncFrame.PlaybackCommand(
                 action = action,
                 seekPositionMs = seekMs,
-                volume = volume
+                volume = volume,
+                repeatMode = repeatMode
             )
             transport.sendFrame(command)
         }
@@ -957,7 +963,8 @@ class SyncViewModel(
                     description = syncPl.description,
                     trackIds = localTrackIds,
                     isPinned = syncPl.isPinned,
-                    createdAt = syncPl.createdAt
+                    createdAt = syncPl.createdAt,
+                    customCoverUri = syncPl.customCoverUri
                 )
             }
             repo.syncIncomingPlaylists(mappedPlaylists)
@@ -988,7 +995,8 @@ class SyncViewModel(
                         description = pl.description,
                         isPinned = pl.isPinned,
                         tracks = trackDtos,
-                        createdAt = pl.createdAt
+                        createdAt = pl.createdAt,
+                        customCoverUri = pl.customCoverUri
                     )
                 }
                 transport.sendFrame(SyncFrame.PlaylistSync(dtos))
