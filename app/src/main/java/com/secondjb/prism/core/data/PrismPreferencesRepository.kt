@@ -27,7 +27,10 @@ data class PersistedQueueState(
     val contextQueue: List<Track> = emptyList(),
     val currentIndex: Int = -1,
     val currentTrackId: String? = null,
-    val activePlaylistId: String? = null
+    val activePlaylistId: String? = null,
+    val positionMs: Long = 0L,
+    val isShuffled: Boolean = false,
+    val repeatMode: String = "OFF"
 )
 
 /**
@@ -45,6 +48,12 @@ data class PrismPreferences(
     val isGaplessEnabled: Boolean = true,
     val replayGainMode: String = "track", // "track", "album", "off"
     val crossfadeDurationSeconds: Int = 0, // 0, 2, 4, 6
+    val isShuffleEnabled: Boolean = false,
+    val repeatMode: String = "OFF", // "OFF", "ALL", "ONE"
+
+    // Navigation & View
+    val defaultStartupScreen: String = "Home",
+    val librarySortOrder: String = "title_asc",
 
     // Lyrics & Visuals
     val lrclibAutoFetch: Boolean = false, // Offline-first default
@@ -101,8 +110,32 @@ class PrismPreferencesRepository(context: Context) {
             isStatsCollectionEnabled = prefs.getBoolean(KEY_STATS_COLLECTION_ENABLED, true),
             isDeviceFamilyEnabled = prefs.getBoolean(KEY_DEVICE_FAMILY_ENABLED, false),
             simultaneousConflictMode = prefs.getString(KEY_SIMULTANEOUS_CONFLICT_MODE, "DESYNC") ?: "DESYNC",
-            checkUpdatesOnStartup = prefs.getBoolean(KEY_CHECK_UPDATES_ON_STARTUP, true)
+            checkUpdatesOnStartup = prefs.getBoolean(KEY_CHECK_UPDATES_ON_STARTUP, true),
+            isShuffleEnabled = prefs.getBoolean(KEY_SHUFFLE_ENABLED, false),
+            repeatMode = prefs.getString(KEY_REPEAT_MODE, "OFF") ?: "OFF",
+            defaultStartupScreen = prefs.getString(KEY_DEFAULT_STARTUP_SCREEN, "Home") ?: "Home",
+            librarySortOrder = prefs.getString(KEY_LIBRARY_SORT_ORDER, "title_asc") ?: "title_asc"
         )
+    }
+
+    fun setShuffleEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SHUFFLE_ENABLED, enabled).apply()
+        _preferences.value = _preferences.value.copy(isShuffleEnabled = enabled)
+    }
+
+    fun setRepeatMode(mode: String) {
+        prefs.edit().putString(KEY_REPEAT_MODE, mode).apply()
+        _preferences.value = _preferences.value.copy(repeatMode = mode)
+    }
+
+    fun setDefaultStartupScreen(screen: String) {
+        prefs.edit().putString(KEY_DEFAULT_STARTUP_SCREEN, screen).apply()
+        _preferences.value = _preferences.value.copy(defaultStartupScreen = screen)
+    }
+
+    fun setLibrarySortOrder(sort: String) {
+        prefs.edit().putString(KEY_LIBRARY_SORT_ORDER, sort).apply()
+        _preferences.value = _preferences.value.copy(librarySortOrder = sort)
     }
 
     fun setMinDurationSeconds(seconds: Int) {
@@ -257,7 +290,10 @@ class PrismPreferencesRepository(context: Context) {
         contextQueue: List<Track>,
         currentIndex: Int,
         currentTrackId: String?,
-        activePlaylistId: String?
+        activePlaylistId: String?,
+        positionMs: Long = 0L,
+        isShuffled: Boolean = false,
+        repeatMode: String = "OFF"
     ) {
         try {
             val state = PersistedQueueState(
@@ -265,7 +301,10 @@ class PrismPreferencesRepository(context: Context) {
                 contextQueue = contextQueue,
                 currentIndex = currentIndex,
                 currentTrackId = currentTrackId,
-                activePlaylistId = activePlaylistId
+                activePlaylistId = activePlaylistId,
+                positionMs = positionMs,
+                isShuffled = isShuffled,
+                repeatMode = repeatMode
             )
             val jsonStr = json.encodeToString(state)
             prefs.edit().putString(KEY_PERSISTED_QUEUE, jsonStr).apply()
@@ -315,5 +354,9 @@ class PrismPreferencesRepository(context: Context) {
         private const val KEY_LYRICS_TRANSLATION_MODE = "key_lyrics_translation_mode"
         private const val KEY_LYRICS_FONT_SCALE = "key_lyrics_font_scale"
         private const val KEY_CHECK_UPDATES_ON_STARTUP = "key_check_updates_on_startup"
+        private const val KEY_SHUFFLE_ENABLED = "key_shuffle_enabled"
+        private const val KEY_REPEAT_MODE = "key_repeat_mode"
+        private const val KEY_DEFAULT_STARTUP_SCREEN = "key_default_startup_screen"
+        private const val KEY_LIBRARY_SORT_ORDER = "key_library_sort_order"
     }
 }

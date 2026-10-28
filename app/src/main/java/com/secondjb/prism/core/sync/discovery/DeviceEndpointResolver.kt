@@ -40,9 +40,9 @@ class DeviceEndpointResolver(
 
         // 2. Check mDNS discovered devices
         val mdnsDevices = discoveryManager?.discoveredDevices?.value ?: emptyList()
-        val mdnsMatch = mdnsDevices.firstOrNull {
-            it.name.contains(device.name, ignoreCase = true) || device.name.contains(it.name, ignoreCase = true)
-        }
+        val mdnsMatch = mdnsDevices.firstOrNull { matchesDeviceName(it.name, device.name) }
+            ?: if (mdnsDevices.size == 1) mdnsDevices.first() else null
+
         if (mdnsMatch != null && isReachable(mdnsMatch.ipAddress, mdnsMatch.port, timeoutMs = 1200)) {
             Log.i(TAG, "Found ${device.name} via mDNS at updated IP: ${mdnsMatch.ipAddress}:${mdnsMatch.port}")
             onIpUpdated?.invoke(mdnsMatch.ipAddress)
@@ -63,6 +63,27 @@ class DeviceEndpointResolver(
 
         Log.w(TAG, "Could not resolve live endpoint for ${device.name}.")
         null
+    }
+
+    private fun matchesDeviceName(discoveredName: String, pairedName: String): Boolean {
+        if (discoveredName.equals(pairedName, ignoreCase = true)) return true
+        if (discoveredName.contains(pairedName, ignoreCase = true) || pairedName.contains(discoveredName, ignoreCase = true)) return true
+        val normDiscovered = discoveredName.replace("Prism-Windows-", "", ignoreCase = true)
+            .replace("Prism Desktop", "", ignoreCase = true)
+            .replace(Regex("[()_-]"), "")
+            .trim()
+        val normPaired = pairedName.replace("Prism-Windows-", "", ignoreCase = true)
+            .replace("Prism Desktop", "", ignoreCase = true)
+            .replace(Regex("[()_-]"), "")
+            .trim()
+        if (normDiscovered.isNotBlank() && normPaired.isNotBlank()) {
+            if (normDiscovered.equals(normPaired, ignoreCase = true) ||
+                normDiscovered.contains(normPaired, ignoreCase = true) ||
+                normPaired.contains(normDiscovered, ignoreCase = true)) {
+                return true
+            }
+        }
+        return false
     }
 
     private fun isReachable(host: String, port: Int, timeoutMs: Int): Boolean {
@@ -94,8 +115,27 @@ class DeviceEndpointResolver(
 
     private fun getLocalWifiIpAddress(): String? {
         try {
-            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
-            for (intf in interfaces) {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            if (cm != null) {
+                val activeNetwork = cm.activeNetwork
+                if (activeNetwork != null) {
+                    val caps = cm.getNetworkCapabilities(activeNetwork)
+                    if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                        val linkProps = cm.getLinkProperties(activeNetwork)
+                        val wifiIp = linkProps?.linkAddresses?.map { it.address }
+                            ?.firstOrNull { it is java.net.Inet4Address && !it.isLoopbackAddress }
+                            ?.hostAddress
+                        if (!wifiIp.isNullOrBlank()) {
+                            return wifiIp
+                        }
+                    }
+                }
+            }
+            val interfaces = NetworkInterface.getNetworkInterfaces()?.toList() ?: emptyList()
+            val sortedIntfs = interfaces.sortedByDescending {
+                it.name.contains("wlan", ignoreCase = true) || it.name.contains("wifi", ignoreCase = true)
+            }
+            for (intf in sortedIntfs) {
                 if (intf.isLoopback || !intf.isUp) continue
                 val addrs = intf.inetAddresses ?: continue
                 for (addr in addrs) {

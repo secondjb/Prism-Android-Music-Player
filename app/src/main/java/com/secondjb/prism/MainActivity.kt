@@ -49,6 +49,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -541,6 +542,7 @@ class MainActivity : ComponentActivity() {
 							showQrPairingDialog = true
 						},
 						onRescanLibrary = {
+							repository.invalidateCache()
 							libraryViewModel.loadLibrary()
 							syncViewModel.refreshLocalTracks()
 						},
@@ -560,7 +562,8 @@ class MainActivity : ComponentActivity() {
 						},
 						onClearStatsHistory = {
 							scope.launch { statsRepository.clearHistory() }
-						}
+						},
+						defaultStartupScreen = userPreferences.defaultStartupScreen
 					)
 
 					// BackHandler collapses now playing before exiting app
@@ -605,7 +608,15 @@ class MainActivity : ComponentActivity() {
 							onRemoveQueueIndex = { playbackEngine.removeFromQueue(it) },
 							onRemoveUserQueueIndex = { playbackEngine.removeFromUserQueue(it) },
 							onClearQueue = { playbackEngine.clearQueue() },
-							onReshuffleUpcoming = { playbackEngine.reshuffleUpcomingContext() },
+							onReshuffleUpcoming = {
+								val desktopActive = isDesktopConnected && isDesktopOutputEnabled
+								if (desktopActive) {
+									syncViewModel.sendRemoteCommand(CommandAction.RESHUFFLE_UPCOMING)
+								}
+								if (isLocalOutputEnabled || !isDesktopConnected) {
+									playbackEngine.reshuffleUpcomingContext()
+								}
+							},
 							onPairQrClick = {
 								showQrPairingDialog = true
 							},
@@ -900,7 +911,8 @@ fun PrismAppRoot(
 	onDeletePairedDevice: (com.secondjb.prism.core.data.PairedDevice) -> Unit = {},
 	onOpenSmartFileSync: () -> Unit = {},
 	onSyncStatsNow: () -> Unit = {},
-	onClearStatsHistory: () -> Unit = {}
+	onClearStatsHistory: () -> Unit = {},
+	defaultStartupScreen: String = "Home"
 ) {
 	val navController = rememberNavController()
 	val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -908,6 +920,55 @@ fun PrismAppRoot(
 
 	val mainState by mainViewModel.uiState.collectAsState()
 	val libraryState by libraryViewModel.uiState.collectAsState()
+
+	var hasNavigatedToDefaultScreen by rememberSaveable { mutableStateOf(false) }
+	LaunchedEffect(defaultStartupScreen) {
+		if (!hasNavigatedToDefaultScreen) {
+			hasNavigatedToDefaultScreen = true
+			when (defaultStartupScreen) {
+				"Library: Songs" -> {
+					libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ALL_SONGS)
+					navController.navigate(Screen.Library.route) {
+						popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+						launchSingleTop = true
+						restoreState = true
+					}
+				}
+				"Library: Playlists" -> {
+					libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.PLAYLISTS)
+					navController.navigate(Screen.Library.route) {
+						popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+						launchSingleTop = true
+						restoreState = true
+					}
+				}
+				"Library: Albums" -> {
+					libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ALBUMS)
+					navController.navigate(Screen.Library.route) {
+						popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+						launchSingleTop = true
+						restoreState = true
+					}
+				}
+				"Library: Artists" -> {
+					libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ARTISTS)
+					navController.navigate(Screen.Library.route) {
+						popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+						launchSingleTop = true
+						restoreState = true
+					}
+				}
+				"Settings" -> {
+					navController.navigate(Screen.Settings.route) {
+						popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+						launchSingleTop = true
+						restoreState = true
+					}
+				}
+				else -> { /* Home is default startDestination */ }
+			}
+		}
+	}
 
 	Scaffold(
 		modifier = Modifier.fillMaxSize(),
@@ -1016,6 +1077,12 @@ fun PrismAppRoot(
 						onCreatePlaylist = libraryViewModel::createPlaylist,
 						onTrackClick = onPlayTrack,
 						onOpenPlaylist = libraryViewModel::openPlaylist,
+						onOpenAlbum = libraryViewModel::openAlbum,
+						onOpenArtist = libraryViewModel::openArtist,
+						onSetSongSort = libraryViewModel::setSongSort,
+						onSetAlbumSort = libraryViewModel::setAlbumSort,
+						onSetArtistSort = libraryViewModel::setArtistSort,
+						onSetPlaylistSort = libraryViewModel::setPlaylistSort,
 						onDeletePlaylist = libraryViewModel::deletePlaylist,
 						onAddTrackToPlaylist = libraryViewModel::addTrackToPlaylist,
 						onRemoveTrackFromPlaylist = libraryViewModel::removeTrackFromPlaylist,
@@ -1024,12 +1091,22 @@ fun PrismAppRoot(
 						onAddToQueue = onAddToQueue,
 						onGoToQueue = onExpandNowPlaying,
 						onGoToAlbum = { albumName ->
-							libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ALBUMS)
-							libraryViewModel.setSearchQuery(albumName)
+							val match = libraryState.albums.firstOrNull { it.title.equals(albumName, ignoreCase = true) }
+							if (match != null) {
+								libraryViewModel.openAlbum(match)
+							} else {
+								libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ALBUMS)
+								libraryViewModel.setSearchQuery(albumName)
+							}
 						},
 						onGoToArtist = { artistName ->
-							libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ARTISTS)
-							libraryViewModel.setSearchQuery(artistName)
+							val match = libraryState.artists.firstOrNull { it.name.equals(artistName, ignoreCase = true) }
+							if (match != null) {
+								libraryViewModel.openArtist(match)
+							} else {
+								libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ARTISTS)
+								libraryViewModel.setSearchQuery(artistName)
+							}
 						}
 					)
 				}

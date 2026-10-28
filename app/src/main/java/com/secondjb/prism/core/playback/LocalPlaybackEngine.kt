@@ -80,6 +80,11 @@ class LocalPlaybackEngine(
             currentQueueIndex = persisted.currentIndex
             activePlaylistId = persisted.activePlaylistId
             val activeTrack = if (currentQueueIndex in contextQueue.indices) contextQueue[currentQueueIndex] else contextQueue.firstOrNull()
+            val restoredRepeat = try {
+                RepeatMode.valueOf(persisted.repeatMode)
+            } catch (e: Exception) {
+                RepeatMode.OFF
+            }
             _playbackState.update {
                 it.copy(
                     currentTrack = activeTrack,
@@ -87,6 +92,9 @@ class LocalPlaybackEngine(
                     userQueue = userQueue.toList(),
                     queueIndex = currentQueueIndex,
                     activePlaylistId = activePlaylistId,
+                    positionMs = persisted.positionMs,
+                    isShuffled = persisted.isShuffled,
+                    repeatMode = restoredRepeat,
                     isPlaying = false
                 )
             }
@@ -94,16 +102,22 @@ class LocalPlaybackEngine(
     }
 
     private fun persistQueue() {
+        val curPos = mediaController?.currentPosition ?: _playbackState.value.positionMs
         preferencesRepository?.saveQueueState(
             userQueue = userQueue.toList(),
             contextQueue = contextQueue.toList(),
             currentIndex = currentQueueIndex,
             currentTrackId = _playbackState.value.currentTrack?.id,
-            activePlaylistId = activePlaylistId
+            activePlaylistId = activePlaylistId,
+            positionMs = curPos,
+            isShuffled = _playbackState.value.isShuffled,
+            repeatMode = _playbackState.value.repeatMode.name
         )
     }
 
     private fun initializeController() {
+        com.secondjb.prism.core.service.MediaSessionBridge.onLocalSkipNext = { skipNext() }
+        com.secondjb.prism.core.service.MediaSessionBridge.onLocalSkipPrevious = { skipPrevious() }
         val sessionToken = SessionToken(
             context,
             ComponentName(context, PrismPlaybackService::class.java)
@@ -355,8 +369,10 @@ class LocalPlaybackEngine(
     }
 
     override fun pause() {
+        val curPos = mediaController?.currentPosition ?: _playbackState.value.positionMs
         mediaController?.pause()
-        _playbackState.update { it.copy(isPlaying = false, lastActionTimestampMs = System.currentTimeMillis()) }
+        _playbackState.update { it.copy(isPlaying = false, positionMs = curPos, lastActionTimestampMs = System.currentTimeMillis()) }
+        persistQueue()
     }
 
     override fun seekTo(positionMs: Long) {
@@ -488,6 +504,8 @@ class LocalPlaybackEngine(
         }
         controller.repeatMode = exoMode
         _playbackState.update { it.copy(repeatMode = mode, lastActionTimestampMs = System.currentTimeMillis()) }
+        preferencesRepository?.setRepeatMode(mode.name)
+        persistQueue()
     }
 
     override fun toggleShuffle() {
@@ -521,14 +539,28 @@ class LocalPlaybackEngine(
                 lastActionTimestampMs = System.currentTimeMillis()
             )
         }
+        preferencesRepository?.setShuffleEnabled(newShuffle)
         persistQueue()
     }
 
     override fun reshuffleUpcomingContext() {
-        if (currentQueueIndex in 0 until contextQueue.lastIndex) {
-            val head = contextQueue.take(currentQueueIndex + 1)
-            val upcoming = contextQueue.drop(currentQueueIndex + 1).shuffled()
+        val currIdx = if (currentQueueIndex in contextQueue.indices) {
+            currentQueueIndex
+        } else {
+            val currTrack = _playbackState.value.currentTrack
+            if (currTrack != null) contextQueue.indexOfFirst { it.id == currTrack.id } else -1
+        }
+        if (currIdx in 0 until contextQueue.lastIndex) {
+            val head = contextQueue.take(currIdx + 1)
+            val upcoming = contextQueue.drop(currIdx + 1).shuffled()
             contextQueue = (head + upcoming).toMutableList()
+            currentQueueIndex = currIdx
+            _playbackState.update {
+                it.copy(queue = contextQueue.toList(), queueIndex = currIdx, lastActionTimestampMs = System.currentTimeMillis())
+            }
+            persistQueue()
+        } else if (contextQueue.size > 1 && currIdx < 0) {
+            contextQueue = contextQueue.shuffled().toMutableList()
             _playbackState.update {
                 it.copy(queue = contextQueue.toList(), lastActionTimestampMs = System.currentTimeMillis())
             }
@@ -711,6 +743,7 @@ class LocalPlaybackEngine(
                 .build()
 
             controller.setMediaItem(mediaItem)
+            controller.prepare()
         }
     }
 

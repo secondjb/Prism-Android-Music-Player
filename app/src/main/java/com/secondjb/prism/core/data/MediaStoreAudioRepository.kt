@@ -10,6 +10,8 @@ import com.secondjb.prism.domain.model.Artist
 import com.secondjb.prism.domain.model.ListeningStats
 import com.secondjb.prism.domain.model.Track
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -21,8 +23,19 @@ class MediaStoreAudioRepository(
 ) {
 
     private val albumArtUriBase = Uri.parse("content://media/external/audio/albumart")
+    private var cachedTracks: List<Track>? = null
+    private val cacheMutex = Mutex()
 
-    suspend fun loadAllTracks(): List<Track> = withContext(Dispatchers.IO) {
+    fun invalidateCache() {
+        cachedTracks = null
+    }
+
+    suspend fun loadAllTracks(forceRefresh: Boolean = false): List<Track> = withContext(Dispatchers.IO) {
+        if (!forceRefresh) {
+            cacheMutex.withLock {
+                cachedTracks?.let { return@withContext it }
+            }
+        }
         val tracks = mutableListOf<Track>()
         val prefs = preferencesRepository?.preferences?.value
         val included = prefs?.includedFolders ?: emptySet()
@@ -120,6 +133,9 @@ class MediaStoreAudioRepository(
             // Return whatever was read or empty
         }
 
+        cacheMutex.withLock {
+            cachedTracks = tracks
+        }
         tracks
     }
 

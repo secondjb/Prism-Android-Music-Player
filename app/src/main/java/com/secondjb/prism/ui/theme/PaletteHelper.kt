@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.graphics.drawable.toBitmap
 import androidx.palette.graphics.Palette
 import coil.ImageLoader
+import coil.imageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import kotlinx.coroutines.Dispatchers
@@ -302,16 +303,16 @@ fun rememberAlbumPalette(artworkData: Any?): PrismAlbumPalette? {
         // the new artwork on Dispatchers.IO. This eliminates the split-second flash back to default colors.
         withContext(Dispatchers.IO) {
             try {
-                val imageLoader = ImageLoader(context)
+                val imageLoader = context.imageLoader
                 val request = ImageRequest.Builder(context)
                     .data(artworkData)
                     .allowHardware(false) // required to access pixel buffer for Palette
-                    .size(128) // downscale for fast palette generation
+                    .size(64) // downscale to 64px for instantaneous palette generation
                     .build()
 
                 val result = imageLoader.execute(request)
                 if (result is SuccessResult) {
-                    val bitmap = result.drawable.toBitmap(128, 128)
+                    val bitmap = result.drawable.toBitmap(64, 64)
                     val extracted = extractPaletteFromBitmap(bitmap)
                     paletteCache.put(key, extracted)
                     withContext(Dispatchers.Main) {

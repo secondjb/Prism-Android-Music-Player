@@ -489,6 +489,37 @@ fun SettingsScreen(
                         onCheckedChange = { preferencesRepository.setDynamicThemingEnabled(it) }
                     )
                 }
+
+                Spacer(Modifier.height(10.dp))
+
+                // Default Startup Screen
+                Text("Default Startup Screen", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = "Choose which screen opens when launching Prism",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(6.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    listOf(
+                        "Home" to "Home",
+                        "Library: Songs" to "Songs",
+                        "Library: Playlists" to "Playlists",
+                        "Library: Albums" to "Albums",
+                        "Library: Artists" to "Artists",
+                        "Settings" to "Settings"
+                    ).forEach { (screenKey, label) ->
+                        FilterChip(
+                            selected = prefs.defaultStartupScreen == screenKey,
+                            onClick = { preferencesRepository.setDefaultStartupScreen(screenKey) },
+                            label = { Text(label) }
+                        )
+                    }
+                }
             }
         }
 
