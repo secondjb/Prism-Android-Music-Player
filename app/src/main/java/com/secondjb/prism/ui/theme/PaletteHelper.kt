@@ -144,6 +144,17 @@ fun extractPaletteFromBitmap(bitmap: Bitmap): PrismAlbumPalette {
  * for vibrant accents (primary, primaryContainer, secondary, tertiary).
  */
 fun buildDynamicColorScheme(palette: PrismAlbumPalette, isDark: Boolean): ColorScheme {
+    val (h, _, _) = palette.primary.toHsl()
+    // Harmonize destructive / error hue with album artwork: subtle tint toward warm rose/crimson
+    val errorHue = if (h in 345f..360f || h in 0f..25f) (h + 8f) % 360f else ((h * 0.12f + 16f * 0.88f) % 360f)
+    val errorDark = hslToColor(errorHue, 0.62f, 0.72f)
+    val errorContainerDark = hslToColor(errorHue, 0.38f, 0.22f)
+    val onErrorContainerDark = hslToColor(errorHue, 0.50f, 0.90f)
+
+    val errorLight = hslToColor(errorHue, 0.65f, 0.46f)
+    val errorContainerLight = hslToColor(errorHue, 0.40f, 0.92f)
+    val onErrorContainerLight = hslToColor(errorHue, 0.65f, 0.22f)
+
     return if (isDark) {
         // Guarantee accessible primary color with high contrast on dark surface (Tone ~80)
         val primary = palette.primary.adjustLuminance(1.15f).clampLightness(minL = 0.68f, maxL = 0.88f)
@@ -175,7 +186,11 @@ fun buildDynamicColorScheme(palette: PrismAlbumPalette, isDark: Boolean): ColorS
             onSurfaceVariant = Color(0xFFC7C5D0),
             surfaceContainer = surfaceContainer,
             surfaceContainerHigh = Color(0xFF2A2C34),
-            surfaceContainerHighest = Color(0xFF33353E)
+            surfaceContainerHighest = Color(0xFF33353E),
+            error = errorDark,
+            onError = Color(0xFF1E0A0E),
+            errorContainer = errorContainerDark,
+            onErrorContainer = onErrorContainerDark
         )
     } else {
         val primary = palette.primary.adjustLuminance(0.85f)
@@ -201,7 +216,11 @@ fun buildDynamicColorScheme(palette: PrismAlbumPalette, isDark: Boolean): ColorS
             onSurfaceVariant = Color(0xFF45464F),
             surfaceContainer = Color(0xFFF0EFF6),
             surfaceContainerHigh = Color(0xFFEAE9F0),
-            surfaceContainerHighest = Color(0xFFE4E3EA)
+            surfaceContainerHighest = Color(0xFFE4E3EA),
+            error = errorLight,
+            onError = Color.White,
+            errorContainer = errorContainerLight,
+            onErrorContainer = onErrorContainerLight
         )
     }
 }
@@ -228,6 +247,10 @@ fun animateColorScheme(target: ColorScheme): ColorScheme {
     val onSurface by animateColorAsState(target.onSurface, tween(duration), label = "onSurface")
     val surfaceVariant by animateColorAsState(target.surfaceVariant, tween(duration), label = "surfaceVariant")
     val onSurfaceVariant by animateColorAsState(target.onSurfaceVariant, tween(duration), label = "onSurfaceVariant")
+    val error by animateColorAsState(target.error, tween(duration), label = "error")
+    val onError by animateColorAsState(target.onError, tween(duration), label = "onError")
+    val errorContainer by animateColorAsState(target.errorContainer, tween(duration), label = "errorContainer")
+    val onErrorContainer by animateColorAsState(target.onErrorContainer, tween(duration), label = "onErrorContainer")
 
     return target.copy(
         primary = primary,
@@ -245,7 +268,11 @@ fun animateColorScheme(target: ColorScheme): ColorScheme {
         surface = surface,
         onSurface = onSurface,
         surfaceVariant = surfaceVariant,
-        onSurfaceVariant = onSurfaceVariant
+        onSurfaceVariant = onSurfaceVariant,
+        error = error,
+        onError = onError,
+        errorContainer = errorContainer,
+        onErrorContainer = onErrorContainer
     )
 }
 

@@ -232,22 +232,34 @@ class LibraryViewModel(
                 )
             }
 
-            // Asynchronously resolve Deezer artist artwork for artist cards
-            artistImageRepository?.let { artistRepo ->
-                viewModelScope.launch(Dispatchers.IO) {
-                    artists.forEach { artist ->
-                        val art = artistRepo.getArtistArtworkUri(artist.name)
-                        if (art != null && art != artist.artworkUri) {
-                            _uiState.update { curr ->
-                                val updatedArtists = curr.artists.map { a ->
-                                    if (a.id == artist.id) a.copy(artworkUri = art) else a
-                                }
-                                val updatedActiveArtist = if (curr.activeArtist?.id == artist.id) {
-                                    curr.activeArtist.copy(artworkUri = art)
-                                } else curr.activeArtist
-                                curr.copy(artists = updatedArtists, activeArtist = updatedActiveArtist)
-                            }
+            // Artists loaded; artwork will be resolved on-demand when navigating to Artists
+        }
+    }
+
+    private var hasResolvedArtistArt = false
+    fun resolveArtistImagesIfNeeded() {
+        if (hasResolvedArtistArt) return
+        hasResolvedArtistArt = true
+        artistImageRepository?.let { artistRepo ->
+            viewModelScope.launch(Dispatchers.IO) {
+                val currentArtists = _uiState.value.artists
+                val updatedMap = mutableMapOf<String, String>()
+                for (artist in currentArtists) {
+                    val art = artistRepo.getArtistArtworkUri(artist.name)
+                    if (art != null && art != artist.artworkUri) {
+                        updatedMap[artist.id] = art
+                    }
+                }
+                if (updatedMap.isNotEmpty()) {
+                    _uiState.update { curr ->
+                        val updatedArtists = curr.artists.map { a ->
+                            val newArt = updatedMap[a.id]
+                            if (newArt != null) a.copy(artworkUri = newArt) else a
                         }
+                        val updatedActive = curr.activeArtist?.let { act ->
+                            updatedMap[act.id]?.let { act.copy(artworkUri = it) } ?: act
+                        }
+                        curr.copy(artists = updatedArtists, activeArtist = updatedActive)
                     }
                 }
             }
@@ -256,6 +268,9 @@ class LibraryViewModel(
 
     fun setFilterChip(chip: LibraryFilterChip) {
         _uiState.update { it.copy(selectedChip = chip, activePlaylist = null) }
+        if (chip == LibraryFilterChip.ARTISTS) {
+            resolveArtistImagesIfNeeded()
+        }
     }
 
     fun toggleViewMode() {
@@ -280,6 +295,22 @@ class LibraryViewModel(
 
     fun openArtist(artist: Artist?) {
         _uiState.update { it.copy(activeArtist = artist, activeAlbum = null, activePlaylist = null) }
+        if (artist != null && artist.artworkUri == null) {
+            artistImageRepository?.let { repo ->
+                viewModelScope.launch(Dispatchers.IO) {
+                    val art = repo.getArtistArtworkUri(artist.name)
+                    if (art != null) {
+                        _uiState.update { curr ->
+                            val updatedArtists = curr.artists.map { a ->
+                                if (a.id == artist.id) a.copy(artworkUri = art) else a
+                            }
+                            val updatedActive = if (curr.activeArtist?.id == artist.id) curr.activeArtist.copy(artworkUri = art) else curr.activeArtist
+                            curr.copy(artists = updatedArtists, activeArtist = updatedActive)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fun setSongSort(sort: SongSortOption) {

@@ -131,6 +131,9 @@ class SyncViewModel(
 
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var autoReconnectJob: Job? = null
+    private var connectJob: Job? = null
+    @Volatile
+    private var isConnectingOrResolving: Boolean = false
 
     init {
         discoveryManager?.startDiscovery()
@@ -169,8 +172,8 @@ class SyncViewModel(
             while (isActive) {
                 delay(3500L)
                 val currentConn = connectionState.value
-                val isConnected = currentConn is TransportConnectionState.Connected || currentConn is TransportConnectionState.Connecting
-                if (!isConnected) {
+                val isBusy = isConnectingOrResolving || currentConn is TransportConnectionState.Connected || currentConn is TransportConnectionState.Connecting
+                if (!isBusy) {
                     val devices = preferencesRepository?.pairedDevices?.value ?: emptyList()
                     if (devices.isNotEmpty()) {
                         val mostRecent = devices.maxByOrNull { it.lastConnectedTimeMs } ?: devices.first()
@@ -195,7 +198,7 @@ class SyncViewModel(
 
     private fun autoConnectRecentPairedDevice() {
         val currentConn = connectionState.value
-        if (currentConn is TransportConnectionState.Connected || currentConn is TransportConnectionState.Connecting) {
+        if (isConnectingOrResolving || currentConn is TransportConnectionState.Connected || currentConn is TransportConnectionState.Connecting) {
             return
         }
         viewModelScope.launch {
@@ -544,22 +547,32 @@ class SyncViewModel(
     }
 
     fun connectToPairedDevice(device: PairedDevice) {
-        viewModelScope.launch {
-            _lastPairingError.value = null
-            val resolver = endpointResolver
-            val liveEndpoint = resolver?.resolveEndpoint(device) { updatedIp ->
-                preferencesRepository?.savePairedDevice(
-                    device.copy(host = updatedIp, lastConnectedTimeMs = System.currentTimeMillis())
-                )
-            } ?: ConnectionEndpoint(host = device.host, port = device.port, authToken = device.token)
+        val currentConn = connectionState.value
+        if (isConnectingOrResolving || currentConn is TransportConnectionState.Connected || currentConn is TransportConnectionState.Connecting) {
+            return
+        }
+        connectJob?.cancel()
+        connectJob = viewModelScope.launch {
+            isConnectingOrResolving = true
+            try {
+                _lastPairingError.value = null
+                val resolver = endpointResolver
+                val liveEndpoint = resolver?.resolveEndpoint(device) { updatedIp ->
+                    preferencesRepository?.savePairedDevice(
+                        device.copy(host = updatedIp, lastConnectedTimeMs = System.currentTimeMillis())
+                    )
+                } ?: ConnectionEndpoint(host = device.host, port = device.port, authToken = device.token)
 
-            _connectedEndpoint.value = liveEndpoint
-            _connectedServerName.value = device.name
-            lastPairingToken = device.token
-            transport.connect(liveEndpoint)
-                .onFailure { err ->
-                    _lastPairingError.value = "Failed to connect to ${device.name}: ${err.message}"
-                }
+                _connectedEndpoint.value = liveEndpoint
+                _connectedServerName.value = device.name
+                lastPairingToken = device.token
+                transport.connect(liveEndpoint)
+                    .onFailure { err ->
+                        _lastPairingError.value = "Failed to connect to ${device.name}: ${err.message}"
+                    }
+            } finally {
+                isConnectingOrResolving = false
+            }
         }
     }
 
@@ -957,6 +970,25 @@ class SyncViewModel(
                     }
                     match?.id
                 }
+
+                val resolvedCoverUri = when {
+                    syncPl.customCoverUri.isNullOrBlank() -> null
+                    syncPl.customCoverUri.startsWith("color:") -> syncPl.customCoverUri
+                    syncPl.customCoverUri.startsWith("data:image/") -> {
+                        try {
+                            val base64Data = syncPl.customCoverUri.substringAfter("base64,")
+                            val bytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
+                            val coversDir = File(context?.filesDir, "playlist_covers").apply { if (!exists()) mkdirs() }
+                            val destFile = File(coversDir, "pl_${syncPl.id}.jpg")
+                            destFile.writeBytes(bytes)
+                            "file://${destFile.absolutePath}"
+                        } catch (e: Exception) {
+                            syncPl.customCoverUri
+                        }
+                    }
+                    else -> syncPl.customCoverUri
+                }
+
                 com.secondjb.prism.domain.model.Playlist(
                     id = syncPl.id,
                     name = syncPl.name,
@@ -964,7 +996,7 @@ class SyncViewModel(
                     trackIds = localTrackIds,
                     isPinned = syncPl.isPinned,
                     createdAt = syncPl.createdAt,
-                    customCoverUri = syncPl.customCoverUri
+                    customCoverUri = resolvedCoverUri
                 )
             }
             repo.syncIncomingPlaylists(mappedPlaylists)
@@ -989,6 +1021,26 @@ class SyncViewModel(
                             durationMs = t.durationMs
                         )
                     }
+                    val syncCoverUri = when {
+                        pl.customCoverUri.isNullOrBlank() -> ""
+                        pl.customCoverUri.startsWith("color:") -> pl.customCoverUri
+                        pl.customCoverUri.startsWith("data:") -> pl.customCoverUri
+                        pl.customCoverUri.startsWith("file://") || pl.customCoverUri.startsWith("/") -> {
+                            try {
+                                val localPath = pl.customCoverUri.removePrefix("file://")
+                                val f = File(localPath)
+                                if (f.exists() && f.length() > 0L) {
+                                    val bytes = f.readBytes()
+                                    val b64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                                    "data:image/jpeg;base64,$b64"
+                                } else ""
+                            } catch (e: Exception) {
+                                ""
+                            }
+                        }
+                        else -> ""
+                    }
+
                     SyncPlaylistDto(
                         id = pl.id,
                         name = pl.name,
@@ -996,7 +1048,7 @@ class SyncViewModel(
                         isPinned = pl.isPinned,
                         tracks = trackDtos,
                         createdAt = pl.createdAt,
-                        customCoverUri = pl.customCoverUri
+                        customCoverUri = syncCoverUri
                     )
                 }
                 transport.sendFrame(SyncFrame.PlaylistSync(dtos))

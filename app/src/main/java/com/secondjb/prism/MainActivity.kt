@@ -266,6 +266,9 @@ class MainActivity : ComponentActivity() {
 				if (shouldShowRemoteInNotification) {
 					val remote = remotePlaybackState ?: return@LaunchedEffect
 					val remoteTrack = remote.currentTrack ?: return@LaunchedEffect
+					val localMatch = syncViewModel.findLocalMatch(remoteTrack)
+					val playableUri = localMatch?.uri ?: syncViewModel.getAllLocalTracks().firstOrNull()?.uri ?: remoteTrack.uri
+
 					com.secondjb.prism.core.service.MediaSessionBridge.isRemotePlaying = remote.isPlaying
 					com.secondjb.prism.core.service.MediaSessionBridge.remotePositionMs = remote.positionMs
 					com.secondjb.prism.core.service.MediaSessionBridge.remoteDurationMs = remote.durationMs
@@ -273,6 +276,7 @@ class MainActivity : ComponentActivity() {
 
 					playbackEngine.syncRemoteMetadata(
 						remoteTrack = remoteTrack,
+						playableUri = playableUri,
 						isPlaying = remote.isPlaying,
 						positionMs = remote.positionMs,
 						serverName = connectedServerName?.ifBlank { "Prism Desktop" } ?: "Prism Desktop"
@@ -315,11 +319,13 @@ class MainActivity : ComponentActivity() {
 					}
 
 					val drift = Math.abs(remote.positionMs - localState.positionMs)
-					if (drift > 1000L) {
+					val isNearEnd = remote.durationMs > 0L && remote.positionMs >= (remote.durationMs - 3000L)
+					if (drift > 1200L && !isNearEnd) {
 						playbackEngine.seekTo(remote.positionMs)
 					}
 				}
 			}
+
 
 			// Unified command handlers for single or simultaneous dual output
 			val handlePlayTrack: (Track, List<Track>) -> Unit = { track, queue ->
@@ -447,15 +453,6 @@ class MainActivity : ComponentActivity() {
 			LaunchedEffect(shouldShowRemoteInNotification, connectedServerName) {
 				com.secondjb.prism.core.service.MediaSessionBridge.isRemoteActive = shouldShowRemoteInNotification
 				com.secondjb.prism.core.service.MediaSessionBridge.remoteServerName = connectedServerName?.ifBlank { "Prism Desktop" } ?: "Prism Desktop"
-				com.secondjb.prism.core.service.MediaSessionBridge.onPlayPause = {
-					handleTogglePlayPause()
-				}
-				com.secondjb.prism.core.service.MediaSessionBridge.onSkipNext = {
-					handleSkipNext()
-				}
-				com.secondjb.prism.core.service.MediaSessionBridge.onSkipPrevious = {
-					handleSkipPrevious()
-				}
 				com.secondjb.prism.core.service.MediaSessionBridge.onRemotePlay = {
 					syncViewModel.sendRemoteCommand(CommandAction.PLAY)
 				}
@@ -463,10 +460,10 @@ class MainActivity : ComponentActivity() {
 					syncViewModel.sendRemoteCommand(CommandAction.PAUSE)
 				}
 				com.secondjb.prism.core.service.MediaSessionBridge.onRemoteSkipNext = {
-					handleSkipNext()
+					syncViewModel.sendRemoteCommand(CommandAction.SKIP_NEXT)
 				}
 				com.secondjb.prism.core.service.MediaSessionBridge.onRemoteSkipPrevious = {
-					handleSkipPrevious()
+					syncViewModel.sendRemoteCommand(CommandAction.SKIP_PREVIOUS)
 				}
 				com.secondjb.prism.core.service.MediaSessionBridge.onRemoteSeek = { pos ->
 					syncViewModel.sendRemoteCommand(CommandAction.SEEK, seekMs = pos)
@@ -1071,6 +1068,7 @@ fun PrismAppRoot(
 				composable(Screen.Library.route) {
 					LibraryScreen(
 						uiState = libraryState,
+						hasNowPlayingBar = playbackState.currentTrack != null,
 						onFilterSelect = libraryViewModel::setFilterChip,
 						onToggleViewMode = libraryViewModel::toggleViewMode,
 						onSearchChange = libraryViewModel::setSearchQuery,

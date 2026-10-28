@@ -34,7 +34,7 @@ class ArtistImageRepository(
         .build()
 ) {
     private val memCache = LruCache<String, String>(128)
-    private val cacheDir = File(context.filesDir, "artist_images").apply {
+    private val cacheDir = File(context.cacheDir, "artist_images").apply {
         if (!exists()) mkdirs()
     }
 

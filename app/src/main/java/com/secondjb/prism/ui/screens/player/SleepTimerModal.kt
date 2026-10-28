@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -179,11 +180,8 @@ fun SleepTimerModal(
                         checked = isTrackMode,
                         onCheckedChange = {
                             isTrackMode = it
-                            if (it) {
-                                onStartTracks(tracksSlider.roundToInt(), finishLastSong, playToEndOfQueue)
-                            } else {
-                                onStartMinutes(minutesSlider.roundToInt(), finishLastSong, playToEndOfQueue)
-                            }
+                            // Do not automatically start timer upon switching views;
+                            // only trigger on slider interaction or bottom switch toggles.
                         },
                         thumbContent = {
                             Icon(
@@ -206,7 +204,7 @@ fun SleepTimerModal(
                                 containerColor = MaterialTheme.colorScheme.errorContainer,
                                 contentColor = MaterialTheme.colorScheme.onErrorContainer
                             ),
-                            modifier = Modifier.size(38.dp)
+                            modifier = Modifier.size(36.dp)
                         ) {
                             Icon(Icons.Default.Delete, contentDescription = "Clear sleep timer", modifier = Modifier.size(20.dp))
                         }
@@ -220,7 +218,7 @@ fun SleepTimerModal(
                                 containerColor = MaterialTheme.colorScheme.primary,
                                 contentColor = MaterialTheme.colorScheme.onPrimary
                             ),
-                            modifier = Modifier.size(38.dp)
+                            modifier = Modifier.size(36.dp)
                         ) {
                             Icon(Icons.Default.Check, contentDescription = "Confirm sleep timer", modifier = Modifier.size(20.dp))
                         }
@@ -230,7 +228,7 @@ fun SleepTimerModal(
                         onClick = onDismiss,
                         modifier = Modifier.size(36.dp)
                     ) {
-                        Icon(Icons.Default.Close, contentDescription = "Close")
+                        Icon(Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(20.dp))
                     }
                 }
             }
@@ -255,9 +253,12 @@ fun SleepTimerModal(
                             val activeMsg = when (timerState.mode) {
                                 SleepTimerMode.TIME -> {
                                     val mins = (timerState.remainingSeconds + 59) / 60
-                                    "Stops in $mins min(s)"
+                                    if (mins == 1L) "Stops in 1 minute" else "Stops in $mins minutes"
                                 }
-                                SleepTimerMode.TRACKS -> "Stops after ${timerState.remainingTracks} track(s)"
+                                SleepTimerMode.TRACKS -> {
+                                    val count = timerState.remainingTracks
+                                    if (count == 1) "Stops after 1 track" else "Stops after $count tracks"
+                                }
                                 SleepTimerMode.END_OF_QUEUE -> "Stops at end of custom queue"
                             }
                             Text(
@@ -285,15 +286,17 @@ fun SleepTimerModal(
                             onClick = onCancelTimer,
                             modifier = Modifier.size(36.dp)
                         ) {
-                            Icon(Icons.Default.Delete, contentDescription = "Cancel Timer", tint = MaterialTheme.colorScheme.error)
+                            Icon(Icons.Default.Delete, contentDescription = "Cancel Timer", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                         }
                     }
                 }
             }
 
-            // Discrete Slider Section
+            // Discrete Slider Section with fixed minHeight to eliminate layout shift when toggling
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 162.dp),
                 shape = RoundedCornerShape(14.dp),
                 color = MaterialTheme.colorScheme.surfaceContainer
             ) {
@@ -307,11 +310,12 @@ fun SleepTimerModal(
                             text = "$currentTracks ${if (currentTracks == 1) "track" else "tracks"}",
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(vertical = 2.dp)
                         )
                         Text(
                             text = "Estimated duration: ${estimateTrackDuration(currentTracks)}",
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
@@ -363,12 +367,12 @@ fun SleepTimerModal(
                                     customMinutesInput = currentMins.toString()
                                     showCustomInputDialog = true
                                 }
-                                .padding(4.dp)
+                                .padding(vertical = 2.dp)
                         )
                         Text(
                             text = "Tap time to enter custom minutes",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
                         Spacer(Modifier.height(8.dp))

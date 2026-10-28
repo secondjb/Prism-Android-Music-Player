@@ -3,6 +3,7 @@ package com.secondjb.prism.core.playback
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
+import android.os.Bundle
 import android.os.Looper
 import android.os.SystemClock
 import androidx.media3.common.MediaItem
@@ -125,21 +126,14 @@ class LocalPlaybackEngine(
     }
 
     private fun initializeController() {
-        com.secondjb.prism.core.service.MediaSessionBridge.onLocalSkipNext = {
-            scope.launch(Dispatchers.Main) {
-                skipNext()
-            }
-        }
-        com.secondjb.prism.core.service.MediaSessionBridge.onLocalSkipPrevious = {
-            scope.launch(Dispatchers.Main) {
-                skipPrevious()
-            }
-        }
         val sessionToken = SessionToken(
             context,
             ComponentName(context, PrismPlaybackService::class.java)
         )
-        val future = MediaController.Builder(context, sessionToken).buildAsync()
+        val connectionHints = Bundle().apply { putBoolean("IS_IN_APP_CONTROLLER", true) }
+        val future = MediaController.Builder(context, sessionToken)
+            .setConnectionHints(connectionHints)
+            .buildAsync()
         controllerFuture = future
         future.addListener({
             try {
@@ -181,6 +175,12 @@ class LocalPlaybackEngine(
                 val duration = controller.duration.coerceAtLeast(0L)
                 _playbackState.update { it.copy(durationMs = duration) }
                 if (playbackStateInt == Player.STATE_ENDED) {
+                    advanceNextTrack(isUserInitiated = false)
+                }
+            }
+
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
                     advanceNextTrack(isUserInitiated = false)
                 }
             }
@@ -351,14 +351,35 @@ class LocalPlaybackEngine(
         persistQueue()
     }
 
+    private fun peekNextTrack(): Track? {
+        if (userQueue.isNotEmpty()) return userQueue[0]
+        if (contextQueue.isEmpty()) return null
+        val effectiveRepeat = if (_playbackState.value.repeatMode == RepeatMode.ONE) RepeatMode.ALL else _playbackState.value.repeatMode
+        val nextIdx = currentQueueIndex + 1
+        return if (nextIdx < contextQueue.size) {
+            contextQueue[nextIdx]
+        } else if (effectiveRepeat == RepeatMode.ALL) {
+            contextQueue[0]
+        } else {
+            null
+        }
+    }
+
     private fun playSingleTrack(track: Track, playWhenReady: Boolean) {
         val controller = mediaController
-        val mediaItem = track.toMediaItem()
+        val currentMediaItem = track.toMediaItem()
+        val nextTrack = peekNextTrack()
+        val items = if (nextTrack != null && nextTrack.id != track.id) {
+            listOf(currentMediaItem, nextTrack.toMediaItem())
+        } else {
+            listOf(currentMediaItem)
+        }
+
         if (controller == null) {
             controllerFuture?.addListener({
                 try {
                     val ctrl = controllerFuture?.get() ?: return@addListener
-                    ctrl.setMediaItem(mediaItem)
+                    ctrl.setMediaItems(items, 0, 0L)
                     ctrl.prepare()
                     if (playWhenReady) {
                         ctrl.play()
@@ -368,7 +389,7 @@ class LocalPlaybackEngine(
                 } catch (e: Exception) {}
             }, MoreExecutors.directExecutor())
         } else {
-            controller.setMediaItem(mediaItem)
+            controller.setMediaItems(items, 0, 0L)
             controller.prepare()
             if (playWhenReady) {
                 controller.play()
@@ -755,11 +776,15 @@ class LocalPlaybackEngine(
 
     fun syncRemoteMetadata(
         remoteTrack: Track,
+        playableUri: String,
         isPlaying: Boolean,
         positionMs: Long,
         serverName: String
     ) {
         val controller = mediaController ?: return
+
+        // Mute local player stream volume so local speaker remains silent while remote plays
+        controller.volume = 0f
 
         val currentItem = controller.currentMediaItem
         val targetArtist = "${remoteTrack.artist} • Playing on $serverName"
@@ -776,6 +801,7 @@ class LocalPlaybackEngine(
 
             val mediaItem = MediaItem.Builder()
                 .setMediaId(remoteTrack.id)
+                .setUri(Uri.parse(playableUri))
                 .setMediaMetadata(metadata)
                 .build()
 
@@ -785,17 +811,13 @@ class LocalPlaybackEngine(
     }
 
     fun silenceLocalOutput() {
-        com.secondjb.prism.core.service.MediaSessionBridge.suppressRemoteCallback = true
-        try {
-            mediaController?.pause()
-            _playbackState.update { it.copy(isPlaying = false, lastActionTimestampMs = System.currentTimeMillis()) }
-        } finally {
-            com.secondjb.prism.core.service.MediaSessionBridge.suppressRemoteCallback = false
-        }
+        val controller = mediaController ?: return
+        controller.volume = 0f
     }
 
     fun restoreLocalOutput() {
-        // Volume was never mutated; local playback can resume immediately
+        val controller = mediaController ?: return
+        controller.volume = 1f
     }
 
     companion object {

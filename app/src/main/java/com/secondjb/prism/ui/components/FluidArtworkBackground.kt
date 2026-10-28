@@ -13,7 +13,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 
 /**
  * Ambient artwork background with soft blur and dynamic darkening scrim.
@@ -35,7 +37,11 @@ fun FluidArtworkBackground(
         ) { uri ->
             if (uri != null) {
                 AsyncImage(
-                    model = uri,
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(uri)
+                        .size(128)
+                        .crossfade(true)
+                        .build(),
                     contentDescription = null,
                     modifier = Modifier
                         .fillMaxSize()

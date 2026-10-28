@@ -215,7 +215,8 @@ class PlaylistRepository(
                     name = incoming.name,
                     description = incoming.description ?: existing.description,
                     trackIds = incoming.trackIds,
-                    isPinned = incoming.isPinned
+                    isPinned = incoming.isPinned,
+                    customCoverUri = incoming.customCoverUri ?: existing.customCoverUri
                 )
             } else {
                 current.add(incoming)

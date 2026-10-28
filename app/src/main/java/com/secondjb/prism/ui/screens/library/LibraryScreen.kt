@@ -10,6 +10,12 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.ui.platform.LocalContext
+import coil.request.ImageRequest
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +27,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -120,6 +127,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun LibraryScreen(
     uiState: LibraryUiState,
+    hasNowPlayingBar: Boolean = false,
     onFilterSelect: (LibraryFilterChip) -> Unit,
     onToggleViewMode: () -> Unit,
     onSearchChange: (String) -> Unit,
@@ -159,6 +167,7 @@ fun LibraryScreen(
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val focusRequester = remember { FocusRequester() }
+    val trackArtMap = remember(uiState.tracks) { uiState.tracks.associate { it.id to it.artworkUri } }
     val keyboardController = LocalSoftwareKeyboardController.current
 
     LaunchedEffect(uiState.isSearchActive) {
@@ -628,22 +637,29 @@ fun LibraryScreen(
             }
         }
 
+        val snackbarBottomPadding by animateDpAsState(
+            targetValue = if (hasNowPlayingBar) 84.dp else 16.dp,
+            animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+            label = "SnackbarPadding"
+        )
+
         // Themed Snackbar Host
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 150.dp)
+                .padding(bottom = snackbarBottomPadding)
                 .padding(horizontal = 24.dp)
                 .zIndex(4f)
         ) { data ->
             Surface(
                 shape = PillShape,
-                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                shadowElevation = 4.dp
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                shadowElevation = 6.dp
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
@@ -655,7 +671,8 @@ fun LibraryScreen(
                         Spacer(Modifier.width(8.dp))
                         TextButton(
                             onClick = { data.performAction() },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                            modifier = Modifier.defaultMinSize(minWidth = 1.dp, minHeight = 24.dp)
                         ) {
                             Text(
                                 text = actionLabel,
@@ -793,8 +810,10 @@ fun LibraryScreen(
 private fun PlaylistCover(
     playlist: Playlist,
     tracks: List<Track>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    trackArtMap: Map<String, String?>? = null
 ) {
+    val context = LocalContext.current
     if (!playlist.customCoverUri.isNullOrBlank()) {
         if (playlist.customCoverUri.startsWith("color:")) {
             val hex = playlist.customCoverUri.removePrefix("color:")
@@ -818,7 +837,11 @@ private fun PlaylistCover(
             }
         } else {
             AsyncImage(
-                model = playlist.customCoverUri,
+                model = ImageRequest.Builder(context)
+                    .data(playlist.customCoverUri)
+                    .size(256)
+                    .crossfade(true)
+                    .build(),
                 contentDescription = playlist.name,
                 modifier = modifier.clip(RoundedCornerShape(12.dp)),
                 contentScale = ContentScale.Crop
@@ -827,14 +850,24 @@ private fun PlaylistCover(
         return
     }
 
-    val uniqueArtworks = remember(playlist.id, playlist.trackIds, tracks) {
-        val trackMap = tracks.associateBy { it.id }
+    val uniqueArtworks = remember(playlist.id, playlist.trackIds, tracks, trackArtMap) {
         val arts = mutableListOf<String>()
-        for (id in playlist.trackIds) {
-            val art = trackMap[id]?.artworkUri
-            if (!art.isNullOrBlank() && art !in arts) {
-                arts.add(art)
-                if (arts.size == 4) break
+        if (trackArtMap != null) {
+            for (id in playlist.trackIds) {
+                val art = trackArtMap[id]
+                if (!art.isNullOrBlank() && art !in arts) {
+                    arts.add(art)
+                    if (arts.size == 4) break
+                }
+            }
+        } else {
+            val trackMap = tracks.associateBy { it.id }
+            for (id in playlist.trackIds) {
+                val art = trackMap[id]?.artworkUri
+                if (!art.isNullOrBlank() && art !in arts) {
+                    arts.add(art)
+                    if (arts.size == 4) break
+                }
             }
         }
         arts
@@ -851,13 +884,13 @@ private fun PlaylistCover(
                 Column(modifier = Modifier.fillMaxSize()) {
                     Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         AsyncImage(
-                            model = uniqueArtworks[0],
+                            model = ImageRequest.Builder(context).data(uniqueArtworks[0]).size(160).crossfade(true).build(),
                             contentDescription = null,
                             modifier = Modifier.weight(1f).fillMaxHeight(),
                             contentScale = ContentScale.Crop
                         )
                         AsyncImage(
-                            model = uniqueArtworks[1],
+                            model = ImageRequest.Builder(context).data(uniqueArtworks[1]).size(160).crossfade(true).build(),
                             contentDescription = null,
                             modifier = Modifier.weight(1f).fillMaxHeight(),
                             contentScale = ContentScale.Crop
@@ -865,13 +898,13 @@ private fun PlaylistCover(
                     }
                     Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         AsyncImage(
-                            model = uniqueArtworks[2],
+                            model = ImageRequest.Builder(context).data(uniqueArtworks[2]).size(160).crossfade(true).build(),
                             contentDescription = null,
                             modifier = Modifier.weight(1f).fillMaxHeight(),
                             contentScale = ContentScale.Crop
                         )
                         AsyncImage(
-                            model = uniqueArtworks[3],
+                            model = ImageRequest.Builder(context).data(uniqueArtworks[3]).size(160).crossfade(true).build(),
                             contentDescription = null,
                             modifier = Modifier.weight(1f).fillMaxHeight(),
                             contentScale = ContentScale.Crop
@@ -883,13 +916,13 @@ private fun PlaylistCover(
                 Column(modifier = Modifier.fillMaxSize()) {
                     Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         AsyncImage(
-                            model = uniqueArtworks[0],
+                            model = ImageRequest.Builder(context).data(uniqueArtworks[0]).size(160).crossfade(true).build(),
                             contentDescription = null,
                             modifier = Modifier.weight(1f).fillMaxHeight(),
                             contentScale = ContentScale.Crop
                         )
                         AsyncImage(
-                            model = uniqueArtworks[1],
+                            model = ImageRequest.Builder(context).data(uniqueArtworks[1]).size(160).crossfade(true).build(),
                             contentDescription = null,
                             modifier = Modifier.weight(1f).fillMaxHeight(),
                             contentScale = ContentScale.Crop
@@ -897,13 +930,13 @@ private fun PlaylistCover(
                     }
                     Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         AsyncImage(
-                            model = uniqueArtworks.getOrElse(2) { uniqueArtworks[0] },
+                            model = ImageRequest.Builder(context).data(uniqueArtworks.getOrElse(2) { uniqueArtworks[0] }).size(160).crossfade(true).build(),
                             contentDescription = null,
                             modifier = Modifier.weight(1f).fillMaxHeight(),
                             contentScale = ContentScale.Crop
                         )
                         AsyncImage(
-                            model = uniqueArtworks.getOrElse(3) { uniqueArtworks[1] },
+                            model = ImageRequest.Builder(context).data(uniqueArtworks.getOrElse(3) { uniqueArtworks[1] }).size(160).crossfade(true).build(),
                             contentDescription = null,
                             modifier = Modifier.weight(1f).fillMaxHeight(),
                             contentScale = ContentScale.Crop
@@ -913,7 +946,7 @@ private fun PlaylistCover(
             }
             uniqueArtworks.size == 1 -> {
                 AsyncImage(
-                    model = uniqueArtworks[0],
+                    model = ImageRequest.Builder(context).data(uniqueArtworks[0]).size(256).crossfade(true).build(),
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
@@ -999,7 +1032,7 @@ private fun PlaylistDetailScreen(
                         }
                         if (playlist.id != "favorites") {
                             IconButton(onClick = { showDeleteConfirm = true }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Delete Playlist", tint = MaterialTheme.colorScheme.error)
+                                Icon(Icons.Default.Delete, contentDescription = "Delete Playlist", tint = MaterialTheme.colorScheme.primary)
                             }
                         }
                     }
@@ -1185,7 +1218,7 @@ private fun PlaylistDetailScreen(
                         onDeletePlaylist()
                     }
                 ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text("Delete", color = MaterialTheme.colorScheme.primary)
                 }
             },
             dismissButton = {
