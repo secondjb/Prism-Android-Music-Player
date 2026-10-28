@@ -948,7 +948,7 @@ fun PrismAppRoot(
 		modifier = Modifier.fillMaxSize(),
 		bottomBar = {
 			NavigationBar {
-				Screen.bottomNavItems.forEach { screen ->
+				Screen.bottomNavItems.filterNotNull().forEach { screen ->
 					val isSelected = currentDestination?.route == screen.route
 					NavigationBarItem(
 						selected = isSelected,
