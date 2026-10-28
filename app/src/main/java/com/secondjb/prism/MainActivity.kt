@@ -4,6 +4,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -134,18 +136,21 @@ class MainActivity : ComponentActivity() {
 					syncViewModel.sendPlaylistSync()
 				}
 				syncViewModel.onRemoteStateReconciled = { remoteState ->
-					val remoteTrack = remoteState.currentTrack
-					if (remoteTrack != null) {
-						val localMatch = syncViewModel.findLocalMatch(remoteTrack) ?: remoteTrack
-						val matchedQueue = remoteState.queue.map { syncViewModel.findLocalMatch(it) ?: it }
-						val matchedUserQueue = remoteState.userQueue.map { syncViewModel.findLocalMatch(it) ?: it }
-						playbackEngine.syncFromRemoteQueue(
-							currentTrack = localMatch,
-							queue = matchedQueue,
-							userQueue = matchedUserQueue,
-							positionMs = remoteState.positionMs,
-							isPlaying = remoteState.isPlaying
-						)
+					val localState = playbackEngine.playbackState.value
+					val phoneIsMoreRecent = localState.isPlaying || (localState.lastActionTimestampMs > remoteState.lastActionTimestampMs && localState.currentTrack != null)
+					if (!phoneIsMoreRecent && remoteState.currentTrack != null) {
+						lifecycleScope.launch(Dispatchers.Main) {
+							val localMatch = syncViewModel.findLocalMatch(remoteState.currentTrack) ?: remoteState.currentTrack
+							val matchedQueue = remoteState.queue.map { syncViewModel.findLocalMatch(it) ?: it }
+							val matchedUserQueue = remoteState.userQueue.map { syncViewModel.findLocalMatch(it) ?: it }
+							playbackEngine.syncFromRemoteQueue(
+								currentTrack = localMatch,
+								queue = matchedQueue,
+								userQueue = matchedUserQueue,
+								positionMs = remoteState.positionMs,
+								isPlaying = remoteState.isPlaying
+							)
+						}
 					}
 				}
 			}
@@ -921,52 +926,21 @@ fun PrismAppRoot(
 	val mainState by mainViewModel.uiState.collectAsState()
 	val libraryState by libraryViewModel.uiState.collectAsState()
 
-	var hasNavigatedToDefaultScreen by rememberSaveable { mutableStateOf(false) }
+	val startRoute = remember(defaultStartupScreen) {
+		when (defaultStartupScreen) {
+			"Library: Songs", "Library: Playlists", "Library: Albums", "Library: Artists" -> Screen.Library.route
+			"Settings" -> Screen.Settings.route
+			else -> Screen.Main.route
+		}
+	}
+
 	LaunchedEffect(defaultStartupScreen) {
-		if (!hasNavigatedToDefaultScreen) {
-			hasNavigatedToDefaultScreen = true
-			when (defaultStartupScreen) {
-				"Library: Songs" -> {
-					libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ALL_SONGS)
-					navController.navigate(Screen.Library.route) {
-						popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-						launchSingleTop = true
-						restoreState = true
-					}
-				}
-				"Library: Playlists" -> {
-					libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.PLAYLISTS)
-					navController.navigate(Screen.Library.route) {
-						popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-						launchSingleTop = true
-						restoreState = true
-					}
-				}
-				"Library: Albums" -> {
-					libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ALBUMS)
-					navController.navigate(Screen.Library.route) {
-						popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-						launchSingleTop = true
-						restoreState = true
-					}
-				}
-				"Library: Artists" -> {
-					libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ARTISTS)
-					navController.navigate(Screen.Library.route) {
-						popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-						launchSingleTop = true
-						restoreState = true
-					}
-				}
-				"Settings" -> {
-					navController.navigate(Screen.Settings.route) {
-						popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-						launchSingleTop = true
-						restoreState = true
-					}
-				}
-				else -> { /* Home is default startDestination */ }
-			}
+		when (defaultStartupScreen) {
+			"Library: Songs" -> libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ALL_SONGS)
+			"Library: Playlists" -> libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.PLAYLISTS)
+			"Library: Albums" -> libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ALBUMS)
+			"Library: Artists" -> libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ARTISTS)
+			else -> {}
 		}
 	}
 
@@ -1022,7 +996,7 @@ fun PrismAppRoot(
 		) {
 			NavHost(
 				navController = navController,
-				startDestination = Screen.Main.route,
+				startDestination = startRoute,
 				modifier = Modifier.fillMaxSize()
 			) {
 				composable(Screen.Main.route) {
@@ -1107,7 +1081,8 @@ fun PrismAppRoot(
 								libraryViewModel.setFilterChip(com.secondjb.prism.ui.screens.library.LibraryFilterChip.ARTISTS)
 								libraryViewModel.setSearchQuery(artistName)
 							}
-						}
+						},
+						onUpdatePlaylistCover = libraryViewModel::updatePlaylistCover
 					)
 				}
 

@@ -63,6 +63,7 @@ class PlaylistRepository(
                 val desc = obj.optString("description").takeIf { it.isNotBlank() }
                 val isPinned = obj.optBoolean("isPinned", false)
                 val createdAt = obj.optLong("createdAt", System.currentTimeMillis())
+                val customCoverUri = obj.optString("customCoverUri").takeIf { it.isNotBlank() }
 
                 val trackIdsArray = obj.optJSONArray("trackIds") ?: JSONArray()
                 val trackIds = mutableListOf<String>()
@@ -77,7 +78,8 @@ class PlaylistRepository(
                         description = desc,
                         trackIds = trackIds,
                         isPinned = isPinned,
-                        createdAt = createdAt
+                        createdAt = createdAt,
+                        customCoverUri = customCoverUri
                     )
                 )
             }
@@ -107,6 +109,7 @@ class PlaylistRepository(
                 obj.put("description", p.description ?: "")
                 obj.put("isPinned", p.isPinned)
                 obj.put("createdAt", p.createdAt)
+                if (p.customCoverUri != null) obj.put("customCoverUri", p.customCoverUri)
                 val trackIdsArr = JSONArray()
                 p.trackIds.forEach { trackIdsArr.put(it) }
                 obj.put("trackIds", trackIdsArr)
@@ -187,6 +190,17 @@ class PlaylistRepository(
         }
         _playlists.value = updated
         persistToDisk(updated)
+    }
+
+    suspend fun updatePlaylistCover(playlistId: String, coverUri: String?) = mutex.withLock {
+        val current = _playlists.value.toMutableList()
+        val index = current.indexOfFirst { it.id == playlistId }
+        if (index >= 0) {
+            val updated = current[index].copy(customCoverUri = coverUri)
+            current[index] = updated
+            _playlists.value = current
+            persistToDisk(current)
+        }
     }
 
     suspend fun syncIncomingPlaylists(incomingPlaylists: List<Playlist>) = mutex.withLock {

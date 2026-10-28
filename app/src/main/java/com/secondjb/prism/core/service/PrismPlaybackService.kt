@@ -6,6 +6,7 @@ import android.content.Intent
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -270,6 +271,70 @@ class PrismPlaybackService : MediaSessionService() {
                 return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                     .setAvailableSessionCommands(sessionCommands.build())
                     .build()
+            }
+
+            override fun onPlayerCommandRequest(
+                session: MediaSession,
+                controllerInfo: MediaSession.ControllerInfo,
+                playerCommand: Int
+            ): Int {
+                when (playerCommand) {
+                    Player.COMMAND_SEEK_TO_NEXT,
+                    Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> {
+                        if (MediaSessionBridge.isRemoteActive) {
+                            MediaSessionBridge.onRemoteSkipNext?.invoke()
+                        } else {
+                            MediaSessionBridge.onLocalSkipNext?.invoke()
+                        }
+                        return SessionResult.RESULT_SUCCESS
+                    }
+                    Player.COMMAND_SEEK_TO_PREVIOUS,
+                    Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> {
+                        if (MediaSessionBridge.isRemoteActive) {
+                            MediaSessionBridge.onRemoteSkipPrevious?.invoke()
+                        } else {
+                            MediaSessionBridge.onLocalSkipPrevious?.invoke()
+                        }
+                        return SessionResult.RESULT_SUCCESS
+                    }
+                }
+                return super.onPlayerCommandRequest(session, controllerInfo, playerCommand)
+            }
+
+            override fun onMediaButtonEvent(
+                session: MediaSession,
+                controllerInfo: MediaSession.ControllerInfo,
+                intent: Intent
+            ): Boolean {
+                val keyEvent: KeyEvent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+                }
+                if (keyEvent != null && keyEvent.action == KeyEvent.ACTION_DOWN) {
+                    when (keyEvent.keyCode) {
+                        KeyEvent.KEYCODE_MEDIA_NEXT,
+                        KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                            if (MediaSessionBridge.isRemoteActive) {
+                                MediaSessionBridge.onRemoteSkipNext?.invoke()
+                            } else {
+                                MediaSessionBridge.onLocalSkipNext?.invoke()
+                            }
+                            return true
+                        }
+                        KeyEvent.KEYCODE_MEDIA_PREVIOUS,
+                        KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                            if (MediaSessionBridge.isRemoteActive) {
+                                MediaSessionBridge.onRemoteSkipPrevious?.invoke()
+                            } else {
+                                MediaSessionBridge.onLocalSkipPrevious?.invoke()
+                            }
+                            return true
+                        }
+                    }
+                }
+                return super.onMediaButtonEvent(session, controllerInfo, intent)
             }
 
             override fun onCustomCommand(

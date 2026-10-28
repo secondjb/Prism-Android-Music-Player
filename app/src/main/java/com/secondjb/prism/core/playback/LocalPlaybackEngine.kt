@@ -3,6 +3,7 @@ package com.secondjb.prism.core.playback
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
+import android.os.Looper
 import android.os.SystemClock
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -102,7 +103,15 @@ class LocalPlaybackEngine(
     }
 
     private fun persistQueue() {
-        val curPos = mediaController?.currentPosition ?: _playbackState.value.positionMs
+        val curPos = try {
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                mediaController?.currentPosition ?: _playbackState.value.positionMs
+            } else {
+                _playbackState.value.positionMs
+            }
+        } catch (_: Exception) {
+            _playbackState.value.positionMs
+        }
         preferencesRepository?.saveQueueState(
             userQueue = userQueue.toList(),
             contextQueue = contextQueue.toList(),
@@ -116,8 +125,16 @@ class LocalPlaybackEngine(
     }
 
     private fun initializeController() {
-        com.secondjb.prism.core.service.MediaSessionBridge.onLocalSkipNext = { skipNext() }
-        com.secondjb.prism.core.service.MediaSessionBridge.onLocalSkipPrevious = { skipPrevious() }
+        com.secondjb.prism.core.service.MediaSessionBridge.onLocalSkipNext = {
+            scope.launch(Dispatchers.Main) {
+                skipNext()
+            }
+        }
+        com.secondjb.prism.core.service.MediaSessionBridge.onLocalSkipPrevious = {
+            scope.launch(Dispatchers.Main) {
+                skipPrevious()
+            }
+        }
         val sessionToken = SessionToken(
             context,
             ComponentName(context, PrismPlaybackService::class.java)
@@ -129,7 +146,17 @@ class LocalPlaybackEngine(
                 val controller = future.get()
                 mediaController = controller
                 setupPlayerListener(controller)
-                syncFromController(controller)
+
+                // Push restored repeat mode to controller so it's not reset to OFF
+                val savedRepeat = _playbackState.value.repeatMode
+                val exoRepeat = when (savedRepeat) {
+                    RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+                    RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+                    RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+                }
+                controller.repeatMode = exoRepeat
+
+                syncFromController(controller, isInitialSync = true)
             } catch (e: Exception) {
                 // Service may still be initializing
             }
@@ -169,22 +196,32 @@ class LocalPlaybackEngine(
         })
     }
 
-    private fun syncFromController(controller: MediaController) {
-        val repeatMode = when (controller.repeatMode) {
-            Player.REPEAT_MODE_ALL -> RepeatMode.ALL
-            Player.REPEAT_MODE_ONE -> RepeatMode.ONE
-            else -> RepeatMode.OFF
+    private fun syncFromController(controller: MediaController, isInitialSync: Boolean = false) {
+        val repeatMode = if (isInitialSync) {
+            _playbackState.value.repeatMode
+        } else {
+            when (controller.repeatMode) {
+                Player.REPEAT_MODE_ALL -> RepeatMode.ALL
+                Player.REPEAT_MODE_ONE -> RepeatMode.ONE
+                else -> RepeatMode.OFF
+            }
         }
 
         val activeTrack = _playbackState.value.currentTrack
+        val currentItem = controller.currentMediaItem
+        val pos = if (currentItem == null && isInitialSync) {
+            _playbackState.value.positionMs
+        } else {
+            controller.currentPosition.coerceAtLeast(0L)
+        }
 
         _playbackState.update {
             it.copy(
                 currentTrack = activeTrack,
                 queueIndex = currentQueueIndex,
                 isPlaying = controller.isPlaying,
-                positionMs = controller.currentPosition.coerceAtLeast(0L),
-                durationMs = controller.duration.coerceAtLeast(0L),
+                positionMs = pos,
+                durationMs = if (controller.duration > 0) controller.duration else it.durationMs,
                 repeatMode = repeatMode,
                 volume = controller.volume,
                 queue = contextQueue.toList(),

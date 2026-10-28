@@ -577,6 +577,7 @@ fun NowPlayingScreen(
             timerState = sleepTimerState,
             currentQueue = playbackState.queue,
             currentQueueIndex = playbackState.queueIndex,
+            userQueue = playbackState.userQueue,
             currentTrackDurationMs = playbackState.durationMs,
             currentTrackPositionMs = playbackState.positionMs,
             onStartMinutes = onStartSleepTimerMinutes,

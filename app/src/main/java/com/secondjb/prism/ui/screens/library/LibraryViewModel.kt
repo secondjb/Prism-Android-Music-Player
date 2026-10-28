@@ -27,6 +27,7 @@ enum class SongSortOption(val label: String) {
     ARTIST_ASC("Artist (A-Z)"),
     ARTIST_DESC("Artist (Z-A)"),
     ALBUM_ASC("Album (A-Z)"),
+    ALBUM_DESC("Album (Z-A)"),
     DATE_ADDED_DESC("Date Added (Newest)"),
     DATE_ADDED_ASC("Date Added (Oldest)"),
     DURATION_DESC("Duration (Longest)"),
@@ -39,22 +40,27 @@ enum class AlbumSortOption(val label: String) {
     TITLE_ASC("Album (A-Z)"),
     TITLE_DESC("Album (Z-A)"),
     ARTIST_ASC("Artist (A-Z)"),
+    ARTIST_DESC("Artist (Z-A)"),
     YEAR_DESC("Year (Newest)"),
     YEAR_ASC("Year (Oldest)"),
-    TRACK_COUNT_DESC("Tracks (Most)")
+    TRACK_COUNT_DESC("Tracks (Most)"),
+    TRACK_COUNT_ASC("Tracks (Least)")
 }
 
 enum class ArtistSortOption(val label: String) {
     NAME_ASC("Artist (A-Z)"),
     NAME_DESC("Artist (Z-A)"),
     TRACK_COUNT_DESC("Tracks (Most)"),
-    ALBUM_COUNT_DESC("Albums (Most)")
+    TRACK_COUNT_ASC("Tracks (Least)"),
+    ALBUM_COUNT_DESC("Albums (Most)"),
+    ALBUM_COUNT_ASC("Albums (Least)")
 }
 
 enum class PlaylistSortOption(val label: String) {
     NAME_ASC("Name (A-Z)"),
     NAME_DESC("Name (Z-A)"),
-    TRACK_COUNT_DESC("Tracks (Most)")
+    TRACK_COUNT_DESC("Tracks (Most)"),
+    TRACK_COUNT_ASC("Tracks (Least)")
 }
 
 data class LibraryUiState(
@@ -94,6 +100,7 @@ data class LibraryUiState(
                 SongSortOption.ARTIST_ASC -> base.sortedWith(compareBy({ it.artist.lowercase() }, { it.title.lowercase() }))
                 SongSortOption.ARTIST_DESC -> base.sortedWith(compareByDescending<Track> { it.artist.lowercase() }.thenBy { it.title.lowercase() })
                 SongSortOption.ALBUM_ASC -> base.sortedWith(compareBy({ it.album.lowercase() }, { it.trackNumber ?: 0 }, { it.title.lowercase() }))
+                SongSortOption.ALBUM_DESC -> base.sortedWith(compareByDescending<Track> { it.album.lowercase() }.thenBy { it.trackNumber ?: 0 }.thenBy { it.title.lowercase() })
                 SongSortOption.DATE_ADDED_DESC -> base.sortedByDescending { it.dateAdded }
                 SongSortOption.DATE_ADDED_ASC -> base.sortedBy { it.dateAdded }
                 SongSortOption.DURATION_DESC -> base.sortedByDescending { it.durationMs }
@@ -117,9 +124,11 @@ data class LibraryUiState(
                 AlbumSortOption.TITLE_ASC -> base.sortedBy { it.title.lowercase() }
                 AlbumSortOption.TITLE_DESC -> base.sortedByDescending { it.title.lowercase() }
                 AlbumSortOption.ARTIST_ASC -> base.sortedWith(compareBy({ it.artist.lowercase() }, { it.title.lowercase() }))
+                AlbumSortOption.ARTIST_DESC -> base.sortedWith(compareByDescending<Album> { it.artist.lowercase() }.thenBy { it.title.lowercase() })
                 AlbumSortOption.YEAR_DESC -> base.sortedWith(compareByDescending<Album> { it.year ?: 0 }.thenBy { it.title.lowercase() })
                 AlbumSortOption.YEAR_ASC -> base.sortedWith(compareBy<Album> { it.year ?: 9999 }.thenBy { it.title.lowercase() })
                 AlbumSortOption.TRACK_COUNT_DESC -> base.sortedByDescending { it.trackCount }
+                AlbumSortOption.TRACK_COUNT_ASC -> base.sortedBy { it.trackCount }
             }
         }
 
@@ -134,7 +143,9 @@ data class LibraryUiState(
                 ArtistSortOption.NAME_ASC -> base.sortedBy { it.name.lowercase() }
                 ArtistSortOption.NAME_DESC -> base.sortedByDescending { it.name.lowercase() }
                 ArtistSortOption.TRACK_COUNT_DESC -> base.sortedByDescending { it.trackCount }
+                ArtistSortOption.TRACK_COUNT_ASC -> base.sortedBy { it.trackCount }
                 ArtistSortOption.ALBUM_COUNT_DESC -> base.sortedByDescending { it.albumCount }
+                ArtistSortOption.ALBUM_COUNT_ASC -> base.sortedBy { it.albumCount }
             }
         }
 
@@ -149,6 +160,7 @@ data class LibraryUiState(
                 PlaylistSortOption.NAME_ASC -> base.sortedBy { it.name.lowercase() }
                 PlaylistSortOption.NAME_DESC -> base.sortedByDescending { it.name.lowercase() }
                 PlaylistSortOption.TRACK_COUNT_DESC -> base.sortedByDescending { it.trackIds.size }
+                PlaylistSortOption.TRACK_COUNT_ASC -> base.sortedBy { it.trackIds.size }
             }
         }
 
@@ -320,6 +332,21 @@ class LibraryViewModel(
         playlistRepository?.let {
             viewModelScope.launch {
                 it.removeTrackFromPlaylist(playlistId, trackId)
+                onPlaylistsChanged?.invoke()
+            }
+        }
+    }
+
+    fun updatePlaylistCover(playlistId: String, coverUri: String?) {
+        playlistRepository?.let {
+            viewModelScope.launch {
+                it.updatePlaylistCover(playlistId, coverUri)
+                _uiState.update { curr ->
+                    val updatedActive = if (curr.activePlaylist?.id == playlistId) {
+                        curr.activePlaylist.copy(customCoverUri = coverUri)
+                    } else curr.activePlaylist
+                    curr.copy(activePlaylist = updatedActive)
+                }
                 onPlaylistsChanged?.invoke()
             }
         }

@@ -123,7 +123,8 @@ data class Playlist(
     val description: String? = null,
     val trackIds: List<String> = emptyList(),
     val isPinned: Boolean = false,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val customCoverUri: String? = null
 )
 
 /**
