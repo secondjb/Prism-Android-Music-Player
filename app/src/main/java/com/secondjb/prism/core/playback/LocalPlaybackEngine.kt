@@ -759,6 +759,44 @@ class LocalPlaybackEngine(
         persistQueue()
     }
 
+    fun handoffFromRemote(
+        track: Track,
+        queue: List<Track>,
+        positionMs: Long,
+        isPlaying: Boolean
+    ) {
+        val controller = mediaController ?: return
+        this.contextQueue = queue.toMutableList()
+        this.originalQueue = queue.toMutableList()
+        val targetIdx = queue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+        this.currentQueueIndex = targetIdx
+
+        val items = queue.map { it.toMediaItem() }
+        if (items.isNotEmpty()) {
+            controller.setMediaItems(items, targetIdx, positionMs.coerceAtLeast(0L))
+            controller.prepare()
+        }
+        controller.volume = 1f
+        if (isPlaying) {
+            controller.play()
+        } else {
+            controller.pause()
+        }
+        _playbackState.update {
+            it.copy(
+                currentTrack = track,
+                queue = queue,
+                queueIndex = targetIdx,
+                positionMs = positionMs,
+                durationMs = track.durationMs,
+                isPlaying = isPlaying,
+                lastActionTimestampMs = System.currentTimeMillis()
+            )
+        }
+        persistQueue()
+        startPositionTicker()
+    }
+
     fun release() {
         val prevTrack = currentScrobbleTrack
         val prevMs = activeListeningMs

@@ -611,11 +611,12 @@ class SyncViewModel(
         trackArtist: String,
         trackFilename: String,
         trackUri: String,
-        queueFilenames: List<String>? = null
+        queueFilenames: List<String>? = null,
+        seekPositionMs: Long? = null
     ) {
         lastSyncRealtime = SystemClock.elapsedRealtime()
-        basePositionMs = 0L
-        _remotePlaybackState.update { it?.copy(isPlaying = true, positionMs = 0L) }
+        basePositionMs = seekPositionMs ?: 0L
+        _remotePlaybackState.update { it?.copy(isPlaying = true, positionMs = seekPositionMs ?: 0L) }
 
         viewModelScope.launch {
             val command = SyncFrame.PlaybackCommand(
@@ -624,7 +625,8 @@ class SyncViewModel(
                 trackArtist = trackArtist,
                 trackFilename = trackFilename,
                 trackUri = trackUri,
-                queueFilenames = queueFilenames
+                queueFilenames = queueFilenames,
+                seekPositionMs = seekPositionMs
             )
             transport.sendFrame(command)
         }

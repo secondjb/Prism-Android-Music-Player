@@ -214,23 +214,12 @@ class MainActivity : ComponentActivity() {
 				playbackEngine.isStatsCollectionEnabled = userPreferences.isStatsCollectionEnabled
 			}
 
-			// Immediately pause local audio when local output is toggled off; restore and resync when toggled on
+			// Immediately pause local audio when local output is toggled off; restore when toggled on
 			LaunchedEffect(isLocalOutputEnabled) {
 				if (!isLocalOutputEnabled) {
 					playbackEngine.silenceLocalOutput()
 				} else {
 					playbackEngine.restoreLocalOutput()
-					if (isDesktopConnected && isDesktopOutputEnabled) {
-						val remote = remotePlaybackState
-						val remoteTrack = remote?.currentTrack
-						if (remote != null && remoteTrack != null && remote.isPlaying) {
-							val match = syncViewModel.findLocalMatch(remoteTrack)
-							if (match != null) {
-								playbackEngine.playTrack(match, syncViewModel.getAllLocalTracks())
-								playbackEngine.seekTo(remote.positionMs)
-							}
-						}
-					}
 				}
 			}
 
@@ -450,6 +439,100 @@ class MainActivity : ComponentActivity() {
 				}
 			}
 
+			val handleToggleDesktopOutput: (Boolean) -> Unit = { enabled ->
+				val wasDesktopActive = isDesktopOutputEnabled
+				val wasLocalActive = isLocalOutputEnabled
+				syncViewModel.toggleDesktopOutput(enabled)
+
+				if (enabled && !wasDesktopActive) {
+					// Handoff to Desktop: transfer local phone's current track, queue, and seek position to PC!
+					val local = playbackEngine.playbackState.value
+					val localTrack = local.currentTrack
+					if (localTrack != null) {
+						val filename = (localTrack.filePath ?: localTrack.uri).substringAfterLast('/').substringAfterLast('\\')
+						val queueFns = local.queue.take(500).map {
+							(it.filePath ?: it.uri).substringAfterLast('/').substringAfterLast('\\')
+						}
+						syncViewModel.sendPlayTrackCommand(
+							trackTitle = localTrack.title,
+							trackArtist = localTrack.artist,
+							trackFilename = filename,
+							trackUri = localTrack.uri,
+							queueFilenames = queueFns,
+							seekPositionMs = local.positionMs
+						)
+						if (!local.isPlaying) {
+							syncViewModel.sendRemoteCommand(CommandAction.PAUSE)
+						}
+					}
+					if (!syncViewModel.isLocalOutputEnabled.value) {
+						playbackEngine.silenceLocalOutput()
+					}
+				} else if (!enabled && wasDesktopActive) {
+					// Desktop toggled OFF: handoff to local phone without restarting track or queue!
+					playbackEngine.restoreLocalOutput()
+					val remote = remotePlaybackState
+					val remoteTrack = remote?.currentTrack
+					if (remote != null && remoteTrack != null) {
+						val localMatch = syncViewModel.findLocalMatch(remoteTrack) ?: remoteTrack
+						val matchedQueue = remote.queue.map { syncViewModel.findLocalMatch(it) ?: it }.ifEmpty { listOf(localMatch) }
+						playbackEngine.handoffFromRemote(
+							track = localMatch,
+							queue = matchedQueue,
+							positionMs = remote.positionMs,
+							isPlaying = remote.isPlaying
+						)
+					}
+				}
+			}
+
+			val handleToggleLocalOutput: (Boolean) -> Unit = { enabled ->
+				val wasLocalActive = isLocalOutputEnabled
+				val wasDesktopActive = isDesktopOutputEnabled
+				syncViewModel.toggleLocalOutput(enabled)
+
+				if (enabled && !wasLocalActive) {
+					// Handoff to Phone: take over seamlessly from PC's current track, position, and queue!
+					playbackEngine.restoreLocalOutput()
+					val remote = remotePlaybackState
+					val remoteTrack = remote?.currentTrack
+					if (remote != null && remoteTrack != null) {
+						val localMatch = syncViewModel.findLocalMatch(remoteTrack) ?: remoteTrack
+						val matchedQueue = remote.queue.map { syncViewModel.findLocalMatch(it) ?: it }.ifEmpty { listOf(localMatch) }
+						playbackEngine.handoffFromRemote(
+							track = localMatch,
+							queue = matchedQueue,
+							positionMs = remote.positionMs,
+							isPlaying = remote.isPlaying
+						)
+						if (!syncViewModel.isDesktopOutputEnabled.value) {
+							syncViewModel.sendRemoteCommand(CommandAction.PAUSE)
+						}
+					}
+				} else if (!enabled && wasLocalActive) {
+					// Local Phone toggled OFF
+					playbackEngine.silenceLocalOutput()
+					if (syncViewModel.isDesktopOutputEnabled.value && !wasDesktopActive) {
+						val local = playbackEngine.playbackState.value
+						val localTrack = local.currentTrack
+						if (localTrack != null) {
+							val filename = (localTrack.filePath ?: localTrack.uri).substringAfterLast('/').substringAfterLast('\\')
+							val queueFns = local.queue.take(500).map {
+								(it.filePath ?: it.uri).substringAfterLast('/').substringAfterLast('\\')
+							}
+							syncViewModel.sendPlayTrackCommand(
+								trackTitle = localTrack.title,
+								trackArtist = localTrack.artist,
+								trackFilename = filename,
+								trackUri = localTrack.uri,
+								queueFilenames = queueFns,
+								seekPositionMs = local.positionMs
+							)
+						}
+					}
+				}
+			}
+
 			LaunchedEffect(shouldShowRemoteInNotification, connectedServerName) {
 				com.secondjb.prism.core.service.MediaSessionBridge.isRemoteActive = shouldShowRemoteInNotification
 				com.secondjb.prism.core.service.MediaSessionBridge.remoteServerName = connectedServerName?.ifBlank { "Prism Desktop" } ?: "Prism Desktop"
@@ -659,8 +742,8 @@ class MainActivity : ComponentActivity() {
 							pairedDevices = pairedDevices,
 							starredDeviceId = starredDeviceId,
 							onSetStarredDevice = { syncViewModel.setStarredDevice(it) },
-							onToggleDesktopOutput = { syncViewModel.toggleDesktopOutput(it) },
-							onToggleLocalOutput = { syncViewModel.toggleLocalOutput(it) },
+							onToggleDesktopOutput = handleToggleDesktopOutput,
+							onToggleLocalOutput = handleToggleLocalOutput,
 							onConnectToDevice = { syncViewModel.connectToDevice(it) },
 							onConnectToPairedDevice = { syncViewModel.connectToPairedDevice(it) },
 							onDeletePairing = { syncViewModel.deletePairing(it) },
