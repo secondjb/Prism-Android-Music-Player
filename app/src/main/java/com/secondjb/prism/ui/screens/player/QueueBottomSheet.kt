@@ -44,10 +44,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -97,11 +101,21 @@ fun QueueBottomSheet(
     val totalUpcoming = userQueue.size + upcomingContextTracks.size
     val userQueueTotalSecs = userQueue.sumOf { it.durationMs } / 1000L
 
-    var localUserQueue by remember(userQueue) {
-        mutableStateOf(userQueue.mapIndexed { idx, track -> QueueEntry("uq_${track.id}_$idx", track) })
+    var localUserQueue by remember {
+        val countMap = mutableMapOf<String, Int>()
+        mutableStateOf(userQueue.map { track ->
+            val c = countMap.getOrDefault(track.id, 0)
+            countMap[track.id] = c + 1
+            QueueEntry("uq_${track.id}_$c", track)
+        })
     }
-    var localContextTracks by remember(upcomingContextTracks) {
-        mutableStateOf(upcomingContextTracks.mapIndexed { idx, track -> QueueEntry("cq_${track.id}_$idx", track) })
+    var localContextTracks by remember {
+        val countMap = mutableMapOf<String, Int>()
+        mutableStateOf(upcomingContextTracks.map { track ->
+            val c = countMap.getOrDefault(track.id, 0)
+            countMap[track.id] = c + 1
+            QueueEntry("cq_${track.id}_$c", track)
+        })
     }
 
     val lazyListState = rememberLazyListState()
@@ -126,6 +140,33 @@ fun QueueBottomSheet(
                     add(toOffset, removeAt(fromOffset))
                 }
                 onReorderContextQueue(fromOffset, toOffset)
+            }
+        }
+    }
+
+    // Only sync from upstream props when user is NOT actively dragging items!
+    LaunchedEffect(userQueue) {
+        if (!reorderableState.isAnyItemDragging) {
+            if (localUserQueue.map { it.track.id } != userQueue.map { it.id }) {
+                val countMap = mutableMapOf<String, Int>()
+                localUserQueue = userQueue.map { track ->
+                    val c = countMap.getOrDefault(track.id, 0)
+                    countMap[track.id] = c + 1
+                    QueueEntry("uq_${track.id}_$c", track)
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(upcomingContextTracks) {
+        if (!reorderableState.isAnyItemDragging) {
+            if (localContextTracks.map { it.track.id } != upcomingContextTracks.map { it.id }) {
+                val countMap = mutableMapOf<String, Int>()
+                localContextTracks = upcomingContextTracks.map { track ->
+                    val c = countMap.getOrDefault(track.id, 0)
+                    countMap[track.id] = c + 1
+                    QueueEntry("cq_${track.id}_$c", track)
+                }
             }
         }
     }
@@ -326,6 +367,7 @@ fun QueueBottomSheet(
                                 if (idx in userQueue.indices) onSelectUserQueueIndex(idx)
                             },
                             onDismissEndToStart = {
+                                localUserQueue = localUserQueue.filter { it.stableId != entry.stableId }
                                 if (idx in userQueue.indices) onRemoveUserQueueIndex(idx)
                             },
                             onDismissStartToEnd = {
@@ -367,6 +409,7 @@ fun QueueBottomSheet(
                                 onSelectIndex(targetContextIndex)
                             },
                             onDismissEndToStart = {
+                                localContextTracks = localContextTracks.filter { it.stableId != entry.stableId }
                                 onRemoveIndex(targetContextIndex)
                             },
                             onDismissStartToEnd = {
@@ -407,21 +450,41 @@ private fun LazyItemScope.QueueTrackRow(
     onRemove: () -> Unit
 ) {
     val track = entry.track
+    var isActionTriggered by remember { mutableStateOf(false) }
+
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { dismissValue ->
             when (dismissValue) {
                 SwipeToDismissBoxValue.EndToStart -> {
-                    onDismissEndToStart()
+                    if (!isActionTriggered) {
+                        isActionTriggered = true
+                        onDismissEndToStart()
+                    }
                     true
                 }
                 SwipeToDismissBoxValue.StartToEnd -> {
-                    onDismissStartToEnd()
-                    false // Snap back smoothly without dismissing
+                    true
                 }
-                SwipeToDismissBoxValue.Settled -> false
+                SwipeToDismissBoxValue.Settled -> {
+                    isActionTriggered = false
+                    false
+                }
             }
         }
     )
+
+    // Smooth snap-back with one-time action trigger for swipe right (Add to Queue / Play Next)
+    LaunchedEffect(dismissState.targetValue) {
+        if (dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd) {
+            if (!isActionTriggered) {
+                isActionTriggered = true
+                onDismissStartToEnd()
+            }
+            delay(150)
+            dismissState.reset()
+            isActionTriggered = false
+        }
+    }
 
     ReorderableItem(reorderableState, key = entry.stableId) { isDragging ->
         val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp, label = "elevation")

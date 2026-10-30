@@ -691,9 +691,9 @@ class SyncViewModel(
         _remotePlaybackState.update { state ->
             if (state == null) null
             else {
-                val currentQ = state.queue.toMutableList()
-                currentQ.add(track)
-                state.copy(queue = currentQ)
+                val currentUQ = state.userQueue.toMutableList()
+                currentUQ.add(track)
+                state.copy(userQueue = currentUQ)
             }
         }
         viewModelScope.launch {
@@ -705,6 +705,110 @@ class SyncViewModel(
                 trackUri = track.uri
             )
             transport.sendFrame(command)
+        }
+    }
+
+    fun sendRemoveQueueIndexCommand(index: Int) {
+        _remotePlaybackState.update { state ->
+            if (state == null) null
+            else {
+                val q = state.queue.toMutableList()
+                if (index in q.indices) {
+                    q.removeAt(index)
+                    state.copy(queue = q)
+                } else state
+            }
+        }
+        viewModelScope.launch {
+            transport.sendFrame(
+                SyncFrame.PlaybackCommand(
+                    action = CommandAction.REMOVE_FROM_QUEUE,
+                    index = index
+                )
+            )
+        }
+    }
+
+    fun sendRemoveUserQueueIndexCommand(index: Int) {
+        _remotePlaybackState.update { state ->
+            if (state == null) null
+            else {
+                val uq = state.userQueue.toMutableList()
+                if (index in uq.indices) {
+                    uq.removeAt(index)
+                    state.copy(userQueue = uq)
+                } else state
+            }
+        }
+        viewModelScope.launch {
+            transport.sendFrame(
+                SyncFrame.PlaybackCommand(
+                    action = CommandAction.REMOVE_FROM_USER_QUEUE,
+                    index = index
+                )
+            )
+        }
+    }
+
+    fun sendReorderUserQueueCommand(fromIndex: Int, toIndex: Int) {
+        _remotePlaybackState.update { state ->
+            if (state == null) null
+            else {
+                val uq = state.userQueue.toMutableList()
+                if (fromIndex in uq.indices && toIndex in uq.indices) {
+                    val item = uq.removeAt(fromIndex)
+                    uq.add(toIndex, item)
+                    state.copy(userQueue = uq)
+                } else state
+            }
+        }
+        viewModelScope.launch {
+            transport.sendFrame(
+                SyncFrame.PlaybackCommand(
+                    action = CommandAction.REORDER_USER_QUEUE,
+                    fromIndex = fromIndex,
+                    toIndex = toIndex
+                )
+            )
+        }
+    }
+
+    fun sendReorderContextQueueCommand(fromOffset: Int, toOffset: Int) {
+        _remotePlaybackState.update { state ->
+            if (state == null) null
+            else {
+                val base = if (state.queueIndex in state.queue.indices) state.queueIndex + 1 else 0
+                val fromIdx = base + fromOffset
+                val toIdx = base + toOffset
+                val q = state.queue.toMutableList()
+                if (fromIdx in q.indices && toIdx in q.indices) {
+                    val item = q.removeAt(fromIdx)
+                    q.add(toIdx, item)
+                    state.copy(queue = q)
+                } else state
+            }
+        }
+        viewModelScope.launch {
+            transport.sendFrame(
+                SyncFrame.PlaybackCommand(
+                    action = CommandAction.REORDER_CONTEXT_QUEUE,
+                    fromIndex = fromOffset,
+                    toIndex = toOffset
+                )
+            )
+        }
+    }
+
+    fun sendClearQueueCommand() {
+        _remotePlaybackState.update { state ->
+            state?.copy(queue = emptyList(), userQueue = emptyList())
+        }
+        viewModelScope.launch {
+            transport.sendFrame(
+                SyncFrame.PlaybackCommand(
+                    action = CommandAction.CLEAR_QUEUE
+                )
+            )
         }
     }
 

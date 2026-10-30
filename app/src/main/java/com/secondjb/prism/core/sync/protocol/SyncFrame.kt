@@ -54,7 +54,10 @@ sealed class SyncFrame {
         val trackUri: String? = null,
         val queueFilenames: List<String>? = null,
         val sleepTimerMode: String? = null,
-        val sleepTimerValue: Long? = null
+        val sleepTimerValue: Long? = null,
+        val index: Int? = null,
+        val fromIndex: Int? = null,
+        val toIndex: Int? = null
     ) : SyncFrame()
 
     @Serializable
@@ -184,5 +187,10 @@ enum class CommandAction {
     REQUEST_FILE_DOWNLOAD,
     SET_SLEEP_TIMER,
     CANCEL_SLEEP_TIMER,
-    RESHUFFLE_UPCOMING
+    RESHUFFLE_UPCOMING,
+    CLEAR_QUEUE,
+    REMOVE_FROM_QUEUE,
+    REMOVE_FROM_USER_QUEUE,
+    REORDER_USER_QUEUE,
+    REORDER_CONTEXT_QUEUE
 }

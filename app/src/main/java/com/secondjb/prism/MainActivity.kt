@@ -774,16 +774,61 @@ class MainActivity : ComponentActivity() {
 								}
 							},
 							onReorderUserQueue = { from, to ->
-								playbackEngine.reorderUserQueue(from, to)
+								if (isDesktopConnected && isDesktopOutputEnabled) {
+									syncViewModel.sendReorderUserQueueCommand(from, to)
+								}
+								if (isLocalOutputEnabled || !isDesktopConnected) {
+									playbackEngine.reorderUserQueue(from, to)
+								}
 							},
 							onReorderContextQueue = { fromOffset, toOffset ->
-								playbackEngine.reorderContextQueue(fromOffset, toOffset)
+								if (isDesktopConnected && isDesktopOutputEnabled) {
+									syncViewModel.sendReorderContextQueueCommand(fromOffset, toOffset)
+								}
+								if (isLocalOutputEnabled || !isDesktopConnected) {
+									playbackEngine.reorderContextQueue(fromOffset, toOffset)
+								}
 							},
-							onRemoveQueueIndex = { playbackEngine.removeFromQueue(it) },
-							onRemoveUserQueueIndex = { playbackEngine.removeFromUserQueue(it) },
-							onClearQueue = { playbackEngine.clearQueue() },
-							onAddToQueue = { playbackEngine.addToQueue(it) },
-							onPlayNext = { playbackEngine.playNext(it) },
+							onRemoveQueueIndex = { index ->
+								if (isDesktopConnected && isDesktopOutputEnabled) {
+									syncViewModel.sendRemoveQueueIndexCommand(index)
+								}
+								if (isLocalOutputEnabled || !isDesktopConnected) {
+									playbackEngine.removeFromQueue(index)
+								}
+							},
+							onRemoveUserQueueIndex = { index ->
+								if (isDesktopConnected && isDesktopOutputEnabled) {
+									syncViewModel.sendRemoveUserQueueIndexCommand(index)
+								}
+								if (isLocalOutputEnabled || !isDesktopConnected) {
+									playbackEngine.removeFromUserQueue(index)
+								}
+							},
+							onClearQueue = {
+								if (isDesktopConnected && isDesktopOutputEnabled) {
+									syncViewModel.sendClearQueueCommand()
+								}
+								if (isLocalOutputEnabled || !isDesktopConnected) {
+									playbackEngine.clearQueue()
+								}
+							},
+							onAddToQueue = { track ->
+								if (isDesktopConnected && isDesktopOutputEnabled) {
+									syncViewModel.sendAddToQueueCommand(track)
+								}
+								if (isLocalOutputEnabled || !isDesktopConnected) {
+									playbackEngine.addToQueue(track)
+								}
+							},
+							onPlayNext = { track ->
+								if (isDesktopConnected && isDesktopOutputEnabled) {
+									syncViewModel.sendPlayNextCommand(track)
+								}
+								if (isLocalOutputEnabled || !isDesktopConnected) {
+									playbackEngine.playNext(track)
+								}
+							},
 							onReshuffleUpcoming = {
 								val desktopActive = isDesktopConnected && isDesktopOutputEnabled
 								if (desktopActive) {
