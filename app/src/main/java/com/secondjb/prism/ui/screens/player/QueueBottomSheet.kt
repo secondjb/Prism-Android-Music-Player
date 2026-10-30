@@ -451,8 +451,6 @@ private fun LazyItemScope.QueueTrackRow(
     onRemove: () -> Unit
 ) {
     val track = entry.track
-    var hasHandledRightSwipe by remember { mutableStateOf(false) }
-    var triggerReset by remember { mutableStateOf(false) }
 
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { dismissValue ->
@@ -462,37 +460,18 @@ private fun LazyItemScope.QueueTrackRow(
                     true
                 }
                 SwipeToDismissBoxValue.StartToEnd -> {
-                    if (!hasHandledRightSwipe) {
-                        hasHandledRightSwipe = true
-                        onDismissStartToEnd()
-                        triggerReset = true
-                    }
-                    false // Smoothly snap back without dismissing the row
+                    true // Allow settlement to StartToEnd so LaunchedEffect can trigger and reset
                 }
-                SwipeToDismissBoxValue.Settled -> {
-                    hasHandledRightSwipe = false
-                    false
-                }
+                SwipeToDismissBoxValue.Settled -> false
             }
         }
     )
 
-    // Smoothly animate back to settled on right swipe snap-back
-    LaunchedEffect(triggerReset) {
-        if (triggerReset) {
-            try {
-                dismissState.reset()
-            } finally {
-                triggerReset = false
-                hasHandledRightSwipe = false
-            }
-        }
-    }
-
-    // Reset guard when settled
-    LaunchedEffect(dismissState.currentValue, dismissState.targetValue) {
-        if (dismissState.currentValue == SwipeToDismissBoxValue.Settled && dismissState.targetValue == SwipeToDismissBoxValue.Settled) {
-            hasHandledRightSwipe = false
+    // Trigger onDismissStartToEnd once when reaching StartToEnd, then smoothly spring back to Settled
+    LaunchedEffect(dismissState.currentValue) {
+        if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
+            onDismissStartToEnd()
+            dismissState.reset()
         }
     }
 
