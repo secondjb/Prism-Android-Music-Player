@@ -298,6 +298,11 @@ class SyncViewModel(
 
                         _remotePlaybackState.value = reconciled
                         _activeDeviceId.value = "remote"
+                        if (preferencesRepository?.getPcTrackOrderList()?.isEmpty() != false) {
+                            viewModelScope.launch(Dispatchers.IO) {
+                                transport.sendFrame(SyncFrame.ManifestRequest())
+                            }
+                        }
                         onRemoteStateReconciled?.invoke(reconciled)
                     }
                     is SyncFrame.SwapDeviceTarget -> {
@@ -308,6 +313,9 @@ class SyncViewModel(
                         if (frame.isApproved) {
                             _activeDeviceId.value = "remote"
                             _lastPairingError.value = null
+                            viewModelScope.launch(Dispatchers.IO) {
+                                transport.sendFrame(SyncFrame.ManifestRequest())
+                            }
                             if (frame.serverDeviceName.isNotBlank()) {
                                 _connectedServerName.value = frame.serverDeviceName
                             }
@@ -794,8 +802,14 @@ class SyncViewModel(
 
     private fun handleManifestResponse(remoteTracks: List<ManifestTrackEntry>) {
         if (remoteTracks.isNotEmpty()) {
-            val orderList = remoteTracks.map { it.filename.ifBlank { it.title } }
+            val orderList = remoteTracks.map { track ->
+                val fn = track.filename.trim()
+                val title = track.title.trim()
+                val artist = track.artist.trim()
+                "$fn|$title|$artist"
+            }
             preferencesRepository?.savePcTrackOrderList(orderList)
+            Log.i("PrismSync", "Received and saved PC library order with ${orderList.size} tracks")
         }
         val normalize = { s: String? -> (s ?: "").trim().lowercase() }
         val localList = cachedLocalTracks

@@ -93,6 +93,9 @@ class PrismPreferencesRepository(context: Context) {
     private val _preferences = MutableStateFlow(loadPreferences())
     val preferences: StateFlow<PrismPreferences> = _preferences.asStateFlow()
 
+    private val _pcTrackOrder = MutableStateFlow<List<String>>(getPcTrackOrderList())
+    val pcTrackOrderFlow: StateFlow<List<String>> = _pcTrackOrder.asStateFlow()
+
     private fun loadPreferences(): PrismPreferences {
         return PrismPreferences(
             minDurationSeconds = prefs.getInt(KEY_MIN_DURATION, 10),
@@ -191,6 +194,7 @@ class PrismPreferencesRepository(context: Context) {
         try {
             val serialized = json.encodeToString(order)
             prefs.edit().putString(KEY_PC_TRACK_ORDER, serialized).apply()
+            _pcTrackOrder.value = order
         } catch (e: Exception) {
             // ignore
         }

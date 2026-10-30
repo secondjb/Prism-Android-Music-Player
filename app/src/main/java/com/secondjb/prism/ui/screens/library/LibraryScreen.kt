@@ -110,7 +110,9 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -475,12 +477,18 @@ fun LibraryScreen(
                                 onTrackClick = onTrackClick
                             )
                         } else {
+                            val isDeviceFamily = uiState.songSortOption == SongSortOption.DEVICE_FAMILY_ORDER_DESC ||
+                                uiState.songSortOption == SongSortOption.DEVICE_FAMILY_ORDER_ASC ||
+                                uiState.songSortOption == SongSortOption.DEVICE_FAMILY_ORDER
                             TrackListView(
                                 tracks = uiState.filteredTracks,
                                 pinnedIds = uiState.pinnedIds,
                                 likedTrackIds = uiState.likedTrackIds,
                                 selectedTrackIds = selectedTrackIds,
                                 searchQuery = uiState.searchQuery,
+                                isDeviceFamilyOrder = isDeviceFamily,
+                                pcIndexMap = uiState.pcIndexMap,
+                                getTrackPcIndex = { track, map -> uiState.getTrackPcIndex(track, map) },
                                 onToggleSelectTrack = { id ->
                                     selectedTrackIds = if (selectedTrackIds.contains(id)) {
                                         selectedTrackIds - id
@@ -1399,6 +1407,9 @@ private fun TrackListView(
     likedTrackIds: Set<String> = emptySet(),
     selectedTrackIds: Set<String> = emptySet(),
     searchQuery: String = "",
+    isDeviceFamilyOrder: Boolean = false,
+    pcIndexMap: Map<String, Int> = emptyMap(),
+    getTrackPcIndex: ((Track, Map<String, Int>) -> Int?)? = null,
     onToggleSelectTrack: (String) -> Unit = {},
     onTogglePin: (String) -> Unit,
     onToggleLike: (String) -> Unit = {},
@@ -1467,6 +1478,22 @@ private fun TrackListView(
                             .padding(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        if (isDeviceFamilyOrder && getTrackPcIndex != null) {
+                            val pcIdx = getTrackPcIndex(track, pcIndexMap)
+                            val numStr = if (pcIdx != null) "${pcIdx + 1}" else "-"
+                            Text(
+                                text = numStr,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                textAlign = TextAlign.End,
+                                modifier = Modifier
+                                    .width(38.dp)
+                                    .padding(end = 8.dp)
+                            )
+                        }
+
                         Box(
                             modifier = Modifier
                                 .size(50.dp)

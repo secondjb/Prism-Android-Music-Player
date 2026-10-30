@@ -114,39 +114,77 @@ data class LibraryUiState(
                 SongSortOption.YEAR_ASC -> base.sortedWith(compareBy<Track> { it.year ?: 9999 }.thenBy { it.title.lowercase() })
                 SongSortOption.DEVICE_FAMILY_ORDER_DESC,
                 SongSortOption.DEVICE_FAMILY_ORDER -> {
-                    val pcIndexMap = HashMap<String, Int>()
-                    pcTrackOrderList.forEachIndexed { idx, identifier ->
-                        val clean = identifier.trim().lowercase()
-                        if (!pcIndexMap.containsKey(clean)) pcIndexMap[clean] = idx
-                        val noExt = clean.substringBeforeLast('.')
-                        if (!pcIndexMap.containsKey(noExt)) pcIndexMap[noExt] = idx
-                    }
-                    base.sortedWith(compareByDescending<Track> { track ->
-                        val filename = (track.filePath ?: track.uri).substringAfterLast('/').substringAfterLast('\\').trim().lowercase()
-                        val filenameNoExt = filename.substringBeforeLast('.')
-                        val title = track.title.trim().lowercase()
-                        val artistTitle = "${track.artist.trim().lowercase()} - $title"
-                        pcIndexMap[filename] ?: pcIndexMap[filenameNoExt] ?: pcIndexMap[title] ?: pcIndexMap[artistTitle] ?: -1
-                    }.thenBy { it.title.lowercase() })
+                    val map = pcIndexMap
+                    base.sortedWith(compareByDescending<Track> { getTrackPcIndex(it, map) ?: -1 }.thenBy { it.title.lowercase() })
                 }
                 SongSortOption.DEVICE_FAMILY_ORDER_ASC -> {
-                    val pcIndexMap = HashMap<String, Int>()
-                    pcTrackOrderList.forEachIndexed { idx, identifier ->
-                        val clean = identifier.trim().lowercase()
-                        if (!pcIndexMap.containsKey(clean)) pcIndexMap[clean] = idx
-                        val noExt = clean.substringBeforeLast('.')
-                        if (!pcIndexMap.containsKey(noExt)) pcIndexMap[noExt] = idx
-                    }
-                    base.sortedWith(compareBy<Track> { track ->
-                        val filename = (track.filePath ?: track.uri).substringAfterLast('/').substringAfterLast('\\').trim().lowercase()
-                        val filenameNoExt = filename.substringBeforeLast('.')
-                        val title = track.title.trim().lowercase()
-                        val artistTitle = "${track.artist.trim().lowercase()} - $title"
-                        pcIndexMap[filename] ?: pcIndexMap[filenameNoExt] ?: pcIndexMap[title] ?: pcIndexMap[artistTitle] ?: Int.MAX_VALUE
-                    }.thenBy { it.title.lowercase() })
+                    val map = pcIndexMap
+                    base.sortedWith(compareBy<Track> { getTrackPcIndex(it, map) ?: Int.MAX_VALUE }.thenBy { it.title.lowercase() })
                 }
             }
         }
+
+    val pcIndexMap: Map<String, Int>
+        get() {
+            val map = HashMap<String, Int>()
+            pcTrackOrderList.forEachIndexed { idx, entry ->
+                val parts = entry.split('|')
+                val fn = parts.getOrNull(0)?.trim()?.lowercase() ?: ""
+                val title = parts.getOrNull(1)?.trim()?.lowercase() ?: ""
+                val artist = parts.getOrNull(2)?.trim()?.lowercase() ?: ""
+
+                fun putKey(k: String) {
+                    if (k.isNotBlank() && !map.containsKey(k)) {
+                        map[k] = idx
+                    }
+                }
+
+                if (fn.isNotBlank()) {
+                    putKey(fn)
+                    val noExt = fn.substringBeforeLast('.')
+                    putKey(noExt)
+                    putKey(noExt.replace(Regex("^\\d+\\s*-\\s*"), "").trim())
+                }
+
+                if (title.isNotBlank()) {
+                    putKey(title)
+                    putKey(title.replace(Regex("^\\d+\\s*-\\s*"), "").trim())
+                }
+
+                if (artist.isNotBlank() && title.isNotBlank()) {
+                    putKey("$artist - $title")
+                    putKey("$title - $artist")
+                    val cleanTitle = title.replace(Regex("^\\d+\\s*-\\s*"), "").trim()
+                    putKey("$artist - $cleanTitle")
+                }
+
+                val raw = entry.trim().lowercase()
+                putKey(raw)
+                val rawNoExt = raw.substringBeforeLast('.')
+                putKey(rawNoExt)
+                putKey(rawNoExt.replace(Regex("^\\d+\\s*-\\s*"), "").trim())
+            }
+            return map
+        }
+
+    fun getTrackPcIndex(track: Track, map: Map<String, Int>): Int? {
+        val fullPath = (track.filePath ?: track.uri).trim()
+        val filename = fullPath.substringAfterLast('/').substringAfterLast('\\').trim().lowercase()
+        val filenameNoExt = filename.substringBeforeLast('.')
+        val cleanFilename = filenameNoExt.replace(Regex("^\\d+\\s*-\\s*"), "").trim()
+        val title = track.title.trim().lowercase()
+        val cleanTitle = title.replace(Regex("^\\d+\\s*-\\s*"), "").trim()
+        val artist = track.artist.trim().lowercase()
+
+        return map[filename]
+            ?: map[filenameNoExt]
+            ?: map[cleanFilename]
+            ?: map[title]
+            ?: map[cleanTitle]
+            ?: map["$artist - $title"]
+            ?: map["$artist - $cleanTitle"]
+            ?: map["$title - $artist"]
+    }
 
     val filteredAlbums: List<Album>
         get() {
@@ -277,6 +315,13 @@ class LibraryViewModel(
             viewModelScope.launch {
                 plRepo.likedTrackIds.collect { likedSet ->
                     _uiState.update { it.copy(likedTrackIds = likedSet) }
+                }
+            }
+        }
+        preferencesRepository?.let { prefsRepo ->
+            viewModelScope.launch {
+                prefsRepo.pcTrackOrderFlow.collect { pcOrder ->
+                    _uiState.update { it.copy(pcTrackOrderList = pcOrder) }
                 }
             }
         }
