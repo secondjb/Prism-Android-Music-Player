@@ -58,6 +58,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
+import kotlin.math.abs
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -451,6 +452,7 @@ private fun LazyItemScope.QueueTrackRow(
 ) {
     val track = entry.track
     var hasHandledRightSwipe by remember { mutableStateOf(false) }
+    var triggerReset by remember { mutableStateOf(false) }
 
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { dismissValue ->
@@ -463,6 +465,7 @@ private fun LazyItemScope.QueueTrackRow(
                     if (!hasHandledRightSwipe) {
                         hasHandledRightSwipe = true
                         onDismissStartToEnd()
+                        triggerReset = true
                     }
                     false // Smoothly snap back without dismissing the row
                 }
@@ -474,9 +477,21 @@ private fun LazyItemScope.QueueTrackRow(
         }
     )
 
+    // Smoothly animate back to settled on right swipe snap-back
+    LaunchedEffect(triggerReset) {
+        if (triggerReset) {
+            try {
+                dismissState.reset()
+            } finally {
+                triggerReset = false
+                hasHandledRightSwipe = false
+            }
+        }
+    }
+
     // Reset guard when settled
-    LaunchedEffect(dismissState.currentValue) {
-        if (dismissState.currentValue == SwipeToDismissBoxValue.Settled) {
+    LaunchedEffect(dismissState.currentValue, dismissState.targetValue) {
+        if (dismissState.currentValue == SwipeToDismissBoxValue.Settled && dismissState.targetValue == SwipeToDismissBoxValue.Settled) {
             hasHandledRightSwipe = false
         }
     }
@@ -589,7 +604,9 @@ private fun LazyItemScope.QueueTrackRow(
 @Composable
 private fun DismissBackground(dismissState: SwipeToDismissBoxState) {
     val direction = dismissState.dismissDirection
-    val isSettled = dismissState.currentValue == SwipeToDismissBoxValue.Settled && dismissState.targetValue == SwipeToDismissBoxValue.Settled
+    val offset = try { dismissState.requireOffset() } catch (_: Exception) { 0f }
+    val isPhysicallySettled = abs(offset) < 1f
+    val isSettled = isPhysicallySettled || (dismissState.currentValue == SwipeToDismissBoxValue.Settled && dismissState.targetValue == SwipeToDismissBoxValue.Settled)
     val color by animateColorAsState(
         when {
             isSettled -> Color.Transparent
@@ -599,6 +616,7 @@ private fun DismissBackground(dismissState: SwipeToDismissBoxState) {
         },
         label = "dismissBackground"
     )
+    val finalColor = if (isPhysicallySettled) Color.Transparent else color
     val alignment = when (direction) {
         SwipeToDismissBoxValue.EndToStart -> Alignment.CenterEnd
         SwipeToDismissBoxValue.StartToEnd -> Alignment.CenterStart
@@ -621,11 +639,11 @@ private fun DismissBackground(dismissState: SwipeToDismissBoxState) {
         modifier = Modifier
             .fillMaxSize()
             .clip(MaterialTheme.shapes.medium)
-            .background(color)
+            .background(finalColor)
             .padding(horizontal = 16.dp),
         contentAlignment = alignment
     ) {
-        if (icon != null) {
+        if (icon != null && !isPhysicallySettled) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
