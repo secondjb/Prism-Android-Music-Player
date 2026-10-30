@@ -1,9 +1,17 @@
 package com.secondjb.prism.ui.screens.player
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +20,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -37,12 +46,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxState
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -56,11 +61,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.secondjb.prism.domain.model.Track
@@ -431,7 +440,6 @@ fun QueueBottomSheet(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LazyItemScope.QueueTrackRow(
     entry: QueueEntry,
@@ -451,184 +459,209 @@ private fun LazyItemScope.QueueTrackRow(
     onRemove: () -> Unit
 ) {
     val track = entry.track
+    val offsetX = remember { Animatable(0f) }
+    val coroutineScope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    var isDismissed by remember { mutableStateOf(false) }
 
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { dismissValue ->
-            when (dismissValue) {
-                SwipeToDismissBoxValue.EndToStart -> {
-                    onDismissEndToStart()
-                    true
-                }
-                SwipeToDismissBoxValue.StartToEnd -> {
-                    true // Allow settlement to StartToEnd so LaunchedEffect can trigger and reset
-                }
-                SwipeToDismissBoxValue.Settled -> false
-            }
-        }
-    )
+    AnimatedVisibility(
+        visible = !isDismissed,
+        exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(animationSpec = tween(140))
+    ) {
+        ReorderableItem(reorderableState, key = entry.stableId) { isDragging ->
+            val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp, label = "elevation")
+            val thresholdPx = with(density) { 64.dp.toPx() }
+            val maxRightPx = with(density) { 100.dp.toPx() }
 
-    // Trigger onDismissStartToEnd once when reaching StartToEnd, then smoothly spring back to Settled
-    LaunchedEffect(dismissState.currentValue) {
-        if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
-            onDismissStartToEnd()
-            dismissState.reset()
-        }
-    }
-
-    ReorderableItem(reorderableState, key = entry.stableId) { isDragging ->
-        val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp, label = "elevation")
-
-        SwipeToDismissBox(
-            state = dismissState,
-            enableDismissFromStartToEnd = true,
-            enableDismissFromEndToStart = true,
-            backgroundContent = {
-                DismissBackground(dismissState)
-            }
-        ) {
-            Surface(
-                shape = MaterialTheme.shapes.medium,
-                color = if (isDragging) {
-                    MaterialTheme.colorScheme.surfaceVariant
-                } else if (isUserQueue) {
-                    MaterialTheme.colorScheme.surfaceContainerHigh
-                } else {
-                    MaterialTheme.colorScheme.surface
-                },
-                shadowElevation = elevation,
-                tonalElevation = elevation,
-                modifier = Modifier.fillMaxWidth()
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(MaterialTheme.shapes.medium)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 4.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Far left: Drag Handle using draggableHandle modifier
-                    IconButton(
-                        modifier = Modifier.draggableHandle(),
-                        onClick = {}
+                // Background Action Indicator (Only rendered during active swipe)
+                val currentOffset = offsetX.value
+                val isSwipingRight = currentOffset > 1f
+                val isSwipingLeft = currentOffset < -1f
+                val swipeProgress = (abs(currentOffset) / thresholdPx).coerceIn(0f, 1f)
+
+                if (isSwipingRight || isSwipingLeft) {
+                    val bgColor = if (isSwipingRight) {
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = (swipeProgress * 0.95f).coerceIn(0.15f, 0.95f))
+                    } else {
+                        MaterialTheme.colorScheme.errorContainer.copy(alpha = (swipeProgress * 0.95f).coerceIn(0.15f, 0.95f))
+                    }
+                    val iconColor = if (isSwipingRight) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clip(MaterialTheme.shapes.medium)
+                            .background(bgColor)
+                            .padding(horizontal = 16.dp),
+                        contentAlignment = if (isSwipingRight) Alignment.CenterStart else Alignment.CenterEnd
                     ) {
                         Icon(
-                            imageVector = Icons.Default.DragHandle,
-                            contentDescription = "Drag to reorder",
-                            tint = if (isDragging) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                            },
-                            modifier = Modifier.size(22.dp)
+                            imageVector = if (isSwipingRight) Icons.AutoMirrored.Filled.QueueMusic else Icons.Outlined.DeleteOutline,
+                            contentDescription = if (isSwipingRight) "Add to Queue" else "Delete",
+                            tint = iconColor,
+                            modifier = Modifier.size(24.dp)
                         )
                     }
+                }
 
-                    // Artwork & Track info (clickable to play)
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(MaterialTheme.shapes.small)
-                            .clickable(onClick = onClick)
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        AsyncImage(
-                            model = track.artworkUri,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Crop
-                        )
-
-                        Spacer(Modifier.width(12.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = track.title,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = if (isUserQueue) FontWeight.Medium else FontWeight.Normal,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = track.artist,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                // Foreground Item Card
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = if (isDragging) {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    } else if (isUserQueue) {
+                        MaterialTheme.colorScheme.surfaceContainerHigh
+                    } else {
+                        MaterialTheme.colorScheme.surface
+                    },
+                    shadowElevation = elevation,
+                    tonalElevation = elevation,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+                        .pointerInput(entry.stableId) {
+                            detectHorizontalDragGestures(
+                                onDragEnd = {
+                                    val finalOffset = offsetX.value
+                                    if (finalOffset >= thresholdPx) {
+                                        // Swipe Right -> Add to custom queue & smoothly spring back
+                                        onDismissStartToEnd()
+                                        coroutineScope.launch {
+                                            offsetX.animateTo(
+                                                0f,
+                                                spring(
+                                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                    stiffness = Spring.StiffnessMediumLow
+                                                )
+                                            )
+                                        }
+                                    } else if (finalOffset <= -thresholdPx) {
+                                        // Swipe Left -> Animate offscreen & delete item
+                                        coroutineScope.launch {
+                                            offsetX.animateTo(-size.width.toFloat(), tween(160))
+                                            isDismissed = true
+                                            onDismissEndToStart()
+                                        }
+                                    } else {
+                                        // Incomplete swipe -> snap back
+                                        coroutineScope.launch {
+                                            offsetX.animateTo(
+                                                0f,
+                                                spring(
+                                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                                    stiffness = Spring.StiffnessMediumLow
+                                                )
+                                            )
+                                        }
+                                    }
+                                },
+                                onDragCancel = {
+                                    coroutineScope.launch {
+                                        offsetX.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
+                                    }
+                                },
+                                onHorizontalDrag = { change, dragAmount ->
+                                    change.consume()
+                                    val newOffset = offsetX.value + dragAmount
+                                    // Rubber-band dampening past maxRightPx so card never flies offscreen to the right
+                                    val clamped = if (newOffset > maxRightPx) {
+                                        maxRightPx + (newOffset - maxRightPx) * 0.15f
+                                    } else {
+                                        newOffset
+                                    }
+                                    coroutineScope.launch {
+                                        offsetX.snapTo(clamped)
+                                    }
+                                }
                             )
                         }
-                    }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Far left: Drag Handle using draggableHandle modifier
+                        IconButton(
+                            modifier = Modifier.draggableHandle(),
+                            onClick = {}
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DragHandle,
+                                contentDescription = "Drag to reorder",
+                                tint = if (isDragging) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                },
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
 
-                    // 3-dot overflow menu
-                    QueueItemMenu(
-                        canMoveUp = canMoveUp,
-                        canMoveDown = canMoveDown,
-                        onPlayNext = onPlayNext,
-                        onAddToQueue = onAddToQueue,
-                        onMoveUp = onMoveUp,
-                        onMoveDown = onMoveDown,
-                        onMoveToTop = onMoveToTop,
-                        onMoveToBottom = onMoveToBottom,
-                        onRemove = onRemove
-                    )
+                        // Artwork & Track info (clickable to play)
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(MaterialTheme.shapes.small)
+                                .clickable(onClick = onClick)
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AsyncImage(
+                                model = track.artworkUri,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+
+                            Spacer(Modifier.width(12.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = track.title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (isUserQueue) FontWeight.Medium else FontWeight.Normal,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = track.artist,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        // 3-dot overflow menu
+                        QueueItemMenu(
+                            canMoveUp = canMoveUp,
+                            canMoveDown = canMoveDown,
+                            onPlayNext = onPlayNext,
+                            onAddToQueue = onAddToQueue,
+                            onMoveUp = onMoveUp,
+                            onMoveDown = onMoveDown,
+                            onMoveToTop = onMoveToTop,
+                            onMoveToBottom = onMoveToBottom,
+                            onRemove = onRemove
+                        )
+                    }
                 }
             }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DismissBackground(dismissState: SwipeToDismissBoxState) {
-    val direction = dismissState.dismissDirection
-    val offset = try { dismissState.requireOffset() } catch (_: Exception) { 0f }
-    val isPhysicallySettled = abs(offset) < 1f
-    val isSettled = isPhysicallySettled || (dismissState.currentValue == SwipeToDismissBoxValue.Settled && dismissState.targetValue == SwipeToDismissBoxValue.Settled)
-    val color by animateColorAsState(
-        when {
-            isSettled -> Color.Transparent
-            direction == SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.errorContainer
-            direction == SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.primaryContainer
-            else -> Color.Transparent
-        },
-        label = "dismissBackground"
-    )
-    val finalColor = if (isPhysicallySettled) Color.Transparent else color
-    val alignment = when (direction) {
-        SwipeToDismissBoxValue.EndToStart -> Alignment.CenterEnd
-        SwipeToDismissBoxValue.StartToEnd -> Alignment.CenterStart
-        SwipeToDismissBoxValue.Settled -> Alignment.Center
-    }
-    val icon = when {
-        isSettled -> null
-        direction == SwipeToDismissBoxValue.EndToStart -> Icons.Outlined.DeleteOutline
-        direction == SwipeToDismissBoxValue.StartToEnd -> Icons.AutoMirrored.Filled.QueueMusic
-        else -> null
-    }
-    val iconTint = when {
-        isSettled -> Color.Transparent
-        direction == SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.error
-        direction == SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.primary
-        else -> Color.Transparent
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .clip(MaterialTheme.shapes.medium)
-            .background(finalColor)
-            .padding(horizontal = 16.dp),
-        contentAlignment = alignment
-    ) {
-        if (icon != null && !isPhysicallySettled) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = iconTint,
-                modifier = Modifier.size(24.dp)
-            )
         }
     }
 }
