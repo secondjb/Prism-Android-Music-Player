@@ -986,12 +986,26 @@ class SyncViewModel(
     private fun handleIncomingPlaylistSync(playlists: List<SyncPlaylistDto>) {
         val repo = playlistRepository ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            val localTracks = cachedLocalTracks
+            val localTracks = if (cachedLocalTracks.isNotEmpty()) {
+                cachedLocalTracks
+            } else {
+                try {
+                    localTracksProvider?.invoke()?.also { cachedLocalTracks = it } ?: emptyList()
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            }
+
             val mappedPlaylists = playlists.map { syncPl ->
                 val localTrackIds = syncPl.tracks.mapNotNull { trackKey ->
+                    if (localTracks.isEmpty()) return@mapNotNull null
                     val match = localTracks.firstOrNull { local ->
                         val localFn = (local.filePath ?: local.uri).substringAfterLast('/').substringAfterLast('\\')
-                        if (trackKey.filename.isNotBlank() && localFn.equals(trackKey.filename, ignoreCase = true)) return@firstOrNull true
+                        val localFnNoExt = localFn.substringBeforeLast('.', localFn)
+                        val trackFnNoExt = trackKey.filename.substringBeforeLast('.', trackKey.filename)
+                        if (trackKey.filename.isNotBlank() && (localFn.equals(trackKey.filename, ignoreCase = true) || localFnNoExt.equals(trackFnNoExt, ignoreCase = true))) {
+                            return@firstOrNull true
+                        }
                         val sameTitle = local.title.equals(trackKey.title, ignoreCase = true)
                         val sameArtist = trackKey.artist.isBlank() || local.artist.contains(trackKey.artist, ignoreCase = true) || trackKey.artist.contains(local.artist, ignoreCase = true)
                         sameTitle && sameArtist
@@ -1036,11 +1050,24 @@ class SyncViewModel(
         val repo = playlistRepository ?: return
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val localTracks = cachedLocalTracks.associateBy { it.id }
+                val localTracks = if (cachedLocalTracks.isNotEmpty()) {
+                    cachedLocalTracks
+                } else {
+                    try {
+                        localTracksProvider?.invoke()?.also { cachedLocalTracks = it } ?: emptyList()
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+                }
+                if (localTracks.isEmpty()) {
+                    Log.w("PrismSync", "Skipping sendPlaylistSync: local tracks not loaded yet")
+                    return@launch
+                }
+                val localTracksMap = localTracks.associateBy { it.id }
                 val currentPlaylists = repo.playlists.value
                 val dtos = currentPlaylists.map { pl ->
                     val trackDtos = pl.trackIds.mapNotNull { tid ->
-                        val t = localTracks[tid] ?: return@mapNotNull null
+                        val t = localTracksMap[tid] ?: return@mapNotNull null
                         val fn = (t.filePath ?: t.uri).substringAfterLast('/').substringAfterLast('\\')
                         SyncTrackKeyDto(
                             filename = fn,

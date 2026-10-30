@@ -58,6 +58,7 @@ class PrismPlaybackService : MediaSessionService() {
     private var audioManager: AudioManager? = null
     private var focusRequest: android.media.AudioFocusRequest? = null
     private var focusListener: AudioManager.OnAudioFocusChangeListener? = null
+    private var resumeOnFocusGain = false
 
     @OptIn(UnstableApi::class)
     override fun onCreate() {
@@ -81,16 +82,22 @@ class PrismPlaybackService : MediaSessionService() {
         val listener = AudioManager.OnAudioFocusChangeListener { focusChange ->
             when (focusChange) {
                 AudioManager.AUDIOFOCUS_LOSS -> {
+                    resumeOnFocusGain = false
                     player.pause()
                 }
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                    val wasPlaying = player.isPlaying || player.playWhenReady
+                    resumeOnFocusGain = wasPlaying
                     player.pause()
                 }
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
                     // DO NOT DUCK: Maintain 100% volume across screen wake, unlock, and key click sounds
                 }
                 AudioManager.AUDIOFOCUS_GAIN -> {
-                    if (player.playWhenReady) {
+                    if (resumeOnFocusGain) {
+                        resumeOnFocusGain = false
+                        player.play()
+                    } else if (player.playWhenReady) {
                         player.play()
                     }
                 }
@@ -197,6 +204,7 @@ class PrismPlaybackService : MediaSessionService() {
             }
 
             override fun pause() {
+                resumeOnFocusGain = false
                 if (MediaSessionBridge.isRemoteActive) {
                     MediaSessionBridge.onRemotePause?.invoke()
                 } else {

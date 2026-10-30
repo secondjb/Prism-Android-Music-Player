@@ -211,12 +211,18 @@ class PlaylistRepository(
             }
             if (existingIndex >= 0) {
                 val existing = current[existingIndex]
+                val mergedTrackIds = if (incoming.trackIds.isNotEmpty()) {
+                    (existing.trackIds + incoming.trackIds).distinct()
+                } else {
+                    existing.trackIds
+                }
+                val effectiveCover = incoming.customCoverUri?.takeIf { it.isNotBlank() } ?: existing.customCoverUri
                 current[existingIndex] = existing.copy(
-                    name = incoming.name,
-                    description = incoming.description ?: existing.description,
-                    trackIds = incoming.trackIds,
+                    name = incoming.name.ifBlank { existing.name },
+                    description = incoming.description?.ifBlank { existing.description } ?: existing.description,
+                    trackIds = mergedTrackIds,
                     isPinned = incoming.isPinned,
-                    customCoverUri = incoming.customCoverUri ?: existing.customCoverUri
+                    customCoverUri = effectiveCover
                 )
             } else {
                 current.add(incoming)

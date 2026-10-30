@@ -2633,12 +2633,26 @@ private fun LibrarySortBottomSheet(
                             )
                         }
                     )
+                    val isDeviceFamily = songSort == SongSortOption.DEVICE_FAMILY_ORDER_DESC ||
+                        songSort == SongSortOption.DEVICE_FAMILY_ORDER_ASC ||
+                        songSort == SongSortOption.DEVICE_FAMILY_ORDER
                     SortCategoryItem(
-                        label = "Device Family Custom Order",
-                        isSelected = songSort == SongSortOption.DEVICE_FAMILY_ORDER,
-                        directionLabel = if (songSort == SongSortOption.DEVICE_FAMILY_ORDER) "PC Order (1-1000)" else null,
+                        label = "Device Family Order",
+                        isSelected = isDeviceFamily,
+                        directionLabel = if (songSort == SongSortOption.DEVICE_FAMILY_ORDER_ASC) {
+                            "Asc (# 1 → N)  ↑"
+                        } else if (isDeviceFamily) {
+                            "Desc (# N → 1)  ↓"
+                        } else {
+                            null
+                        },
                         onClick = {
-                            onSelectSongSort(SongSortOption.DEVICE_FAMILY_ORDER)
+                            val next = if (songSort == SongSortOption.DEVICE_FAMILY_ORDER_DESC || songSort == SongSortOption.DEVICE_FAMILY_ORDER) {
+                                SongSortOption.DEVICE_FAMILY_ORDER_ASC
+                            } else {
+                                SongSortOption.DEVICE_FAMILY_ORDER_DESC
+                            }
+                            onSelectSongSort(next)
                         }
                     )
                 }

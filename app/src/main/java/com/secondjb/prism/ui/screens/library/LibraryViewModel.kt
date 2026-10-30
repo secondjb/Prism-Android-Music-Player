@@ -35,7 +35,9 @@ enum class SongSortOption(val label: String) {
     DURATION_ASC("Duration (Shortest)"),
     YEAR_DESC("Year (Newest)"),
     YEAR_ASC("Year (Oldest)"),
-    DEVICE_FAMILY_ORDER("Device Family Order (PC)")
+    DEVICE_FAMILY_ORDER_DESC("Device Family Order (Desc)"),
+    DEVICE_FAMILY_ORDER_ASC("Device Family Order (Asc)"),
+    DEVICE_FAMILY_ORDER("Device Family Order")
 }
 
 enum class AlbumSortOption(val label: String) {
@@ -110,15 +112,37 @@ data class LibraryUiState(
                 SongSortOption.DURATION_ASC -> base.sortedWith(compareBy<Track> { it.durationMs }.thenBy { it.title.lowercase() })
                 SongSortOption.YEAR_DESC -> base.sortedWith(compareByDescending<Track> { it.year ?: 0 }.thenBy { it.title.lowercase() })
                 SongSortOption.YEAR_ASC -> base.sortedWith(compareBy<Track> { it.year ?: 9999 }.thenBy { it.title.lowercase() })
+                SongSortOption.DEVICE_FAMILY_ORDER_DESC,
                 SongSortOption.DEVICE_FAMILY_ORDER -> {
                     val pcIndexMap = HashMap<String, Int>()
                     pcTrackOrderList.forEachIndexed { idx, identifier ->
-                        pcIndexMap[identifier.trim().lowercase()] = idx
+                        val clean = identifier.trim().lowercase()
+                        if (!pcIndexMap.containsKey(clean)) pcIndexMap[clean] = idx
+                        val noExt = clean.substringBeforeLast('.')
+                        if (!pcIndexMap.containsKey(noExt)) pcIndexMap[noExt] = idx
+                    }
+                    base.sortedWith(compareByDescending<Track> { track ->
+                        val filename = (track.filePath ?: track.uri).substringAfterLast('/').substringAfterLast('\\').trim().lowercase()
+                        val filenameNoExt = filename.substringBeforeLast('.')
+                        val title = track.title.trim().lowercase()
+                        val artistTitle = "${track.artist.trim().lowercase()} - $title"
+                        pcIndexMap[filename] ?: pcIndexMap[filenameNoExt] ?: pcIndexMap[title] ?: pcIndexMap[artistTitle] ?: -1
+                    }.thenBy { it.title.lowercase() })
+                }
+                SongSortOption.DEVICE_FAMILY_ORDER_ASC -> {
+                    val pcIndexMap = HashMap<String, Int>()
+                    pcTrackOrderList.forEachIndexed { idx, identifier ->
+                        val clean = identifier.trim().lowercase()
+                        if (!pcIndexMap.containsKey(clean)) pcIndexMap[clean] = idx
+                        val noExt = clean.substringBeforeLast('.')
+                        if (!pcIndexMap.containsKey(noExt)) pcIndexMap[noExt] = idx
                     }
                     base.sortedWith(compareBy<Track> { track ->
                         val filename = (track.filePath ?: track.uri).substringAfterLast('/').substringAfterLast('\\').trim().lowercase()
+                        val filenameNoExt = filename.substringBeforeLast('.')
                         val title = track.title.trim().lowercase()
-                        pcIndexMap[filename] ?: pcIndexMap[title] ?: Int.MAX_VALUE
+                        val artistTitle = "${track.artist.trim().lowercase()} - $title"
+                        pcIndexMap[filename] ?: pcIndexMap[filenameNoExt] ?: pcIndexMap[title] ?: pcIndexMap[artistTitle] ?: Int.MAX_VALUE
                     }.thenBy { it.title.lowercase() })
                 }
             }

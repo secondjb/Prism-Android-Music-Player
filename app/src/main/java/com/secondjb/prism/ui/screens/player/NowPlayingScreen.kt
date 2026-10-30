@@ -107,6 +107,8 @@ fun NowPlayingScreen(
     onReorderContextQueue: (Int, Int) -> Unit = { _, _ -> },
     onReshuffleUpcoming: () -> Unit = {},
     onClearQueue: () -> Unit = {},
+    onAddToQueue: (Track) -> Unit = {},
+    onPlayNext: (Track) -> Unit = {},
     onPairQrClick: () -> Unit = {},
     sleepTimerState: SleepTimerState = SleepTimerState(),
     onStartSleepTimerMinutes: (Int, Boolean, Boolean) -> Unit = { _, _, _ -> },
@@ -552,6 +554,8 @@ fun NowPlayingScreen(
             onReorderContextQueue = onReorderContextQueue,
             onReshuffleUpcoming = onReshuffleUpcoming,
             onClearQueue = onClearQueue,
+            onAddToQueue = onAddToQueue,
+            onPlayNext = onPlayNext,
             onDismiss = { showQueueSheet = false }
         )
     }

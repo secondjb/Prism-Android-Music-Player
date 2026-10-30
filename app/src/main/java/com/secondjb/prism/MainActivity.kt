@@ -782,6 +782,8 @@ class MainActivity : ComponentActivity() {
 							onRemoveQueueIndex = { playbackEngine.removeFromQueue(it) },
 							onRemoveUserQueueIndex = { playbackEngine.removeFromUserQueue(it) },
 							onClearQueue = { playbackEngine.clearQueue() },
+							onAddToQueue = { playbackEngine.addToQueue(it) },
+							onPlayNext = { playbackEngine.playNext(it) },
 							onReshuffleUpcoming = {
 								val desktopActive = isDesktopConnected && isDesktopOutputEnabled
 								if (desktopActive) {
