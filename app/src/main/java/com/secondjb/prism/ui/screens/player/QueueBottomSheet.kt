@@ -1,9 +1,9 @@
 package com.secondjb.prism.ui.screens.player
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,7 +16,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyItemScope
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
@@ -36,13 +38,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxState
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -50,17 +52,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.secondjb.prism.domain.model.Track
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.ReorderableLazyListState
+import sh.calvin.reorderable.rememberReorderableLazyListState
+
+private data class QueueEntry(
+    val stableId: String,
+    val track: Track
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -91,9 +97,38 @@ fun QueueBottomSheet(
     val totalUpcoming = userQueue.size + upcomingContextTracks.size
     val userQueueTotalSecs = userQueue.sumOf { it.durationMs } / 1000L
 
-    var draggingTrackId by remember { mutableStateOf<String?>(null) }
-    var dragOffsetY by remember { mutableFloatStateOf(0f) }
-    val itemHeightPx = with(LocalDensity.current) { 60.dp.toPx() }
+    var localUserQueue by remember(userQueue) {
+        mutableStateOf(userQueue.mapIndexed { idx, track -> QueueEntry("uq_${track.id}_$idx", track) })
+    }
+    var localContextTracks by remember(upcomingContextTracks) {
+        mutableStateOf(upcomingContextTracks.mapIndexed { idx, track -> QueueEntry("cq_${track.id}_$idx", track) })
+    }
+
+    val lazyListState = rememberLazyListState()
+    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        val fromKey = from.key as? String ?: return@rememberReorderableLazyListState
+        val toKey = to.key as? String ?: return@rememberReorderableLazyListState
+
+        if (fromKey.startsWith("uq_") && toKey.startsWith("uq_")) {
+            val fromIdx = localUserQueue.indexOfFirst { it.stableId == fromKey }
+            val toIdx = localUserQueue.indexOfFirst { it.stableId == toKey }
+            if (fromIdx != -1 && toIdx != -1 && fromIdx != toIdx) {
+                localUserQueue = localUserQueue.toMutableList().apply {
+                    add(toIdx, removeAt(fromIdx))
+                }
+                onReorderUserQueue(fromIdx, toIdx)
+            }
+        } else if (fromKey.startsWith("cq_") && toKey.startsWith("cq_")) {
+            val fromOffset = localContextTracks.indexOfFirst { it.stableId == fromKey }
+            val toOffset = localContextTracks.indexOfFirst { it.stableId == toKey }
+            if (fromOffset != -1 && toOffset != -1 && fromOffset != toOffset) {
+                localContextTracks = localContextTracks.toMutableList().apply {
+                    add(toOffset, removeAt(fromOffset))
+                }
+                onReorderContextQueue(fromOffset, toOffset)
+            }
+        }
+    }
 
     fun formatDurationSecs(totalSecs: Long): String {
         if (totalSecs <= 0) return "0s"
@@ -182,9 +217,10 @@ fun QueueBottomSheet(
 
             // Queue List
             LazyColumn(
+                state = lazyListState,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(420.dp)
+                    .height(440.dp)
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -208,7 +244,7 @@ fun QueueBottomSheet(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(8.dp),
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
@@ -216,8 +252,8 @@ fun QueueBottomSheet(
                                     contentDescription = "Playing",
                                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
                                     modifier = Modifier
-                                        .size(24.dp)
-                                        .padding(end = 4.dp)
+                                        .size(28.dp)
+                                        .padding(end = 8.dp)
                                 )
 
                                 AsyncImage(
@@ -254,7 +290,7 @@ fun QueueBottomSheet(
                 }
 
                 // 2. Next Up Section (Priority User Queue)
-                if (userQueue.isNotEmpty()) {
+                if (localUserQueue.isNotEmpty()) {
                     item(key = "header_user_queue") {
                         Row(
                             modifier = Modifier
@@ -264,7 +300,7 @@ fun QueueBottomSheet(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "NEXT UP (${userQueue.size})",
+                                text = "NEXT UP (${localUserQueue.size})",
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.tertiary
@@ -278,154 +314,36 @@ fun QueueBottomSheet(
                         }
                     }
 
-                    itemsIndexed(userQueue, key = { idx, t -> "uq_${t.id}_$idx" }) { idx, track ->
-                        val isItemDragging = draggingTrackId == track.id
-                        val itemTranslation = if (isItemDragging) dragOffsetY else 0f
-                        val itemZ = if (isItemDragging) 10f else 1f
-
-                        val dismissState = rememberSwipeToDismissBoxState(
-                            confirmValueChange = { dismissValue ->
-                                when (dismissValue) {
-                                    SwipeToDismissBoxValue.EndToStart -> {
-                                        onRemoveUserQueueIndex(idx)
-                                        true
-                                    }
-                                    SwipeToDismissBoxValue.StartToEnd -> {
-                                        onPlayNext(track)
-                                        false
-                                    }
-                                    SwipeToDismissBoxValue.Settled -> false
-                                }
-                            }
+                    items(localUserQueue, key = { it.stableId }) { entry ->
+                        val idx = localUserQueue.indexOf(entry)
+                        QueueTrackRow(
+                            entry = entry,
+                            isUserQueue = true,
+                            reorderableState = reorderableState,
+                            canMoveUp = idx > 0,
+                            canMoveDown = idx < localUserQueue.lastIndex,
+                            onClick = {
+                                if (idx in userQueue.indices) onSelectUserQueueIndex(idx)
+                            },
+                            onDismissEndToStart = {
+                                if (idx in userQueue.indices) onRemoveUserQueueIndex(idx)
+                            },
+                            onDismissStartToEnd = {
+                                onPlayNext(entry.track)
+                            },
+                            onPlayNext = { onPlayNext(entry.track) },
+                            onAddToQueue = { onAddToQueue(entry.track) },
+                            onMoveUp = { onReorderUserQueue(idx, idx - 1) },
+                            onMoveDown = { onReorderUserQueue(idx, idx + 1) },
+                            onMoveToTop = { onReorderUserQueue(idx, 0) },
+                            onMoveToBottom = { onReorderUserQueue(idx, localUserQueue.lastIndex) },
+                            onRemove = { onRemoveUserQueueIndex(idx) }
                         )
-
-                        Box(
-                            modifier = Modifier
-                                .zIndex(itemZ)
-                                .graphicsLayer { translationY = itemTranslation }
-                        ) {
-                            SwipeToDismissBox(
-                                state = dismissState,
-                                enableDismissFromStartToEnd = true,
-                                enableDismissFromEndToStart = true,
-                                backgroundContent = {
-                                    DismissBackground(dismissState.targetValue)
-                                }
-                            ) {
-                                Surface(
-                                    shape = MaterialTheme.shapes.medium,
-                                    color = if (isItemDragging) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 4.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        // Drag handle
-                                        Box(
-                                            modifier = Modifier
-                                                .size(44.dp)
-                                                .pointerInput(track.id) {
-                                                    detectVerticalDragGestures(
-                                                        onDragStart = {
-                                                            draggingTrackId = track.id
-                                                            dragOffsetY = 0f
-                                                        },
-                                                        onDragEnd = {
-                                                            draggingTrackId = null
-                                                            dragOffsetY = 0f
-                                                        },
-                                                        onDragCancel = {
-                                                            draggingTrackId = null
-                                                            dragOffsetY = 0f
-                                                        },
-                                                        onVerticalDrag = { change, dragAmount ->
-                                                            change.consume()
-                                                            dragOffsetY += dragAmount
-                                                            val currIdx = userQueue.indexOfFirst { it.id == track.id }
-                                                            if (currIdx != -1) {
-                                                                if (dragOffsetY > itemHeightPx && currIdx < userQueue.lastIndex) {
-                                                                    onReorderUserQueue(currIdx, currIdx + 1)
-                                                                    dragOffsetY -= itemHeightPx
-                                                                } else if (dragOffsetY < -itemHeightPx && currIdx > 0) {
-                                                                    onReorderUserQueue(currIdx, currIdx - 1)
-                                                                    dragOffsetY += itemHeightPx
-                                                                }
-                                                            }
-                                                        }
-                                                    )
-                                                },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.DragHandle,
-                                                contentDescription = "Drag to reorder",
-                                                tint = if (isItemDragging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                                modifier = Modifier.size(22.dp)
-                                            )
-                                        }
-
-                                        Row(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .clip(MaterialTheme.shapes.small)
-                                                .clickable { onSelectUserQueueIndex(idx) }
-                                                .padding(vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            AsyncImage(
-                                                model = track.artworkUri,
-                                                contentDescription = null,
-                                                modifier = Modifier
-                                                    .size(44.dp)
-                                                    .clip(RoundedCornerShape(8.dp)),
-                                                contentScale = ContentScale.Crop
-                                            )
-
-                                            Spacer(Modifier.width(12.dp))
-
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = track.title,
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = MaterialTheme.colorScheme.onSurface,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                                Text(
-                                                    text = track.artist,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            }
-                                        }
-
-                                        // 3-dot overflow menu
-                                        QueueItemMenu(
-                                            canMoveUp = idx > 0,
-                                            canMoveDown = idx < userQueue.lastIndex,
-                                            onPlayNext = { onPlayNext(track) },
-                                            onAddToQueue = { onAddToQueue(track) },
-                                            onMoveUp = { onReorderUserQueue(idx, idx - 1) },
-                                            onMoveDown = { onReorderUserQueue(idx, idx + 1) },
-                                            onMoveToTop = { onReorderUserQueue(idx, 0) },
-                                            onMoveToBottom = { onReorderUserQueue(idx, userQueue.lastIndex) },
-                                            onRemove = { onRemoveUserQueueIndex(idx) }
-                                        )
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
 
                 // 3. Upcoming Context Queue Section
-                if (upcomingContextTracks.isNotEmpty()) {
+                if (localContextTracks.isNotEmpty()) {
                     item(key = "header_context_queue") {
                         Text(
                             text = "NEXT FROM PLAYLIST / ALBUM",
@@ -436,150 +354,32 @@ fun QueueBottomSheet(
                         )
                     }
 
-                    itemsIndexed(upcomingContextTracks, key = { offset, t -> "cq_${t.id}_$offset" }) { offset, track ->
+                    items(localContextTracks, key = { it.stableId }) { entry ->
+                        val offset = localContextTracks.indexOf(entry)
                         val targetContextIndex = currentIndex + 1 + offset
-                        val isItemDragging = draggingTrackId == track.id
-                        val itemTranslation = if (isItemDragging) dragOffsetY else 0f
-                        val itemZ = if (isItemDragging) 10f else 1f
-
-                        val dismissState = rememberSwipeToDismissBoxState(
-                            confirmValueChange = { dismissValue ->
-                                when (dismissValue) {
-                                    SwipeToDismissBoxValue.EndToStart -> {
-                                        onRemoveIndex(targetContextIndex)
-                                        true
-                                    }
-                                    SwipeToDismissBoxValue.StartToEnd -> {
-                                        onAddToQueue(track)
-                                        false
-                                    }
-                                    SwipeToDismissBoxValue.Settled -> false
-                                }
-                            }
+                        QueueTrackRow(
+                            entry = entry,
+                            isUserQueue = false,
+                            reorderableState = reorderableState,
+                            canMoveUp = offset > 0,
+                            canMoveDown = offset < localContextTracks.lastIndex,
+                            onClick = {
+                                onSelectIndex(targetContextIndex)
+                            },
+                            onDismissEndToStart = {
+                                onRemoveIndex(targetContextIndex)
+                            },
+                            onDismissStartToEnd = {
+                                onAddToQueue(entry.track)
+                            },
+                            onPlayNext = { onPlayNext(entry.track) },
+                            onAddToQueue = { onAddToQueue(entry.track) },
+                            onMoveUp = { onReorderContextQueue(offset, offset - 1) },
+                            onMoveDown = { onReorderContextQueue(offset, offset + 1) },
+                            onMoveToTop = { onReorderContextQueue(offset, 0) },
+                            onMoveToBottom = { onReorderContextQueue(offset, localContextTracks.lastIndex) },
+                            onRemove = { onRemoveIndex(targetContextIndex) }
                         )
-
-                        Box(
-                            modifier = Modifier
-                                .zIndex(itemZ)
-                                .graphicsLayer { translationY = itemTranslation }
-                        ) {
-                            SwipeToDismissBox(
-                                state = dismissState,
-                                enableDismissFromStartToEnd = true,
-                                enableDismissFromEndToStart = true,
-                                backgroundContent = {
-                                    DismissBackground(dismissState.targetValue)
-                                }
-                            ) {
-                                Surface(
-                                    shape = MaterialTheme.shapes.medium,
-                                    color = if (isItemDragging) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 4.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        // Drag handle
-                                        Box(
-                                            modifier = Modifier
-                                                .size(44.dp)
-                                                .pointerInput(track.id) {
-                                                    detectVerticalDragGestures(
-                                                        onDragStart = {
-                                                            draggingTrackId = track.id
-                                                            dragOffsetY = 0f
-                                                        },
-                                                        onDragEnd = {
-                                                            draggingTrackId = null
-                                                            dragOffsetY = 0f
-                                                        },
-                                                        onDragCancel = {
-                                                            draggingTrackId = null
-                                                            dragOffsetY = 0f
-                                                        },
-                                                        onVerticalDrag = { change, dragAmount ->
-                                                            change.consume()
-                                                            dragOffsetY += dragAmount
-                                                            val currOffset = upcomingContextTracks.indexOfFirst { it.id == track.id }
-                                                            if (currOffset != -1) {
-                                                                if (dragOffsetY > itemHeightPx && currOffset < upcomingContextTracks.lastIndex) {
-                                                                    onReorderContextQueue(currOffset, currOffset + 1)
-                                                                    dragOffsetY -= itemHeightPx
-                                                                } else if (dragOffsetY < -itemHeightPx && currOffset > 0) {
-                                                                    onReorderContextQueue(currOffset, currOffset - 1)
-                                                                    dragOffsetY += itemHeightPx
-                                                                }
-                                                            }
-                                                        }
-                                                    )
-                                                },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.DragHandle,
-                                                contentDescription = "Drag to reorder",
-                                                tint = if (isItemDragging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                                modifier = Modifier.size(22.dp)
-                                            )
-                                        }
-
-                                        Row(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .clip(MaterialTheme.shapes.small)
-                                                .clickable { onSelectIndex(targetContextIndex) }
-                                                .padding(vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            AsyncImage(
-                                                model = track.artworkUri,
-                                                contentDescription = null,
-                                                modifier = Modifier
-                                                    .size(44.dp)
-                                                    .clip(RoundedCornerShape(8.dp)),
-                                                contentScale = ContentScale.Crop
-                                            )
-
-                                            Spacer(Modifier.width(12.dp))
-
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = track.title,
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    fontWeight = FontWeight.Normal,
-                                                    color = MaterialTheme.colorScheme.onSurface,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                                Text(
-                                                    text = track.artist,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            }
-                                        }
-
-                                        // 3-dot overflow menu
-                                        QueueItemMenu(
-                                            canMoveUp = offset > 0,
-                                            canMoveDown = offset < upcomingContextTracks.lastIndex,
-                                            onPlayNext = { onPlayNext(track) },
-                                            onAddToQueue = { onAddToQueue(track) },
-                                            onMoveUp = { onReorderContextQueue(offset, offset - 1) },
-                                            onMoveDown = { onReorderContextQueue(offset, offset + 1) },
-                                            onMoveToTop = { onReorderContextQueue(offset, 0) },
-                                            onMoveToBottom = { onReorderContextQueue(offset, upcomingContextTracks.lastIndex) },
-                                            onRemove = { onRemoveIndex(targetContextIndex) }
-                                        )
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
             }
@@ -589,26 +389,167 @@ fun QueueBottomSheet(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DismissBackground(targetValue: SwipeToDismissBoxValue) {
+private fun LazyItemScope.QueueTrackRow(
+    entry: QueueEntry,
+    isUserQueue: Boolean,
+    reorderableState: ReorderableLazyListState,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onClick: () -> Unit,
+    onDismissEndToStart: () -> Unit,
+    onDismissStartToEnd: () -> Unit,
+    onPlayNext: () -> Unit,
+    onAddToQueue: () -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onMoveToTop: () -> Unit,
+    onMoveToBottom: () -> Unit,
+    onRemove: () -> Unit
+) {
+    val track = entry.track
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { dismissValue ->
+            when (dismissValue) {
+                SwipeToDismissBoxValue.EndToStart -> {
+                    onDismissEndToStart()
+                    true
+                }
+                SwipeToDismissBoxValue.StartToEnd -> {
+                    onDismissStartToEnd()
+                    false // Snap back smoothly without dismissing
+                }
+                SwipeToDismissBoxValue.Settled -> false
+            }
+        }
+    )
+
+    ReorderableItem(reorderableState, key = entry.stableId) { isDragging ->
+        val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp, label = "elevation")
+
+        SwipeToDismissBox(
+            state = dismissState,
+            enableDismissFromStartToEnd = true,
+            enableDismissFromEndToStart = true,
+            backgroundContent = {
+                DismissBackground(dismissState)
+            }
+        ) {
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = if (isDragging) {
+                    MaterialTheme.colorScheme.surfaceVariant
+                } else if (isUserQueue) {
+                    MaterialTheme.colorScheme.surfaceContainerHigh
+                } else {
+                    MaterialTheme.colorScheme.surface
+                },
+                shadowElevation = elevation,
+                tonalElevation = elevation,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Far left: Drag Handle using draggableHandle modifier
+                    IconButton(
+                        modifier = Modifier.draggableHandle(),
+                        onClick = {}
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DragHandle,
+                            contentDescription = "Drag to reorder",
+                            tint = if (isDragging) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            },
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    // Artwork & Track info (clickable to play)
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(MaterialTheme.shapes.small)
+                            .clickable(onClick = onClick)
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AsyncImage(
+                            model = track.artworkUri,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+
+                        Spacer(Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = track.title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = if (isUserQueue) FontWeight.Medium else FontWeight.Normal,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = track.artist,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    // 3-dot overflow menu
+                    QueueItemMenu(
+                        canMoveUp = canMoveUp,
+                        canMoveDown = canMoveDown,
+                        onPlayNext = onPlayNext,
+                        onAddToQueue = onAddToQueue,
+                        onMoveUp = onMoveUp,
+                        onMoveDown = onMoveDown,
+                        onMoveToTop = onMoveToTop,
+                        onMoveToBottom = onMoveToBottom,
+                        onRemove = onRemove
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DismissBackground(dismissState: SwipeToDismissBoxState) {
+    val direction = dismissState.dismissDirection
     val color by animateColorAsState(
-        when (targetValue) {
+        when (direction) {
             SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.errorContainer
             SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.primaryContainer
             SwipeToDismissBoxValue.Settled -> Color.Transparent
         },
         label = "dismissBackground"
     )
-    val alignment = when (targetValue) {
+    val alignment = when (direction) {
         SwipeToDismissBoxValue.EndToStart -> Alignment.CenterEnd
         SwipeToDismissBoxValue.StartToEnd -> Alignment.CenterStart
         SwipeToDismissBoxValue.Settled -> Alignment.Center
     }
-    val icon = when (targetValue) {
+    val icon = when (direction) {
         SwipeToDismissBoxValue.EndToStart -> Icons.Outlined.DeleteOutline
         SwipeToDismissBoxValue.StartToEnd -> Icons.AutoMirrored.Filled.QueueMusic
         SwipeToDismissBoxValue.Settled -> null
     }
-    val iconTint = when (targetValue) {
+    val iconTint = when (direction) {
         SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.error
         SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.primary
         SwipeToDismissBoxValue.Settled -> Color.Transparent

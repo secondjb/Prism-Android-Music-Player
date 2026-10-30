@@ -58,6 +58,7 @@ dependencies {
 	// Image loading & Dynamic Theming
 	implementation(libs.coil.compose)
 	implementation(libs.androidx.palette.ktx)
+	implementation(libs.reorderable)
 
 	// Navigation & Persistence
 	implementation(libs.androidx.navigation.compose)
@@ -92,4 +93,3 @@ tasks.withType<Test> {
 		exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
 	}
 }
-
