@@ -450,39 +450,34 @@ private fun LazyItemScope.QueueTrackRow(
     onRemove: () -> Unit
 ) {
     val track = entry.track
-    var isActionTriggered by remember { mutableStateOf(false) }
+    var hasHandledRightSwipe by remember { mutableStateOf(false) }
 
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { dismissValue ->
             when (dismissValue) {
                 SwipeToDismissBoxValue.EndToStart -> {
-                    if (!isActionTriggered) {
-                        isActionTriggered = true
-                        onDismissEndToStart()
-                    }
+                    onDismissEndToStart()
                     true
                 }
                 SwipeToDismissBoxValue.StartToEnd -> {
-                    true
+                    if (!hasHandledRightSwipe) {
+                        hasHandledRightSwipe = true
+                        onDismissStartToEnd()
+                    }
+                    false // Smoothly snap back without dismissing the row
                 }
                 SwipeToDismissBoxValue.Settled -> {
-                    isActionTriggered = false
+                    hasHandledRightSwipe = false
                     false
                 }
             }
         }
     )
 
-    // Smooth snap-back with one-time action trigger for swipe right (Add to Queue / Play Next)
-    LaunchedEffect(dismissState.targetValue) {
-        if (dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd) {
-            if (!isActionTriggered) {
-                isActionTriggered = true
-                onDismissStartToEnd()
-            }
-            delay(150)
-            dismissState.reset()
-            isActionTriggered = false
+    // Reset guard when settled
+    LaunchedEffect(dismissState.currentValue) {
+        if (dismissState.currentValue == SwipeToDismissBoxValue.Settled) {
+            hasHandledRightSwipe = false
         }
     }
 
@@ -594,11 +589,13 @@ private fun LazyItemScope.QueueTrackRow(
 @Composable
 private fun DismissBackground(dismissState: SwipeToDismissBoxState) {
     val direction = dismissState.dismissDirection
+    val isSettled = dismissState.currentValue == SwipeToDismissBoxValue.Settled && dismissState.targetValue == SwipeToDismissBoxValue.Settled
     val color by animateColorAsState(
-        when (direction) {
-            SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.errorContainer
-            SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.primaryContainer
-            SwipeToDismissBoxValue.Settled -> Color.Transparent
+        when {
+            isSettled -> Color.Transparent
+            direction == SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.errorContainer
+            direction == SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.primaryContainer
+            else -> Color.Transparent
         },
         label = "dismissBackground"
     )
@@ -607,15 +604,17 @@ private fun DismissBackground(dismissState: SwipeToDismissBoxState) {
         SwipeToDismissBoxValue.StartToEnd -> Alignment.CenterStart
         SwipeToDismissBoxValue.Settled -> Alignment.Center
     }
-    val icon = when (direction) {
-        SwipeToDismissBoxValue.EndToStart -> Icons.Outlined.DeleteOutline
-        SwipeToDismissBoxValue.StartToEnd -> Icons.AutoMirrored.Filled.QueueMusic
-        SwipeToDismissBoxValue.Settled -> null
+    val icon = when {
+        isSettled -> null
+        direction == SwipeToDismissBoxValue.EndToStart -> Icons.Outlined.DeleteOutline
+        direction == SwipeToDismissBoxValue.StartToEnd -> Icons.AutoMirrored.Filled.QueueMusic
+        else -> null
     }
-    val iconTint = when (direction) {
-        SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.error
-        SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.primary
-        SwipeToDismissBoxValue.Settled -> Color.Transparent
+    val iconTint = when {
+        isSettled -> Color.Transparent
+        direction == SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.error
+        direction == SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.primary
+        else -> Color.Transparent
     }
 
     Box(
