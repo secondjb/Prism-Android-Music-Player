@@ -112,7 +112,15 @@ class LanWebSocketSyncTransport(
     }
 
     override suspend fun disconnect() {
-        activeWebSocket?.close(1000, "User disconnected")
+        try {
+            activeWebSocket?.send("""{"type":"disconnect","reason":"user_disconnect"}""")
+        } catch (_: Exception) {}
+        try {
+            activeWebSocket?.close(1000, "User disconnected")
+        } catch (_: Exception) {}
+        try {
+            activeWebSocket?.cancel()
+        } catch (_: Exception) {}
         activeWebSocket = null
         _connectionState.value = TransportConnectionState.Disconnected
     }

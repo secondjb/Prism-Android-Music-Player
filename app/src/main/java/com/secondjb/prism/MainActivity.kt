@@ -140,6 +140,7 @@ class MainActivity : ComponentActivity() {
 					repository = repository,
 					playlistRepository = playlistRepository,
 					artistImageRepository = artistImageRepository,
+					preferencesRepository = preferencesRepository,
 					initialFilterChip = initialChip
 				)
 			}
@@ -720,8 +721,63 @@ class MainActivity : ComponentActivity() {
 							onDismiss = { isNowPlayingExpanded = false },
 							onSelectQueueIndex = { index ->
 								if (index in effectivePlaybackState.queue.indices) {
-									handlePlayTrack(effectivePlaybackState.queue[index], effectivePlaybackState.queue)
+									val targetTrack = effectivePlaybackState.queue[index]
+									val desktopActive = isDesktopConnected && isDesktopOutputEnabled
+									val localActive = isLocalOutputEnabled
+
+									if (isDesktopConnected) {
+										val filename = (targetTrack.filePath ?: targetTrack.uri).substringAfterLast('/').substringAfterLast('\\')
+										syncViewModel.sendPlayTrackCommand(
+											trackTitle = targetTrack.title,
+											trackArtist = targetTrack.artist,
+											trackFilename = filename,
+											trackUri = targetTrack.uri,
+											queueFilenames = null,
+											seekPositionMs = 0L
+										)
+										if (!desktopActive) {
+											syncViewModel.sendRemoteCommand(CommandAction.PAUSE)
+										}
+									}
+
+									if (localActive || !isDesktopConnected) {
+										playbackEngine.restoreLocalOutput()
+										playbackEngine.playQueueIndex(index)
+									}
 								}
+							},
+							onSelectUserQueueIndex = { index ->
+								if (index in effectivePlaybackState.userQueue.indices) {
+									val targetTrack = effectivePlaybackState.userQueue[index]
+									val desktopActive = isDesktopConnected && isDesktopOutputEnabled
+									val localActive = isLocalOutputEnabled
+
+									if (isDesktopConnected) {
+										val filename = (targetTrack.filePath ?: targetTrack.uri).substringAfterLast('/').substringAfterLast('\\')
+										syncViewModel.sendPlayTrackCommand(
+											trackTitle = targetTrack.title,
+											trackArtist = targetTrack.artist,
+											trackFilename = filename,
+											trackUri = targetTrack.uri,
+											queueFilenames = null,
+											seekPositionMs = 0L
+										)
+										if (!desktopActive) {
+											syncViewModel.sendRemoteCommand(CommandAction.PAUSE)
+										}
+									}
+
+									if (localActive || !isDesktopConnected) {
+										playbackEngine.restoreLocalOutput()
+										playbackEngine.playUserQueueIndex(index)
+									}
+								}
+							},
+							onReorderUserQueue = { from, to ->
+								playbackEngine.reorderUserQueue(from, to)
+							},
+							onReorderContextQueue = { fromOffset, toOffset ->
+								playbackEngine.reorderContextQueue(fromOffset, toOffset)
 							},
 							onRemoveQueueIndex = { playbackEngine.removeFromQueue(it) },
 							onRemoveUserQueueIndex = { playbackEngine.removeFromUserQueue(it) },
@@ -752,6 +808,7 @@ class MainActivity : ComponentActivity() {
 							onConnectToDevice = { syncViewModel.connectToDevice(it) },
 							onConnectToPairedDevice = { syncViewModel.connectToPairedDevice(it) },
 							onDeletePairing = { syncViewModel.deletePairing(it) },
+							onDisconnect = { syncViewModel.disconnect() },
 							sleepTimerState = sleepTimerState,
 							onStartSleepTimerMinutes = { mins, finishLast, endOfQ ->
 								sleepTimerManager.startTimerByMinutes(mins, finishLast, endOfQ)

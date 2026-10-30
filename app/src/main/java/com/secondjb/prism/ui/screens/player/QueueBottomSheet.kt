@@ -1,7 +1,9 @@
 package com.secondjb.prism.ui.screens.player
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,9 +18,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -28,10 +33,19 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,8 +61,11 @@ fun QueueBottomSheet(
     contextQueue: List<Track> = emptyList(),
     currentIndex: Int = -1,
     onSelectIndex: (Int) -> Unit = {},
+    onSelectUserQueueIndex: (Int) -> Unit = {},
     onRemoveUserQueueIndex: (Int) -> Unit = {},
     onRemoveIndex: (Int) -> Unit = {},
+    onReorderUserQueue: (Int, Int) -> Unit = { _, _ -> },
+    onReorderContextQueue: (Int, Int) -> Unit = { _, _ -> },
     onReshuffleUpcoming: () -> Unit = {},
     onClearQueue: () -> Unit = {},
     onDismiss: () -> Unit
@@ -246,7 +263,7 @@ fun QueueBottomSheet(
                         }
                     }
 
-                    itemsIndexed(userQueue, key = { idx, t -> "user_q_${t.id}_$idx" }) { idx, track ->
+                    itemsIndexed(userQueue, key = { idx, t -> "uq_${t.id}_${userQueue.take(idx).count { it.id == t.id }}" }) { idx, track ->
                         Surface(
                             shape = MaterialTheme.shapes.medium,
                             color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -255,36 +272,57 @@ fun QueueBottomSheet(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(8.dp),
+                                    .padding(horizontal = 4.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                AsyncImage(
-                                    model = track.artworkUri,
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .clip(RoundedCornerShape(8.dp)),
-                                    contentScale = ContentScale.Crop
+                                QueueDragHandle(
+                                    trackId = track.id,
+                                    currentIndex = idx,
+                                    maxIndex = userQueue.lastIndex,
+                                    onMoveUp = { onReorderUserQueue(idx, idx - 1) },
+                                    onMoveDown = { onReorderUserQueue(idx, idx + 1) },
+                                    onMoveToTop = { onReorderUserQueue(idx, 0) },
+                                    onMoveToBottom = { onReorderUserQueue(idx, userQueue.lastIndex) },
+                                    onReorder = onReorderUserQueue,
+                                    listProvider = { userQueue }
                                 )
 
-                                Spacer(Modifier.width(12.dp))
+                                Row(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(MaterialTheme.shapes.small)
+                                        .clickable { onSelectUserQueueIndex(idx) }
+                                        .padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AsyncImage(
+                                        model = track.artworkUri,
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(RoundedCornerShape(8.dp)),
+                                        contentScale = ContentScale.Crop
+                                    )
 
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = track.title,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = track.artist,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                                    Spacer(Modifier.width(12.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = track.title,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = track.artist,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
 
                                 IconButton(onClick = { onRemoveUserQueueIndex(idx) }) {
@@ -312,48 +350,67 @@ fun QueueBottomSheet(
                         )
                     }
 
-                    itemsIndexed(upcomingContextTracks, key = { offset, t -> "ctx_q_${t.id}_$offset" }) { offset, track ->
+                    itemsIndexed(upcomingContextTracks, key = { offset, t -> "cq_${t.id}_${upcomingContextTracks.take(offset).count { it.id == t.id }}" }) { offset, track ->
                         val targetContextIndex = currentIndex + 1 + offset
                         Surface(
                             shape = MaterialTheme.shapes.medium,
                             color = MaterialTheme.colorScheme.surface,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onSelectIndex(targetContextIndex) }
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(8.dp),
+                                    .padding(horizontal = 4.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                AsyncImage(
-                                    model = track.artworkUri,
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .clip(RoundedCornerShape(8.dp)),
-                                    contentScale = ContentScale.Crop
+                                QueueDragHandle(
+                                    trackId = track.id,
+                                    currentIndex = offset,
+                                    maxIndex = upcomingContextTracks.lastIndex,
+                                    onMoveUp = { onReorderContextQueue(offset, offset - 1) },
+                                    onMoveDown = { onReorderContextQueue(offset, offset + 1) },
+                                    onMoveToTop = { onReorderContextQueue(offset, 0) },
+                                    onMoveToBottom = { onReorderContextQueue(offset, upcomingContextTracks.lastIndex) },
+                                    onReorder = onReorderContextQueue,
+                                    listProvider = { upcomingContextTracks }
                                 )
 
-                                Spacer(Modifier.width(12.dp))
+                                Row(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(MaterialTheme.shapes.small)
+                                        .clickable { onSelectIndex(targetContextIndex) }
+                                        .padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AsyncImage(
+                                        model = track.artworkUri,
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(RoundedCornerShape(8.dp)),
+                                        contentScale = ContentScale.Crop
+                                    )
 
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = track.title,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Normal,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = track.artist,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                                    Spacer(Modifier.width(12.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = track.title,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Normal,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = track.artist,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
 
                                 IconButton(onClick = { onRemoveIndex(targetContextIndex) }) {
@@ -367,6 +424,134 @@ fun QueueBottomSheet(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QueueDragHandle(
+    trackId: String,
+    currentIndex: Int,
+    maxIndex: Int,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onMoveToTop: (() -> Unit)? = null,
+    onMoveToBottom: (() -> Unit)? = null,
+    onReorder: (Int, Int) -> Unit,
+    listProvider: () -> List<Track>,
+    modifier: Modifier = Modifier
+) {
+    var showMenu by remember { mutableStateOf(false) }
+    var isDragging by remember { mutableStateOf(false) }
+    var layoutCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+
+    Box(
+        modifier = modifier
+            .size(44.dp)
+            .onGloballyPositioned { layoutCoordinates = it }
+            .pointerInput(trackId) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        val initialCoords = layoutCoordinates ?: continue
+                        val startRootY = initialCoords.positionInRoot().y + down.position.y
+                        var lastTriggerRootY = startRootY
+                        var hasMoved = false
+                        val thresholdPx = 48.dp.toPx()
+                        down.consume()
+                        isDragging = true
+
+                        try {
+                            while (true) {
+                                val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) {
+                                    change.consume()
+                                    if (!hasMoved) {
+                                        showMenu = true
+                                    }
+                                    break
+                                }
+                                val currentCoords = layoutCoordinates ?: continue
+                                val currentRootY = currentCoords.positionInRoot().y + change.position.y
+                                val delta = currentRootY - lastTriggerRootY
+                                change.consume()
+
+                                if (Math.abs(currentRootY - startRootY) > 8.dp.toPx()) {
+                                    hasMoved = true
+                                }
+
+                                if (delta > thresholdPx) {
+                                    val list = listProvider()
+                                    val currIdx = list.indexOfFirst { it.id == trackId }
+                                    if (currIdx != -1 && currIdx < list.lastIndex) {
+                                        onReorder(currIdx, currIdx + 1)
+                                        lastTriggerRootY += thresholdPx
+                                    }
+                                } else if (delta < -thresholdPx) {
+                                    val list = listProvider()
+                                    val currIdx = list.indexOfFirst { it.id == trackId }
+                                    if (currIdx != -1 && currIdx > 0) {
+                                        onReorder(currIdx, currIdx - 1)
+                                        lastTriggerRootY -= thresholdPx
+                                    }
+                                }
+                            }
+                        } finally {
+                            isDragging = false
+                        }
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.DragHandle,
+            contentDescription = "Drag to reorder (or tap for move options)",
+            tint = if (isDragging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            modifier = Modifier.size(24.dp)
+        )
+
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = { showMenu = false }
+        ) {
+            if (currentIndex > 0) {
+                onMoveToTop?.let { moveToTop ->
+                    DropdownMenuItem(
+                        text = { Text("Move to Top") },
+                        onClick = {
+                            moveToTop()
+                            showMenu = false
+                        }
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text("Move Up") },
+                    onClick = {
+                        onMoveUp()
+                        showMenu = false
+                    }
+                )
+            }
+            if (currentIndex < maxIndex) {
+                DropdownMenuItem(
+                    text = { Text("Move Down") },
+                    onClick = {
+                        onMoveDown()
+                        showMenu = false
+                    }
+                )
+                onMoveToBottom?.let { moveToBottom ->
+                    DropdownMenuItem(
+                        text = { Text("Move to Bottom") },
+                        onClick = {
+                            moveToBottom()
+                            showMenu = false
+                        }
+                    )
                 }
             }
         }

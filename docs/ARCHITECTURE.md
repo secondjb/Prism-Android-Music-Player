@@ -19,8 +19,8 @@ Prism Android is a modern, high-fidelity music player and companion controller b
 |     │     └── [FastScrollbar.kt] Dynamic-Themed Fast Scroller with 3s Auto-Hide    |
 |     ├── [NowPlayingScreen.kt] Fullscreen Player (Fluid Art, WavySeekBar, Lyrics)   |
 |     │     ├── [SleepTimerModal.kt] M3 Timer (Icons.Outlined.Timer)                |
-|     │     ├── [DeviceSwitcherSheet.kt] Local vs Desktop Output Routing            |
-|     │     └── [QueueBottomSheet.kt] Queue Inspector & Reordering                  |
+|     │     ├── [DeviceSwitcherSheet.kt] Local vs Desktop Output Routing & Disconnect |
+|     │     └── [QueueBottomSheet.kt] Queue Inspector, Drag Handles & Reorder Menu   |
 |     ├── [FullScreenLyricsPage.kt] Syllable/Line Synced Lyrics + Romanization      |
 |     ├── [StatsScreen.kt] Listening Analytics (Time vs Plays Leaderboards)         |
 |     └── [SettingsScreen.kt] Companion Pairing, Double-Counting, Storage Clears    |

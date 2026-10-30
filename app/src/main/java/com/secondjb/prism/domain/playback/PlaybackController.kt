@@ -19,6 +19,8 @@ interface PlaybackController {
     fun playTrack(track: Track, queue: List<Track>, startIndex: Int, playlistId: String?) {
         playTrack(track, queue, startIndex)
     }
+    fun playQueueIndex(index: Int) {}
+    fun playUserQueueIndex(index: Int) {}
     fun prepareTrack(track: Track, queue: List<Track> = listOf(track), startIndex: Int = -1) {}
     fun togglePlayPause()
     fun play()
@@ -35,6 +37,8 @@ interface PlaybackController {
     fun removeFromQueue(index: Int)
     fun removeFromUserQueue(index: Int) {}
     fun reorderQueue(fromIndex: Int, toIndex: Int)
+    fun reorderUserQueue(fromIndex: Int, toIndex: Int) {}
+    fun reorderContextQueue(fromOffset: Int, toOffset: Int) {}
     fun clearQueue()
     fun addTrackToActivePlaylist(track: Track, playlistId: String) {}
 }

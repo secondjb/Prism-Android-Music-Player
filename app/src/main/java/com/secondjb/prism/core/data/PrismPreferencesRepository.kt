@@ -54,6 +54,11 @@ data class PrismPreferences(
     // Navigation & View
     val defaultStartupScreen: String = "Home",
     val librarySortOrder: String = "title_asc",
+    val songSortOption: String = "TITLE_ASC",
+    val albumSortOption: String = "TITLE_ASC",
+    val artistSortOption: String = "NAME_ASC",
+    val playlistSortOption: String = "NAME_ASC",
+    val libraryFilterChip: String = "ALL_SONGS",
     val downloadArtistImages: Boolean = true,
     val artistImagesWifiOnly: Boolean = true,
 
@@ -117,6 +122,11 @@ class PrismPreferencesRepository(context: Context) {
             repeatMode = prefs.getString(KEY_REPEAT_MODE, "OFF") ?: "OFF",
             defaultStartupScreen = prefs.getString(KEY_DEFAULT_STARTUP_SCREEN, "Home") ?: "Home",
             librarySortOrder = prefs.getString(KEY_LIBRARY_SORT_ORDER, "title_asc") ?: "title_asc",
+            songSortOption = prefs.getString(KEY_SONG_SORT_OPTION, "TITLE_ASC") ?: "TITLE_ASC",
+            albumSortOption = prefs.getString(KEY_ALBUM_SORT_OPTION, "TITLE_ASC") ?: "TITLE_ASC",
+            artistSortOption = prefs.getString(KEY_ARTIST_SORT_OPTION, "NAME_ASC") ?: "NAME_ASC",
+            playlistSortOption = prefs.getString(KEY_PLAYLIST_SORT_OPTION, "NAME_ASC") ?: "NAME_ASC",
+            libraryFilterChip = prefs.getString(KEY_LIBRARY_FILTER_CHIP, "ALL_SONGS") ?: "ALL_SONGS",
             downloadArtistImages = prefs.getBoolean(KEY_DOWNLOAD_ARTIST_IMAGES, true),
             artistImagesWifiOnly = prefs.getBoolean(KEY_ARTIST_IMAGES_WIFI_ONLY, true)
         )
@@ -150,6 +160,49 @@ class PrismPreferencesRepository(context: Context) {
     fun setLibrarySortOrder(sort: String) {
         prefs.edit().putString(KEY_LIBRARY_SORT_ORDER, sort).apply()
         _preferences.value = _preferences.value.copy(librarySortOrder = sort)
+    }
+
+    fun setSongSortOption(sort: String) {
+        prefs.edit().putString(KEY_SONG_SORT_OPTION, sort).apply()
+        _preferences.value = _preferences.value.copy(songSortOption = sort)
+    }
+
+    fun setAlbumSortOption(sort: String) {
+        prefs.edit().putString(KEY_ALBUM_SORT_OPTION, sort).apply()
+        _preferences.value = _preferences.value.copy(albumSortOption = sort)
+    }
+
+    fun setArtistSortOption(sort: String) {
+        prefs.edit().putString(KEY_ARTIST_SORT_OPTION, sort).apply()
+        _preferences.value = _preferences.value.copy(artistSortOption = sort)
+    }
+
+    fun setPlaylistSortOption(sort: String) {
+        prefs.edit().putString(KEY_PLAYLIST_SORT_OPTION, sort).apply()
+        _preferences.value = _preferences.value.copy(playlistSortOption = sort)
+    }
+
+    fun setLibraryFilterChip(chip: String) {
+        prefs.edit().putString(KEY_LIBRARY_FILTER_CHIP, chip).apply()
+        _preferences.value = _preferences.value.copy(libraryFilterChip = chip)
+    }
+
+    fun savePcTrackOrderList(order: List<String>) {
+        try {
+            val serialized = json.encodeToString(order)
+            prefs.edit().putString(KEY_PC_TRACK_ORDER, serialized).apply()
+        } catch (e: Exception) {
+            // ignore
+        }
+    }
+
+    fun getPcTrackOrderList(): List<String> {
+        val raw = prefs.getString(KEY_PC_TRACK_ORDER, null) ?: return emptyList()
+        return try {
+            json.decodeFromString<List<String>>(raw)
+        } catch (e: Exception) {
+            emptyList()
+        }
     }
 
     fun setMinDurationSeconds(seconds: Int) {
@@ -372,6 +425,12 @@ class PrismPreferencesRepository(context: Context) {
         private const val KEY_REPEAT_MODE = "key_repeat_mode"
         private const val KEY_DEFAULT_STARTUP_SCREEN = "key_default_startup_screen"
         private const val KEY_LIBRARY_SORT_ORDER = "key_library_sort_order"
+        private const val KEY_SONG_SORT_OPTION = "key_song_sort_option"
+        private const val KEY_ALBUM_SORT_OPTION = "key_album_sort_option"
+        private const val KEY_ARTIST_SORT_OPTION = "key_artist_sort_option"
+        private const val KEY_PLAYLIST_SORT_OPTION = "key_playlist_sort_option"
+        private const val KEY_LIBRARY_FILTER_CHIP = "key_library_filter_chip"
+        private const val KEY_PC_TRACK_ORDER = "key_pc_track_order"
         private const val KEY_DOWNLOAD_ARTIST_IMAGES = "key_download_artist_images"
         private const val KEY_ARTIST_IMAGES_WIFI_ONLY = "key_artist_images_wifi_only"
     }

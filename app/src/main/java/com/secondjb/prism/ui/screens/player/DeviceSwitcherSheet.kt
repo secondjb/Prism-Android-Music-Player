@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Devices
@@ -62,6 +63,7 @@ fun DeviceSwitcherSheet(
     onConnectToDevice: (DeviceNode) -> Unit = {},
     onConnectToPairedDevice: (PairedDevice) -> Unit = {},
     onDeletePairing: (PairedDevice) -> Unit = {},
+    onDisconnect: () -> Unit = {},
     onPairQrClick: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -196,6 +198,20 @@ fun DeviceSwitcherSheet(
                                     MaterialTheme.colorScheme.error
                                 }
                             )
+                        }
+
+                        if (isDesktopConnected) {
+                            IconButton(
+                                onClick = { onDisconnect() },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Disconnect from PC",
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
 
                         // Star button to designate as queue authority

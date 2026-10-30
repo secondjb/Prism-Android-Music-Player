@@ -783,6 +783,84 @@ class LocalPlaybackEngine(
         }
     }
 
+    override fun reorderUserQueue(fromIndex: Int, toIndex: Int) {
+        if (fromIndex in userQueue.indices && toIndex in userQueue.indices) {
+            val item = userQueue.removeAt(fromIndex)
+            userQueue.add(toIndex, item)
+            _playbackState.update {
+                it.copy(userQueue = userQueue.toList(), lastActionTimestampMs = System.currentTimeMillis())
+            }
+            persistQueue()
+        }
+    }
+
+    override fun reorderContextQueue(fromOffset: Int, toOffset: Int) {
+        val base = if (currentQueueIndex in contextQueue.indices) currentQueueIndex + 1 else 0
+        val fromIndex = base + fromOffset
+        val toIndex = base + toOffset
+        if (fromIndex in contextQueue.indices && toIndex in contextQueue.indices) {
+            val item = contextQueue.removeAt(fromIndex)
+            contextQueue.add(toIndex, item)
+            _playbackState.update {
+                it.copy(queue = contextQueue.toList(), lastActionTimestampMs = System.currentTimeMillis())
+            }
+            persistQueue()
+        }
+    }
+
+    override fun playQueueIndex(index: Int) {
+        if (index !in contextQueue.indices) return
+        val track = contextQueue[index]
+        val prevTrack = currentScrobbleTrack
+        val prevMs = activeListeningMs
+        commitActiveListeningEvent(prevTrack, prevMs, isCompleted = false)
+
+        currentQueueIndex = index
+        currentScrobbleTrack = track
+        activeListeningMs = 0L
+        lastPlayTickRealtime = SystemClock.elapsedRealtime()
+
+        playSingleTrack(track, playWhenReady = true)
+
+        _playbackState.update {
+            it.copy(
+                currentTrack = track,
+                queueIndex = index,
+                isPlaying = true,
+                positionMs = 0L,
+                durationMs = track.durationMs,
+                lastActionTimestampMs = System.currentTimeMillis()
+            )
+        }
+        persistQueue()
+    }
+
+    override fun playUserQueueIndex(index: Int) {
+        if (index !in userQueue.indices) return
+        val track = userQueue.removeAt(index)
+        val prevTrack = currentScrobbleTrack
+        val prevMs = activeListeningMs
+        commitActiveListeningEvent(prevTrack, prevMs, isCompleted = false)
+
+        currentScrobbleTrack = track
+        activeListeningMs = 0L
+        lastPlayTickRealtime = SystemClock.elapsedRealtime()
+
+        playSingleTrack(track, playWhenReady = true)
+
+        _playbackState.update {
+            it.copy(
+                currentTrack = track,
+                userQueue = userQueue.toList(),
+                isPlaying = true,
+                positionMs = 0L,
+                durationMs = track.durationMs,
+                lastActionTimestampMs = System.currentTimeMillis()
+            )
+        }
+        persistQueue()
+    }
+
     override fun clearQueue() {
         userQueue.clear()
         contextQueue.clear()

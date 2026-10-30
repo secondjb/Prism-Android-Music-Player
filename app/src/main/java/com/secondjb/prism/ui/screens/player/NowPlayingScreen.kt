@@ -100,8 +100,11 @@ fun NowPlayingScreen(
     onCycleRepeatMode: () -> Unit,
     onDismiss: () -> Unit,
     onSelectQueueIndex: (Int) -> Unit = {},
+    onSelectUserQueueIndex: (Int) -> Unit = {},
     onRemoveQueueIndex: (Int) -> Unit = {},
     onRemoveUserQueueIndex: (Int) -> Unit = {},
+    onReorderUserQueue: (Int, Int) -> Unit = { _, _ -> },
+    onReorderContextQueue: (Int, Int) -> Unit = { _, _ -> },
     onReshuffleUpcoming: () -> Unit = {},
     onClearQueue: () -> Unit = {},
     onPairQrClick: () -> Unit = {},
@@ -123,6 +126,7 @@ fun NowPlayingScreen(
     onConnectToDevice: (DeviceNode) -> Unit = {},
     onConnectToPairedDevice: (PairedDevice) -> Unit = {},
     onDeletePairing: (PairedDevice) -> Unit = {},
+    onDisconnect: () -> Unit = {},
     preferencesRepository: PrismPreferencesRepository? = null,
     modifier: Modifier = Modifier
 ) {
@@ -538,8 +542,14 @@ fun NowPlayingScreen(
                 onSelectQueueIndex(it)
                 showQueueSheet = false
             },
+            onSelectUserQueueIndex = {
+                onSelectUserQueueIndex(it)
+                showQueueSheet = false
+            },
             onRemoveUserQueueIndex = onRemoveUserQueueIndex,
             onRemoveIndex = onRemoveQueueIndex,
+            onReorderUserQueue = onReorderUserQueue,
+            onReorderContextQueue = onReorderContextQueue,
             onReshuffleUpcoming = onReshuffleUpcoming,
             onClearQueue = onClearQueue,
             onDismiss = { showQueueSheet = false }
@@ -563,6 +573,7 @@ fun NowPlayingScreen(
             onConnectToDevice = onConnectToDevice,
             onConnectToPairedDevice = onConnectToPairedDevice,
             onDeletePairing = onDeletePairing,
+            onDisconnect = onDisconnect,
             onPairQrClick = {
                 showDeviceSheet = false
                 onPairQrClick()

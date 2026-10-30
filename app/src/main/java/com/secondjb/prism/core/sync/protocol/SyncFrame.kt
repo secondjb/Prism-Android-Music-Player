@@ -120,6 +120,12 @@ sealed class SyncFrame {
         val n: String,
         val d: String
     ) : SyncFrame()
+
+    @Serializable
+    @SerialName("disconnect")
+    data class Disconnect(
+        val reason: String = "user_disconnect"
+    ) : SyncFrame()
 }
 
 @Serializable

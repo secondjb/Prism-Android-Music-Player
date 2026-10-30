@@ -2633,6 +2633,14 @@ private fun LibrarySortBottomSheet(
                             )
                         }
                     )
+                    SortCategoryItem(
+                        label = "Device Family Custom Order",
+                        isSelected = songSort == SongSortOption.DEVICE_FAMILY_ORDER,
+                        directionLabel = if (songSort == SongSortOption.DEVICE_FAMILY_ORDER) "PC Order (1-1000)" else null,
+                        onClick = {
+                            onSelectSongSort(SongSortOption.DEVICE_FAMILY_ORDER)
+                        }
+                    )
                 }
                 LibraryFilterChip.ALBUMS -> {
                     SortCategoryItem(

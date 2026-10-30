@@ -34,7 +34,8 @@ enum class SongSortOption(val label: String) {
     DURATION_DESC("Duration (Longest)"),
     DURATION_ASC("Duration (Shortest)"),
     YEAR_DESC("Year (Newest)"),
-    YEAR_ASC("Year (Oldest)")
+    YEAR_ASC("Year (Oldest)"),
+    DEVICE_FAMILY_ORDER("Device Family Order (PC)")
 }
 
 enum class AlbumSortOption(val label: String) {
@@ -81,6 +82,7 @@ data class LibraryUiState(
     val albumSortOption: AlbumSortOption = AlbumSortOption.TITLE_ASC,
     val artistSortOption: ArtistSortOption = ArtistSortOption.NAME_ASC,
     val playlistSortOption: PlaylistSortOption = PlaylistSortOption.NAME_ASC,
+    val pcTrackOrderList: List<String> = emptyList(),
     val pinnedIds: Set<String> = emptySet(),
     val isLoading: Boolean = false
 ) {
@@ -108,6 +110,17 @@ data class LibraryUiState(
                 SongSortOption.DURATION_ASC -> base.sortedWith(compareBy<Track> { it.durationMs }.thenBy { it.title.lowercase() })
                 SongSortOption.YEAR_DESC -> base.sortedWith(compareByDescending<Track> { it.year ?: 0 }.thenBy { it.title.lowercase() })
                 SongSortOption.YEAR_ASC -> base.sortedWith(compareBy<Track> { it.year ?: 9999 }.thenBy { it.title.lowercase() })
+                SongSortOption.DEVICE_FAMILY_ORDER -> {
+                    val pcIndexMap = HashMap<String, Int>()
+                    pcTrackOrderList.forEachIndexed { idx, identifier ->
+                        pcIndexMap[identifier.trim().lowercase()] = idx
+                    }
+                    base.sortedWith(compareBy<Track> { track ->
+                        val filename = (track.filePath ?: track.uri).substringAfterLast('/').substringAfterLast('\\').trim().lowercase()
+                        val title = track.title.trim().lowercase()
+                        pcIndexMap[filename] ?: pcIndexMap[title] ?: Int.MAX_VALUE
+                    }.thenBy { it.title.lowercase() })
+                }
             }
         }
 
@@ -191,13 +204,42 @@ class LibraryViewModel(
     private val repository: MediaStoreAudioRepository,
     private val playlistRepository: PlaylistRepository? = null,
     private val artistImageRepository: com.secondjb.prism.core.data.ArtistImageRepository? = null,
+    private val preferencesRepository: com.secondjb.prism.core.data.PrismPreferencesRepository? = null,
     initialFilterChip: LibraryFilterChip = LibraryFilterChip.ALL_SONGS
 ) : ViewModel() {
 
     var onTrackAddedToPlaylist: ((Track, String) -> Unit)? = null
     var onPlaylistsChanged: (() -> Unit)? = null
 
-    private val _uiState = MutableStateFlow(LibraryUiState(selectedChip = initialFilterChip))
+    private val _uiState = MutableStateFlow(
+        run {
+            val chip = preferencesRepository?.preferences?.value?.libraryFilterChip?.let {
+                try { LibraryFilterChip.valueOf(it) } catch (e: Exception) { initialFilterChip }
+            } ?: initialFilterChip
+            val songSort = preferencesRepository?.preferences?.value?.songSortOption?.let {
+                try { SongSortOption.valueOf(it) } catch (e: Exception) { SongSortOption.TITLE_ASC }
+            } ?: SongSortOption.TITLE_ASC
+            val albumSort = preferencesRepository?.preferences?.value?.albumSortOption?.let {
+                try { AlbumSortOption.valueOf(it) } catch (e: Exception) { AlbumSortOption.TITLE_ASC }
+            } ?: AlbumSortOption.TITLE_ASC
+            val artistSort = preferencesRepository?.preferences?.value?.artistSortOption?.let {
+                try { ArtistSortOption.valueOf(it) } catch (e: Exception) { ArtistSortOption.NAME_ASC }
+            } ?: ArtistSortOption.NAME_ASC
+            val playlistSort = preferencesRepository?.preferences?.value?.playlistSortOption?.let {
+                try { PlaylistSortOption.valueOf(it) } catch (e: Exception) { PlaylistSortOption.NAME_ASC }
+            } ?: PlaylistSortOption.NAME_ASC
+            val pcOrder = preferencesRepository?.getPcTrackOrderList() ?: emptyList()
+
+            LibraryUiState(
+                selectedChip = chip,
+                songSortOption = songSort,
+                albumSortOption = albumSort,
+                artistSortOption = artistSort,
+                playlistSortOption = playlistSort,
+                pcTrackOrderList = pcOrder
+            )
+        }
+    )
     val uiState: StateFlow<LibraryUiState> = _uiState.asStateFlow()
 
     init {
@@ -266,8 +308,14 @@ class LibraryViewModel(
         }
     }
 
+    fun refreshPcTrackOrder() {
+        val pcOrder = preferencesRepository?.getPcTrackOrderList() ?: emptyList()
+        _uiState.update { it.copy(pcTrackOrderList = pcOrder) }
+    }
+
     fun setFilterChip(chip: LibraryFilterChip) {
         _uiState.update { it.copy(selectedChip = chip, activePlaylist = null) }
+        preferencesRepository?.setLibraryFilterChip(chip.name)
         if (chip == LibraryFilterChip.ARTISTS) {
             resolveArtistImagesIfNeeded()
         }
@@ -315,18 +363,22 @@ class LibraryViewModel(
 
     fun setSongSort(sort: SongSortOption) {
         _uiState.update { it.copy(songSortOption = sort) }
+        preferencesRepository?.setSongSortOption(sort.name)
     }
 
     fun setAlbumSort(sort: AlbumSortOption) {
         _uiState.update { it.copy(albumSortOption = sort) }
+        preferencesRepository?.setAlbumSortOption(sort.name)
     }
 
     fun setArtistSort(sort: ArtistSortOption) {
         _uiState.update { it.copy(artistSortOption = sort) }
+        preferencesRepository?.setArtistSortOption(sort.name)
     }
 
     fun setPlaylistSort(sort: PlaylistSortOption) {
         _uiState.update { it.copy(playlistSortOption = sort) }
+        preferencesRepository?.setPlaylistSortOption(sort.name)
     }
 
     fun togglePin(id: String) {

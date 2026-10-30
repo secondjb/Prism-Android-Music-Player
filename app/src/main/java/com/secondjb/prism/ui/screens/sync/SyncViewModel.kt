@@ -166,6 +166,9 @@ class SyncViewModel(
         }
     }
 
+    var isManuallyDisconnected: Boolean = false
+        private set
+
     private fun startAutoReconnectLoop() {
         autoReconnectJob?.cancel()
         autoReconnectJob = viewModelScope.launch(Dispatchers.IO) {
@@ -173,7 +176,7 @@ class SyncViewModel(
                 delay(3500L)
                 val currentConn = connectionState.value
                 val isBusy = isConnectingOrResolving || currentConn is TransportConnectionState.Connected || currentConn is TransportConnectionState.Connecting
-                if (!isBusy) {
+                if (!isBusy && !isManuallyDisconnected) {
                     val devices = preferencesRepository?.pairedDevices?.value ?: emptyList()
                     if (devices.isNotEmpty()) {
                         val mostRecent = devices.maxByOrNull { it.lastConnectedTimeMs } ?: devices.first()
@@ -183,7 +186,7 @@ class SyncViewModel(
                                 mostRecent.copy(host = updatedIp, lastConnectedTimeMs = System.currentTimeMillis())
                             )
                         }
-                        if (liveEndpoint != null && isActive && connectionState.value !is TransportConnectionState.Connected && connectionState.value !is TransportConnectionState.Connecting) {
+                        if (liveEndpoint != null && isActive && !isManuallyDisconnected && connectionState.value !is TransportConnectionState.Connected && connectionState.value !is TransportConnectionState.Connecting) {
                             Log.i("PrismSync", "Auto-reconnecting to ${mostRecent.name} at ${liveEndpoint.host}:${liveEndpoint.port}")
                             _connectedEndpoint.value = liveEndpoint
                             _connectedServerName.value = mostRecent.name
@@ -198,7 +201,7 @@ class SyncViewModel(
 
     private fun autoConnectRecentPairedDevice() {
         val currentConn = connectionState.value
-        if (isConnectingOrResolving || currentConn is TransportConnectionState.Connected || currentConn is TransportConnectionState.Connecting) {
+        if (isConnectingOrResolving || isManuallyDisconnected || currentConn is TransportConnectionState.Connected || currentConn is TransportConnectionState.Connecting) {
             return
         }
         viewModelScope.launch {
@@ -282,6 +285,10 @@ class SyncViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             transport.incomingFrames.collect { frame ->
                 when (frame) {
+                    is SyncFrame.Disconnect -> {
+                        Log.i("PrismSync", "Received disconnect frame from server: ${frame.reason}")
+                        disconnect()
+                    }
                     is SyncFrame.StateSync -> {
                         val incoming = frame.playbackState
                         val reconciled = reconcilePlaybackState(incoming)
@@ -532,6 +539,7 @@ class SyncViewModel(
     fun pairWithQrCode(rawCode: String, onConnected: () -> Unit = {}) {
         val result = QrPairingParser.parse(rawCode)
         result.onSuccess { pairing ->
+            isManuallyDisconnected = false
             _lastPairingError.value = null
             _connectedEndpoint.value = pairing.endpoint
             lastPairingToken = pairing.endpoint.authToken ?: ""
@@ -546,11 +554,30 @@ class SyncViewModel(
         }
     }
 
+    fun disconnect() {
+        isManuallyDisconnected = true
+        connectJob?.cancel()
+        viewModelScope.launch {
+            try {
+                transport.disconnect()
+            } catch (e: Exception) {
+                Log.w("PrismSync", "Error disconnecting: ${e.message}")
+            }
+        }
+        _connectedEndpoint.value = null
+        _connectedServerName.value = null
+        _isDesktopOutputEnabled.value = false
+        _isLocalOutputEnabled.value = true
+        _activeDeviceId.value = "local"
+        _remotePlaybackState.value = null
+    }
+
     fun connectToPairedDevice(device: PairedDevice) {
         val currentConn = connectionState.value
         if (isConnectingOrResolving || currentConn is TransportConnectionState.Connected || currentConn is TransportConnectionState.Connecting) {
             return
         }
+        isManuallyDisconnected = false
         connectJob?.cancel()
         connectJob = viewModelScope.launch {
             isConnectingOrResolving = true
@@ -578,16 +605,11 @@ class SyncViewModel(
 
     fun deletePairing(device: PairedDevice) {
         preferencesRepository?.removePairedDevice(device.id)
-        if (_connectedEndpoint.value?.host == device.host && _connectedEndpoint.value?.port == device.port) {
-            viewModelScope.launch {
-                transport.disconnect()
-            }
-            _isDesktopOutputEnabled.value = false
-            _isLocalOutputEnabled.value = true
-        }
+        disconnect()
     }
 
     fun connectToDevice(device: DeviceNode) {
+        isManuallyDisconnected = false
         val endpoint = ConnectionEndpoint(host = device.ipAddress, port = device.port)
         _connectedEndpoint.value = endpoint
         _connectedServerName.value = device.name
@@ -771,6 +793,10 @@ class SyncViewModel(
     }
 
     private fun handleManifestResponse(remoteTracks: List<ManifestTrackEntry>) {
+        if (remoteTracks.isNotEmpty()) {
+            val orderList = remoteTracks.map { it.filename.ifBlank { it.title } }
+            preferencesRepository?.savePcTrackOrderList(orderList)
+        }
         val normalize = { s: String? -> (s ?: "").trim().lowercase() }
         val localList = cachedLocalTracks
 
