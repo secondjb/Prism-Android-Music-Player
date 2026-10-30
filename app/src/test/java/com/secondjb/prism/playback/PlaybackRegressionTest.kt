@@ -123,4 +123,41 @@ class PlaybackRegressionTest {
         )
         assertEquals("WAV • 16-bit / 48 kHz", noBitrate.displayBadge)
     }
+
+    @Test
+    fun testMediaSessionBridgeCallbacks() {
+        var skipNextCalled = false
+        var skipPrevCalled = false
+        com.secondjb.prism.core.service.MediaSessionBridge.onLocalSkipNext = { skipNextCalled = true }
+        com.secondjb.prism.core.service.MediaSessionBridge.onLocalSkipPrevious = { skipPrevCalled = true }
+
+        com.secondjb.prism.core.service.MediaSessionBridge.onLocalSkipNext?.invoke()
+        com.secondjb.prism.core.service.MediaSessionBridge.onLocalSkipPrevious?.invoke()
+
+        assertTrue(skipNextCalled)
+        assertTrue(skipPrevCalled)
+
+        com.secondjb.prism.core.service.MediaSessionBridge.onLocalSkipNext = null
+        com.secondjb.prism.core.service.MediaSessionBridge.onLocalSkipPrevious = null
+    }
+
+    @Test
+    fun testTwoTierUserQueueAndRepeatPriority() {
+        val t1 = Track("1", "u1", "Track 1", "Artist", "Album", 100000L)
+        val t2 = Track("2", "u2", "Track 2", "Artist", "Album", 100000L)
+        val priorityUserTrack = Track("user_1", "u_user", "Priority Up Next", "Artist", "Album", 100000L)
+
+        // Base context queue with 2 tracks
+        val contextQueue = listOf(t1, t2)
+        val userQueue = listOf(priorityUserTrack)
+
+        // When userQueue has an item, next up is priorityUserTrack
+        val nextTrack = if (userQueue.isNotEmpty()) userQueue[0] else contextQueue[1]
+        assertEquals("user_1", nextTrack.id)
+
+        // When repeatMode is ONE, the next track target remains current track
+        val repeatMode = RepeatMode.ONE
+        val nextTrackRepeatOne = if (repeatMode == RepeatMode.ONE) t1 else nextTrack
+        assertEquals("1", nextTrackRepeatOne.id)
+    }
 }

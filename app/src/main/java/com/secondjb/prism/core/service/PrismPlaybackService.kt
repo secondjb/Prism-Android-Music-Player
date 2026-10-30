@@ -1,8 +1,12 @@
 package com.secondjb.prism.core.service
 
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
+import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -36,6 +40,8 @@ object MediaSessionBridge {
     var onRemoteSkipNext: (() -> Unit)? = null
     var onRemoteSkipPrevious: (() -> Unit)? = null
     var onRemoteSeek: ((Long) -> Unit)? = null
+    var onLocalSkipNext: (() -> Unit)? = null
+    var onLocalSkipPrevious: (() -> Unit)? = null
     var onStateChanged: (() -> Unit)? = null
 }
 
@@ -49,6 +55,9 @@ class PrismPlaybackService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
     private var exoPlayer: ExoPlayer? = null
+    private var audioManager: AudioManager? = null
+    private var focusRequest: android.media.AudioFocusRequest? = null
+    private var focusListener: AudioManager.OnAudioFocusChangeListener? = null
 
     @OptIn(UnstableApi::class)
     override fun onCreate() {
@@ -59,13 +68,64 @@ class PrismPlaybackService : MediaSessionService() {
             .setUsage(C.USAGE_MEDIA)
             .build()
 
+        // Do not let default ExoPlayer audio focus drop/duck volume on screen turn on / lock sounds
         val player = ExoPlayer.Builder(this)
-            .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
+            .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ false)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
 
         exoPlayer = player
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+
+        val listener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+            when (focusChange) {
+                AudioManager.AUDIOFOCUS_LOSS -> {
+                    player.pause()
+                }
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                    player.pause()
+                }
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                    // DO NOT DUCK: Maintain 100% volume across screen wake, unlock, and key click sounds
+                }
+                AudioManager.AUDIOFOCUS_GAIN -> {
+                    if (player.playWhenReady) {
+                        player.play()
+                    }
+                }
+            }
+        }
+        focusListener = listener
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val playbackAttributes = android.media.AudioAttributes.Builder()
+                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build()
+            focusRequest = android.media.AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(playbackAttributes)
+                .setAcceptsDelayedFocusGain(false)
+                .setOnAudioFocusChangeListener(listener)
+                .build()
+        }
+
+        player.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        focusRequest?.let { audioManager?.requestAudioFocus(it) }
+                    } else {
+                        @Suppress("DEPRECATION")
+                        audioManager?.requestAudioFocus(
+                            listener,
+                            AudioManager.STREAM_MUSIC,
+                            AudioManager.AUDIOFOCUS_GAIN
+                        )
+                    }
+                }
+            }
+        })
 
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -79,31 +139,30 @@ class PrismPlaybackService : MediaSessionService() {
 
         val forwardingPlayer = object : ForwardingPlayer(player) {
             override fun getAvailableCommands(): Player.Commands {
-                val commands = super.getAvailableCommands().buildUpon()
-                if (MediaSessionBridge.isRemoteActive) {
-                    commands.add(Player.COMMAND_SEEK_TO_NEXT)
-                    commands.add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
-                    commands.add(Player.COMMAND_SEEK_TO_PREVIOUS)
-                    commands.add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
-                    commands.add(Player.COMMAND_PLAY_PAUSE)
-                    commands.add(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
-                }
-                return commands.build()
+                return super.getAvailableCommands().buildUpon()
+                    .add(Player.COMMAND_SEEK_TO_NEXT)
+                    .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                    .add(Player.COMMAND_SEEK_TO_PREVIOUS)
+                    .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                    .add(Player.COMMAND_PLAY_PAUSE)
+                    .add(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
+                    .build()
             }
 
             override fun isCommandAvailable(command: Int): Boolean {
-                if (MediaSessionBridge.isRemoteActive) {
-                    when (command) {
-                        Player.COMMAND_SEEK_TO_NEXT,
-                        Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
-                        Player.COMMAND_SEEK_TO_PREVIOUS,
-                        Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
-                        Player.COMMAND_PLAY_PAUSE,
-                        Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM -> return true
-                    }
+                when (command) {
+                    Player.COMMAND_SEEK_TO_NEXT,
+                    Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+                    Player.COMMAND_SEEK_TO_PREVIOUS,
+                    Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
+                    Player.COMMAND_PLAY_PAUSE,
+                    Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM -> return true
                 }
                 return super.isCommandAvailable(command)
             }
+
+            override fun hasNextMediaItem(): Boolean = true
+            override fun hasPreviousMediaItem(): Boolean = true
 
             override fun isPlaying(): Boolean {
                 return if (MediaSessionBridge.isRemoteActive) MediaSessionBridge.isRemotePlaying else super.isPlaying()
@@ -149,32 +208,24 @@ class PrismPlaybackService : MediaSessionService() {
                 if (MediaSessionBridge.isRemoteActive) {
                     MediaSessionBridge.onRemoteSkipNext?.invoke()
                 } else {
-                    super.seekToNext()
+                    MediaSessionBridge.onLocalSkipNext?.invoke() ?: super.seekToNext()
                 }
             }
 
             override fun seekToNextMediaItem() {
-                if (MediaSessionBridge.isRemoteActive) {
-                    MediaSessionBridge.onRemoteSkipNext?.invoke()
-                } else {
-                    super.seekToNextMediaItem()
-                }
+                seekToNext()
             }
 
             override fun seekToPrevious() {
                 if (MediaSessionBridge.isRemoteActive) {
                     MediaSessionBridge.onRemoteSkipPrevious?.invoke()
                 } else {
-                    super.seekToPrevious()
+                    MediaSessionBridge.onLocalSkipPrevious?.invoke() ?: super.seekToPrevious()
                 }
             }
 
             override fun seekToPreviousMediaItem() {
-                if (MediaSessionBridge.isRemoteActive) {
-                    MediaSessionBridge.onRemoteSkipPrevious?.invoke()
-                } else {
-                    super.seekToPreviousMediaItem()
-                }
+                seekToPrevious()
             }
 
             override fun seekTo(positionMs: Long) {
@@ -197,7 +248,7 @@ class PrismPlaybackService : MediaSessionService() {
         val sessionCallback = object : MediaSession.Callback {
             override fun onConnect(
                 session: MediaSession,
-                controller: MediaSession.ControllerInfo
+                controllerInfo: MediaSession.ControllerInfo
             ): MediaSession.ConnectionResult {
                 val sessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
                 val desktopCommand = SessionCommand("OUTPUT_ROUTED_TO_DESKTOP", Bundle.EMPTY)
@@ -205,6 +256,77 @@ class PrismPlaybackService : MediaSessionService() {
                 return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                     .setAvailableSessionCommands(sessionCommands.build())
                     .build()
+            }
+
+            override fun onPlayerCommandRequest(
+                session: MediaSession,
+                controllerInfo: MediaSession.ControllerInfo,
+                playerCommand: Int
+            ): Int {
+                if (controllerInfo.packageName == applicationContext.packageName) {
+                    return super.onPlayerCommandRequest(session, controllerInfo, playerCommand)
+                }
+
+                when (playerCommand) {
+                    Player.COMMAND_SEEK_TO_NEXT,
+                    Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> {
+                        if (MediaSessionBridge.isRemoteActive) {
+                            MediaSessionBridge.onRemoteSkipNext?.invoke()
+                        } else {
+                            MediaSessionBridge.onLocalSkipNext?.invoke()
+                        }
+                        return SessionResult.RESULT_SUCCESS
+                    }
+                    Player.COMMAND_SEEK_TO_PREVIOUS,
+                    Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> {
+                        if (MediaSessionBridge.isRemoteActive) {
+                            MediaSessionBridge.onRemoteSkipPrevious?.invoke()
+                        } else {
+                            MediaSessionBridge.onLocalSkipPrevious?.invoke()
+                        }
+                        return SessionResult.RESULT_SUCCESS
+                    }
+                }
+                return super.onPlayerCommandRequest(session, controllerInfo, playerCommand)
+            }
+
+            override fun onMediaButtonEvent(
+                session: MediaSession,
+                controllerInfo: MediaSession.ControllerInfo,
+                intent: Intent
+            ): Boolean {
+                if (controllerInfo.packageName == applicationContext.packageName) {
+                    return super.onMediaButtonEvent(session, controllerInfo, intent)
+                }
+                val keyEvent: KeyEvent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+                }
+                if (keyEvent != null && keyEvent.action == KeyEvent.ACTION_DOWN) {
+                    when (keyEvent.keyCode) {
+                        KeyEvent.KEYCODE_MEDIA_NEXT,
+                        KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                            if (MediaSessionBridge.isRemoteActive) {
+                                MediaSessionBridge.onRemoteSkipNext?.invoke()
+                            } else {
+                                MediaSessionBridge.onLocalSkipNext?.invoke()
+                            }
+                            return true
+                        }
+                        KeyEvent.KEYCODE_MEDIA_PREVIOUS,
+                        KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                            if (MediaSessionBridge.isRemoteActive) {
+                                MediaSessionBridge.onRemoteSkipPrevious?.invoke()
+                            } else {
+                                MediaSessionBridge.onLocalSkipPrevious?.invoke()
+                            }
+                            return true
+                        }
+                    }
+                }
+                return super.onMediaButtonEvent(session, controllerInfo, intent)
             }
 
             override fun onCustomCommand(
@@ -253,6 +375,16 @@ class PrismPlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         MediaSessionBridge.onStateChanged = null
+        MediaSessionBridge.onLocalSkipNext = null
+        MediaSessionBridge.onLocalSkipPrevious = null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            focusRequest?.let { audioManager?.abandonAudioFocusRequest(it) }
+        } else {
+            focusListener?.let {
+                @Suppress("DEPRECATION")
+                audioManager?.abandonAudioFocus(it)
+            }
+        }
         mediaSession?.run {
             player.release()
             release()

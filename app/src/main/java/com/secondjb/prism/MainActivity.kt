@@ -198,7 +198,7 @@ class MainActivity : ComponentActivity() {
 
 			val isRemoteOnlyActive = isDesktopConnected && isDesktopOutputEnabled && !isLocalOutputEnabled
 			val shouldShowRemoteInNotification = isDesktopConnected && isDesktopOutputEnabled && (
-				!isLocalOutputEnabled || remotePlaybackState?.isPlaying == true || !localPlaybackState.isPlaying
+				!isLocalOutputEnabled || (remotePlaybackState?.isPlaying == true && !localPlaybackState.isPlaying && localPlaybackState.currentTrack == null)
 			)
 
 			LaunchedEffect(isDesktopConnected) {
@@ -283,6 +283,11 @@ class MainActivity : ComponentActivity() {
 				val remote = remotePlaybackState ?: return@LaunchedEffect
 				val remoteTrack = remote.currentTrack ?: return@LaunchedEffect
 				val localState = playbackEngine.playbackState.value
+
+				val phoneJustActed = (System.currentTimeMillis() - localState.lastActionTimestampMs) < 2500L
+				if (phoneJustActed && localState.currentTrack != null) {
+					return@LaunchedEffect
+				}
 
 				val isSameTrack = localState.currentTrack != null && (
 					localState.currentTrack?.title.equals(remoteTrack.title, ignoreCase = true) ||

@@ -126,6 +126,17 @@ class LocalPlaybackEngine(
     }
 
     private fun initializeController() {
+        com.secondjb.prism.core.service.MediaSessionBridge.onLocalSkipNext = {
+            scope.launch(Dispatchers.Main) {
+                skipNext()
+            }
+        }
+        com.secondjb.prism.core.service.MediaSessionBridge.onLocalSkipPrevious = {
+            scope.launch(Dispatchers.Main) {
+                skipPrevious()
+            }
+        }
+
         val sessionToken = SessionToken(
             context,
             ComponentName(context, PrismPlaybackService::class.java)
@@ -175,13 +186,21 @@ class LocalPlaybackEngine(
                 val duration = controller.duration.coerceAtLeast(0L)
                 _playbackState.update { it.copy(durationMs = duration) }
                 if (playbackStateInt == Player.STATE_ENDED) {
-                    advanceNextTrack(isUserInitiated = false)
+                    val prevTrack = currentScrobbleTrack
+                    val prevMs = activeListeningMs
+                    commitActiveListeningEvent(prevTrack, prevMs, isCompleted = true)
+                    _playbackState.update {
+                        it.copy(isPlaying = false, positionMs = 0L, lastActionTimestampMs = System.currentTimeMillis())
+                    }
+                    controller.pause()
+                    stopPositionTicker()
+                    persistQueue()
                 }
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
-                    advanceNextTrack(isUserInitiated = false)
+                    handleAutoTrackTransition(controller)
                 }
             }
 
@@ -352,16 +371,73 @@ class LocalPlaybackEngine(
     }
 
     private fun peekNextTrack(): Track? {
+        if (_playbackState.value.repeatMode == RepeatMode.ONE) {
+            return _playbackState.value.currentTrack
+        }
         if (userQueue.isNotEmpty()) return userQueue[0]
         if (contextQueue.isEmpty()) return null
-        val effectiveRepeat = if (_playbackState.value.repeatMode == RepeatMode.ONE) RepeatMode.ALL else _playbackState.value.repeatMode
         val nextIdx = currentQueueIndex + 1
         return if (nextIdx < contextQueue.size) {
             contextQueue[nextIdx]
-        } else if (effectiveRepeat == RepeatMode.ALL) {
+        } else if (_playbackState.value.repeatMode == RepeatMode.ALL) {
             contextQueue[0]
         } else {
             null
+        }
+    }
+
+    private fun handleAutoTrackTransition(controller: MediaController) {
+        val prevTrack = currentScrobbleTrack
+        val prevMs = activeListeningMs
+        commitActiveListeningEvent(prevTrack, prevMs, isCompleted = true)
+
+        val nextTrack: Track?
+        if (userQueue.isNotEmpty()) {
+            val userTrack = userQueue.removeAt(0)
+            customQueueIds.remove(userTrack.id)
+            nextTrack = userTrack
+        } else if (_playbackState.value.repeatMode == RepeatMode.ONE) {
+            nextTrack = _playbackState.value.currentTrack
+        } else if (contextQueue.isNotEmpty()) {
+            val nextIdx = currentQueueIndex + 1
+            if (nextIdx < contextQueue.size) {
+                currentQueueIndex = nextIdx
+                nextTrack = contextQueue[nextIdx]
+            } else if (_playbackState.value.repeatMode == RepeatMode.ALL) {
+                currentQueueIndex = 0
+                nextTrack = contextQueue[0]
+            } else {
+                nextTrack = null
+            }
+        } else {
+            nextTrack = null
+        }
+
+        if (nextTrack != null) {
+            currentScrobbleTrack = nextTrack
+            activeListeningMs = 0L
+            lastPlayTickRealtime = if (controller.isPlaying) SystemClock.elapsedRealtime() else 0L
+
+            if (controller.mediaItemCount > 1) {
+                controller.removeMediaItem(0)
+            }
+            val upcoming = peekNextTrack()
+            if (upcoming != null) {
+                controller.addMediaItem(upcoming.toMediaItem())
+            }
+
+            _playbackState.update {
+                it.copy(
+                    currentTrack = nextTrack,
+                    queueIndex = currentQueueIndex,
+                    userQueue = userQueue.toList(),
+                    isPlaying = controller.isPlaying,
+                    positionMs = controller.currentPosition.coerceAtLeast(0L),
+                    durationMs = if (controller.duration > 0) controller.duration else nextTrack.durationMs,
+                    lastActionTimestampMs = System.currentTimeMillis()
+                )
+            }
+            persistQueue()
         }
     }
 
@@ -563,6 +639,13 @@ class LocalPlaybackEngine(
         controller.repeatMode = exoMode
         _playbackState.update { it.copy(repeatMode = mode, lastActionTimestampMs = System.currentTimeMillis()) }
         preferencesRepository?.setRepeatMode(mode.name)
+        val upcoming = peekNextTrack()
+        if (upcoming != null) {
+            if (controller.mediaItemCount > 1) {
+                controller.removeMediaItem(1)
+            }
+            controller.addMediaItem(upcoming.toMediaItem())
+        }
         persistQueue()
     }
 
@@ -645,6 +728,15 @@ class LocalPlaybackEngine(
     override fun playNext(track: Track) {
         userQueue.add(0, track)
         customQueueIds.add(track.id)
+        mediaController?.let { ctrl ->
+            val upcoming = peekNextTrack()
+            if (upcoming != null) {
+                if (ctrl.mediaItemCount > 1) {
+                    ctrl.removeMediaItem(1)
+                }
+                ctrl.addMediaItem(upcoming.toMediaItem())
+            }
+        }
         _playbackState.update {
             it.copy(userQueue = userQueue.toList(), lastActionTimestampMs = System.currentTimeMillis())
         }
@@ -798,6 +890,8 @@ class LocalPlaybackEngine(
     }
 
     fun release() {
+        com.secondjb.prism.core.service.MediaSessionBridge.onLocalSkipNext = null
+        com.secondjb.prism.core.service.MediaSessionBridge.onLocalSkipPrevious = null
         val prevTrack = currentScrobbleTrack
         val prevMs = activeListeningMs
         commitActiveListeningEvent(prevTrack, prevMs, isCompleted = false)
