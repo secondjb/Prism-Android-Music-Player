@@ -82,6 +82,27 @@ private data class QueueEntry(
     val track: Track
 )
 
+private var nextQueueEntryId = 1L
+private fun generateEntryId(prefix: String, trackId: String): String =
+    "${prefix}_${trackId}_${nextQueueEntryId++}"
+
+private fun reconcileQueueEntries(
+    currentEntries: List<QueueEntry>,
+    newTracks: List<Track>,
+    prefix: String
+): List<QueueEntry> {
+    val remainingPool = currentEntries.toMutableList()
+    return newTracks.map { track ->
+        val existingIdx = remainingPool.indexOfFirst { it.track.id == track.id }
+        if (existingIdx != -1) {
+            val existing = remainingPool.removeAt(existingIdx)
+            existing.copy(track = track)
+        } else {
+            QueueEntry(generateEntryId(prefix, track.id), track)
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QueueBottomSheet(
@@ -111,20 +132,16 @@ fun QueueBottomSheet(
     val totalUpcoming = userQueue.size + upcomingContextTracks.size
     val userQueueTotalSecs = userQueue.sumOf { it.durationMs } / 1000L
 
+    var activeSwipingKey by remember { mutableStateOf<String?>(null) }
+
     var localUserQueue by remember {
-        val countMap = mutableMapOf<String, Int>()
         mutableStateOf(userQueue.map { track ->
-            val c = countMap.getOrDefault(track.id, 0)
-            countMap[track.id] = c + 1
-            QueueEntry("uq_${track.id}_$c", track)
+            QueueEntry(generateEntryId("uq", track.id), track)
         })
     }
     var localContextTracks by remember {
-        val countMap = mutableMapOf<String, Int>()
         mutableStateOf(upcomingContextTracks.map { track ->
-            val c = countMap.getOrDefault(track.id, 0)
-            countMap[track.id] = c + 1
-            QueueEntry("cq_${track.id}_$c", track)
+            QueueEntry(generateEntryId("cq", track.id), track)
         })
     }
 
@@ -154,29 +171,19 @@ fun QueueBottomSheet(
         }
     }
 
-    // Only sync from upstream props when user is NOT actively dragging items!
-    LaunchedEffect(userQueue) {
-        if (!reorderableState.isAnyItemDragging) {
+    // Only sync from upstream props when user is NOT actively dragging or swiping items!
+    LaunchedEffect(userQueue, activeSwipingKey) {
+        if (!reorderableState.isAnyItemDragging && activeSwipingKey == null) {
             if (localUserQueue.map { it.track.id } != userQueue.map { it.id }) {
-                val countMap = mutableMapOf<String, Int>()
-                localUserQueue = userQueue.map { track ->
-                    val c = countMap.getOrDefault(track.id, 0)
-                    countMap[track.id] = c + 1
-                    QueueEntry("uq_${track.id}_$c", track)
-                }
+                localUserQueue = reconcileQueueEntries(localUserQueue, userQueue, "uq")
             }
         }
     }
 
-    LaunchedEffect(upcomingContextTracks) {
-        if (!reorderableState.isAnyItemDragging) {
+    LaunchedEffect(upcomingContextTracks, activeSwipingKey) {
+        if (!reorderableState.isAnyItemDragging && activeSwipingKey == null) {
             if (localContextTracks.map { it.track.id } != upcomingContextTracks.map { it.id }) {
-                val countMap = mutableMapOf<String, Int>()
-                localContextTracks = upcomingContextTracks.map { track ->
-                    val c = countMap.getOrDefault(track.id, 0)
-                    countMap[track.id] = c + 1
-                    QueueEntry("cq_${track.id}_$c", track)
-                }
+                localContextTracks = reconcileQueueEntries(localContextTracks, upcomingContextTracks, "cq")
             }
         }
     }
@@ -383,6 +390,8 @@ fun QueueBottomSheet(
                             onDismissStartToEnd = {
                                 onPlayNext(entry.track)
                             },
+                            onSwipeStart = { activeSwipingKey = entry.stableId },
+                            onSwipeEnd = { if (activeSwipingKey == entry.stableId) activeSwipingKey = null },
                             onPlayNext = { onPlayNext(entry.track) },
                             onAddToQueue = { onAddToQueue(entry.track) },
                             onMoveUp = { onReorderUserQueue(idx, idx - 1) },
@@ -425,6 +434,8 @@ fun QueueBottomSheet(
                             onDismissStartToEnd = {
                                 onAddToQueue(entry.track)
                             },
+                            onSwipeStart = { activeSwipingKey = entry.stableId },
+                            onSwipeEnd = { if (activeSwipingKey == entry.stableId) activeSwipingKey = null },
                             onPlayNext = { onPlayNext(entry.track) },
                             onAddToQueue = { onAddToQueue(entry.track) },
                             onMoveUp = { onReorderContextQueue(offset, offset - 1) },
@@ -450,6 +461,8 @@ private fun LazyItemScope.QueueTrackRow(
     onClick: () -> Unit,
     onDismissEndToStart: () -> Unit,
     onDismissStartToEnd: () -> Unit,
+    onSwipeStart: () -> Unit,
+    onSwipeEnd: () -> Unit,
     onPlayNext: () -> Unit,
     onAddToQueue: () -> Unit,
     onMoveUp: () -> Unit,
@@ -463,6 +476,13 @@ private fun LazyItemScope.QueueTrackRow(
     val coroutineScope = rememberCoroutineScope()
     val density = LocalDensity.current
     var isDismissed by remember { mutableStateOf(false) }
+    var isOperating by remember { mutableStateOf(false) }
+
+    LaunchedEffect(entry.stableId) {
+        offsetX.snapTo(0f)
+        isDismissed = false
+        isOperating = false
+    }
 
     AnimatedVisibility(
         visible = !isDismissed,
@@ -530,46 +550,74 @@ private fun LazyItemScope.QueueTrackRow(
                         .offset { IntOffset(offsetX.value.roundToInt(), 0) }
                         .pointerInput(entry.stableId) {
                             detectHorizontalDragGestures(
+                                onDragStart = {
+                                    if (!isOperating) {
+                                        onSwipeStart()
+                                    }
+                                },
                                 onDragEnd = {
+                                    if (isOperating) return@detectHorizontalDragGestures
                                     val finalOffset = offsetX.value
                                     if (finalOffset >= thresholdPx) {
                                         // Swipe Right -> Add to custom queue & smoothly spring back
+                                        isOperating = true
                                         onDismissStartToEnd()
                                         coroutineScope.launch {
-                                            offsetX.animateTo(
-                                                0f,
-                                                spring(
-                                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                    stiffness = Spring.StiffnessMediumLow
+                                            try {
+                                                offsetX.animateTo(
+                                                    0f,
+                                                    spring(
+                                                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                        stiffness = Spring.StiffnessMediumLow
+                                                    )
                                                 )
-                                            )
+                                            } finally {
+                                                isOperating = false
+                                                onSwipeEnd()
+                                            }
                                         }
                                     } else if (finalOffset <= -thresholdPx) {
                                         // Swipe Left -> Animate offscreen & delete item
+                                        isOperating = true
                                         coroutineScope.launch {
-                                            offsetX.animateTo(-size.width.toFloat(), tween(160))
-                                            isDismissed = true
-                                            onDismissEndToStart()
+                                            try {
+                                                offsetX.animateTo(-size.width.toFloat(), tween(160))
+                                                isDismissed = true
+                                                onDismissEndToStart()
+                                            } finally {
+                                                onSwipeEnd()
+                                            }
                                         }
                                     } else {
                                         // Incomplete swipe -> snap back
                                         coroutineScope.launch {
-                                            offsetX.animateTo(
-                                                0f,
-                                                spring(
-                                                    dampingRatio = Spring.DampingRatioNoBouncy,
-                                                    stiffness = Spring.StiffnessMediumLow
+                                            try {
+                                                offsetX.animateTo(
+                                                    0f,
+                                                    spring(
+                                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                                        stiffness = Spring.StiffnessMediumLow
+                                                    )
                                                 )
-                                            )
+                                            } finally {
+                                                onSwipeEnd()
+                                            }
                                         }
                                     }
                                 },
                                 onDragCancel = {
-                                    coroutineScope.launch {
-                                        offsetX.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
+                                    if (!isOperating) {
+                                        coroutineScope.launch {
+                                            try {
+                                                offsetX.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
+                                            } finally {
+                                                onSwipeEnd()
+                                            }
+                                        }
                                     }
                                 },
                                 onHorizontalDrag = { change, dragAmount ->
+                                    if (isOperating) return@detectHorizontalDragGestures
                                     change.consume()
                                     val newOffset = offsetX.value + dragAmount
                                     // Rubber-band dampening past maxRightPx so card never flies offscreen to the right
