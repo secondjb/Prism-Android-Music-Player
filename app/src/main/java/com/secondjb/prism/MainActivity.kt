@@ -110,6 +110,9 @@ class MainActivity : ComponentActivity() {
 			val playlistRepository = remember { PlaylistRepository(context) }
 			val statsRepository = remember { com.secondjb.prism.core.stats.ListeningStatsRepository(context) }
 			val playbackEngine = remember { LocalPlaybackEngine(context, statsRepository, preferencesRepository) }
+			val audioOutputHelper = remember { com.secondjb.prism.core.util.AudioOutputDeviceHelper(context) }
+			val isBluetoothConnected by audioOutputHelper.isBluetoothConnected.collectAsState()
+			val bluetoothDeviceName by audioOutputHelper.bluetoothDeviceName.collectAsState()
 			val sleepTimerManager = remember { com.secondjb.prism.core.playback.SleepTimerManager(playbackEngine) }
 			val sleepTimerState by sleepTimerManager.timerState.collectAsState()
 			val discoveryManager = remember { NsdDiscoveryManager(context) }
@@ -666,6 +669,8 @@ class MainActivity : ComponentActivity() {
 							syncViewModel.refreshLocalTracks()
 						},
 						isRemoteActive = isRemoteOnlyActive,
+						isBluetoothActive = isBluetoothConnected && !isRemoteOnlyActive,
+						bluetoothDeviceName = bluetoothDeviceName,
 						remoteDeviceName = connectedServerName?.ifBlank { "Prism Desktop" } ?: "Prism Desktop",
 						connectedDeviceName = connectedServerName,
 						isDesktopConnected = isDesktopConnected,
@@ -844,6 +849,8 @@ class MainActivity : ComponentActivity() {
 							isDesktopConnected = isDesktopConnected,
 							isDesktopOutputEnabled = isDesktopOutputEnabled,
 							isLocalOutputEnabled = isLocalOutputEnabled,
+							isBluetoothConnected = isBluetoothConnected,
+							bluetoothDeviceName = bluetoothDeviceName,
 							connectedDeviceName = connectedServerName,
 							connectedEndpointInfo = connectedEndpoint?.let { "ws://${it.host}:${it.port}" },
 							availableDiscoveredDevices = discoveredDevices,
@@ -1125,6 +1132,8 @@ fun PrismAppRoot(
 	onOpenQrPairing: () -> Unit,
 	onRescanLibrary: () -> Unit = {},
 	isRemoteActive: Boolean = false,
+	isBluetoothActive: Boolean = false,
+	bluetoothDeviceName: String? = null,
 	remoteDeviceName: String = "Prism Desktop",
 	connectedDeviceName: String? = null,
 	isDesktopConnected: Boolean = false,
@@ -1331,6 +1340,8 @@ fun PrismAppRoot(
 				onBarClick = onExpandNowPlaying,
 				isRemoteActive = isRemoteActive,
 				remoteDeviceName = remoteDeviceName,
+				isBluetoothActive = isBluetoothActive,
+				bluetoothDeviceName = bluetoothDeviceName,
 				modifier = Modifier
 					.align(Alignment.BottomCenter)
 					.padding(bottom = 6.dp)

@@ -21,7 +21,7 @@ class PrismLyricsEngine(private val context: Context) {
 
     suspend fun resolveLyrics(
         track: Track,
-        allowOnlineFetch: Boolean = false
+        allowOnlineFetch: Boolean = true
     ): String? = withContext(Dispatchers.IO) {
         // 0. Cache hit
         lyricsCache[track.id]?.let { return@withContext it }

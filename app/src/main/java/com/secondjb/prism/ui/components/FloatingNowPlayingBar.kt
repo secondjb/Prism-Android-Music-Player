@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -28,6 +29,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BluetoothAudio
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -73,7 +75,9 @@ fun FloatingNowPlayingBar(
     onBarClick: () -> Unit,
     modifier: Modifier = Modifier,
     isRemoteActive: Boolean = false,
-    remoteDeviceName: String = "Prism Desktop"
+    remoteDeviceName: String = "Prism Desktop",
+    isBluetoothActive: Boolean = false,
+    bluetoothDeviceName: String? = null
 ) {
     val track = playbackState.currentTrack
     val isVisible = track != null
@@ -176,7 +180,10 @@ fun FloatingNowPlayingBar(
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .basicMarquee(iterations = Int.MAX_VALUE)
                             )
 
                             Row(
@@ -190,13 +197,21 @@ fun FloatingNowPlayingBar(
                                         tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(13.dp)
                                     )
+                                } else if (isBluetoothActive) {
+                                    Icon(
+                                        imageVector = Icons.Default.BluetoothAudio,
+                                        contentDescription = "Playing on Bluetooth: ${bluetoothDeviceName ?: "Device"}",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(13.dp)
+                                    )
                                 }
                                 Text(
                                     text = track.artist,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
                                 )
                             }
                         }

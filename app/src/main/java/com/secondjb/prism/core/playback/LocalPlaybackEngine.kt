@@ -152,14 +152,8 @@ class LocalPlaybackEngine(
                 mediaController = controller
                 setupPlayerListener(controller)
 
-                // Push restored repeat mode to controller so it's not reset to OFF
-                val savedRepeat = _playbackState.value.repeatMode
-                val exoRepeat = when (savedRepeat) {
-                    RepeatMode.ALL -> Player.REPEAT_MODE_ALL
-                    RepeatMode.ONE -> Player.REPEAT_MODE_ONE
-                    RepeatMode.OFF -> Player.REPEAT_MODE_OFF
-                }
-                controller.repeatMode = exoRepeat
+                // Keep ExoPlayer's internal repeatMode OFF; LocalPlaybackEngine drives repeat/queue
+                controller.repeatMode = Player.REPEAT_MODE_OFF
 
                 syncFromController(controller, isInitialSync = true)
             } catch (e: Exception) {
@@ -189,12 +183,21 @@ class LocalPlaybackEngine(
                     val prevTrack = currentScrobbleTrack
                     val prevMs = activeListeningMs
                     commitActiveListeningEvent(prevTrack, prevMs, isCompleted = true)
-                    _playbackState.update {
-                        it.copy(isPlaying = false, positionMs = 0L, lastActionTimestampMs = System.currentTimeMillis())
+
+                    val hasMore = userQueue.isNotEmpty() ||
+                        (_playbackState.value.repeatMode == RepeatMode.ONE) ||
+                        (contextQueue.isNotEmpty() && (currentQueueIndex + 1 < contextQueue.size || _playbackState.value.repeatMode == RepeatMode.ALL))
+
+                    if (hasMore) {
+                        advanceNextTrack(isUserInitiated = false)
+                    } else {
+                        _playbackState.update {
+                            it.copy(isPlaying = false, positionMs = 0L, lastActionTimestampMs = System.currentTimeMillis())
+                        }
+                        controller.pause()
+                        stopPositionTicker()
+                        persistQueue()
                     }
-                    controller.pause()
-                    stopPositionTicker()
-                    persistQueue()
                 }
             }
 
@@ -354,8 +357,6 @@ class LocalPlaybackEngine(
         activeListeningMs = 0L
         lastPlayTickRealtime = if (playWhenReady) SystemClock.elapsedRealtime() else 0L
 
-        playSingleTrack(track, playWhenReady)
-
         _playbackState.update {
             it.copy(
                 currentTrack = track,
@@ -367,6 +368,8 @@ class LocalPlaybackEngine(
                 lastActionTimestampMs = System.currentTimeMillis()
             )
         }
+
+        playSingleTrack(track, playWhenReady)
         persistQueue()
     }
 
@@ -383,6 +386,32 @@ class LocalPlaybackEngine(
             contextQueue[0]
         } else {
             null
+        }
+    }
+
+    fun syncUpcomingTrackToPlayer() {
+        val controller = mediaController ?: return
+        if (controller.mediaItemCount == 0) return
+
+        val isGapless = preferencesRepository?.preferences?.value?.isGaplessEnabled ?: true
+        val upcoming = if (isGapless) peekNextTrack() else null
+
+        if (upcoming != null) {
+            if (controller.mediaItemCount > 1) {
+                val currentNextItem = controller.getMediaItemAt(1)
+                if (currentNextItem.mediaId != upcoming.id) {
+                    controller.removeMediaItem(1)
+                    controller.addMediaItem(1, upcoming.toMediaItem())
+                }
+            } else {
+                controller.addMediaItem(upcoming.toMediaItem())
+            }
+        } else {
+            if (controller.mediaItemCount > 1) {
+                for (i in (controller.mediaItemCount - 1) downTo 1) {
+                    controller.removeMediaItem(i)
+                }
+            }
         }
     }
 
@@ -421,10 +450,6 @@ class LocalPlaybackEngine(
             if (controller.mediaItemCount > 1) {
                 controller.removeMediaItem(0)
             }
-            val upcoming = peekNextTrack()
-            if (upcoming != null) {
-                controller.addMediaItem(upcoming.toMediaItem())
-            }
 
             _playbackState.update {
                 it.copy(
@@ -437,6 +462,14 @@ class LocalPlaybackEngine(
                     lastActionTimestampMs = System.currentTimeMillis()
                 )
             }
+            syncUpcomingTrackToPlayer()
+            persistQueue()
+        } else {
+            _playbackState.update {
+                it.copy(isPlaying = false, positionMs = 0L, lastActionTimestampMs = System.currentTimeMillis())
+            }
+            controller.pause()
+            stopPositionTicker()
             persistQueue()
         }
     }
@@ -444,7 +477,8 @@ class LocalPlaybackEngine(
     private fun playSingleTrack(track: Track, playWhenReady: Boolean) {
         val controller = mediaController
         val currentMediaItem = track.toMediaItem()
-        val nextTrack = peekNextTrack()
+        val isGapless = preferencesRepository?.preferences?.value?.isGaplessEnabled ?: true
+        val nextTrack = if (isGapless) peekNextTrack() else null
         val items = if (nextTrack != null && nextTrack.id != track.id) {
             listOf(currentMediaItem, nextTrack.toMediaItem())
         } else {
@@ -455,6 +489,7 @@ class LocalPlaybackEngine(
             controllerFuture?.addListener({
                 try {
                     val ctrl = controllerFuture?.get() ?: return@addListener
+                    ctrl.repeatMode = Player.REPEAT_MODE_OFF
                     ctrl.setMediaItems(items, 0, 0L)
                     ctrl.prepare()
                     if (playWhenReady) {
@@ -465,6 +500,7 @@ class LocalPlaybackEngine(
                 } catch (e: Exception) {}
             }, MoreExecutors.directExecutor())
         } else {
+            controller.repeatMode = Player.REPEAT_MODE_OFF
             controller.setMediaItems(items, 0, 0L)
             controller.prepare()
             if (playWhenReady) {
@@ -630,22 +666,9 @@ class LocalPlaybackEngine(
     }
 
     override fun setRepeatMode(mode: RepeatMode) {
-        val controller = mediaController ?: return
-        val exoMode = when (mode) {
-            RepeatMode.OFF -> Player.REPEAT_MODE_OFF
-            RepeatMode.ALL -> Player.REPEAT_MODE_ALL
-            RepeatMode.ONE -> Player.REPEAT_MODE_ONE
-        }
-        controller.repeatMode = exoMode
         _playbackState.update { it.copy(repeatMode = mode, lastActionTimestampMs = System.currentTimeMillis()) }
         preferencesRepository?.setRepeatMode(mode.name)
-        val upcoming = peekNextTrack()
-        if (upcoming != null) {
-            if (controller.mediaItemCount > 1) {
-                controller.removeMediaItem(1)
-            }
-            controller.addMediaItem(upcoming.toMediaItem())
-        }
+        syncUpcomingTrackToPlayer()
         persistQueue()
     }
 
@@ -681,6 +704,7 @@ class LocalPlaybackEngine(
             )
         }
         preferencesRepository?.setShuffleEnabled(newShuffle)
+        syncUpcomingTrackToPlayer()
         persistQueue()
     }
 
@@ -699,12 +723,14 @@ class LocalPlaybackEngine(
             _playbackState.update {
                 it.copy(queue = contextQueue.toList(), queueIndex = currIdx, lastActionTimestampMs = System.currentTimeMillis())
             }
+            syncUpcomingTrackToPlayer()
             persistQueue()
         } else if (contextQueue.size > 1 && currIdx < 0) {
             contextQueue = contextQueue.shuffled().toMutableList()
             _playbackState.update {
                 it.copy(queue = contextQueue.toList(), lastActionTimestampMs = System.currentTimeMillis())
             }
+            syncUpcomingTrackToPlayer()
             persistQueue()
         }
     }
@@ -722,33 +748,30 @@ class LocalPlaybackEngine(
         _playbackState.update {
             it.copy(userQueue = userQueue.toList(), lastActionTimestampMs = System.currentTimeMillis())
         }
+        syncUpcomingTrackToPlayer()
         persistQueue()
     }
 
     override fun playNext(track: Track) {
         userQueue.add(0, track)
         customQueueIds.add(track.id)
-        mediaController?.let { ctrl ->
-            val upcoming = peekNextTrack()
-            if (upcoming != null) {
-                if (ctrl.mediaItemCount > 1) {
-                    ctrl.removeMediaItem(1)
-                }
-                ctrl.addMediaItem(upcoming.toMediaItem())
-            }
-        }
         _playbackState.update {
             it.copy(userQueue = userQueue.toList(), lastActionTimestampMs = System.currentTimeMillis())
         }
+        syncUpcomingTrackToPlayer()
         persistQueue()
     }
 
     override fun removeFromUserQueue(index: Int) {
         if (index in userQueue.indices) {
-            userQueue.removeAt(index)
+            val removed = userQueue.removeAt(index)
+            if (userQueue.none { it.id == removed.id }) {
+                customQueueIds.remove(removed.id)
+            }
             _playbackState.update {
                 it.copy(userQueue = userQueue.toList(), lastActionTimestampMs = System.currentTimeMillis())
             }
+            syncUpcomingTrackToPlayer()
             persistQueue()
         }
     }
@@ -768,6 +791,7 @@ class LocalPlaybackEngine(
                     lastActionTimestampMs = System.currentTimeMillis()
                 )
             }
+            syncUpcomingTrackToPlayer()
             persistQueue()
         }
     }
@@ -779,6 +803,7 @@ class LocalPlaybackEngine(
             _playbackState.update {
                 it.copy(queue = contextQueue.toList(), lastActionTimestampMs = System.currentTimeMillis())
             }
+            syncUpcomingTrackToPlayer()
             persistQueue()
         }
     }
@@ -790,6 +815,7 @@ class LocalPlaybackEngine(
             _playbackState.update {
                 it.copy(userQueue = userQueue.toList(), lastActionTimestampMs = System.currentTimeMillis())
             }
+            syncUpcomingTrackToPlayer()
             persistQueue()
         }
     }
@@ -804,6 +830,7 @@ class LocalPlaybackEngine(
             _playbackState.update {
                 it.copy(queue = contextQueue.toList(), lastActionTimestampMs = System.currentTimeMillis())
             }
+            syncUpcomingTrackToPlayer()
             persistQueue()
         }
     }
@@ -898,6 +925,7 @@ class LocalPlaybackEngine(
             _playbackState.update {
                 it.copy(queue = contextQueue.toList(), lastActionTimestampMs = System.currentTimeMillis())
             }
+            syncUpcomingTrackToPlayer()
             persistQueue()
         }
     }

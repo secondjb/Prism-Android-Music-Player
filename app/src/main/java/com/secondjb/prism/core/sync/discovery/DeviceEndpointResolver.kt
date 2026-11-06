@@ -10,8 +10,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
-import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.Socket
@@ -20,7 +21,7 @@ import java.net.Socket
  * Auto-healing endpoint resolver that finds paired Prism devices when local IPs change (DHCP).
  * 1. Probes the last-known cached IP with a short timeout.
  * 2. Checks active mDNS discoveries.
- * 3. Sweeps the local Wi-Fi /24 subnet on port 9876 concurrently.
+ * 3. Sweeps local subnet prefixes concurrently with bounded parallelism and prioritized host scanning.
  */
 class DeviceEndpointResolver(
     private val context: Context,
@@ -31,9 +32,17 @@ class DeviceEndpointResolver(
         onIpUpdated: (suspend (String) -> Unit)? = null
     ): ConnectionEndpoint? = withContext(Dispatchers.IO) {
         // 1. Quick probe on last known host
-        if (isReachable(device.host, device.port, timeoutMs = 1200)) {
-            Log.d(TAG, "Cached IP ${device.host}:${device.port} is alive and reachable.")
-            return@withContext ConnectionEndpoint(device.host, device.port, device.token)
+        val candidatePorts = listOfNotNull(
+            device.port.takeIf { it > 0 },
+            9876.takeIf { it != device.port },
+            8765.takeIf { it != device.port && it != 9876 }
+        )
+
+        for (port in candidatePorts) {
+            if (isReachable(device.host, port, timeoutMs = 1200)) {
+                Log.d(TAG, "Cached IP ${device.host}:$port is alive and reachable.")
+                return@withContext ConnectionEndpoint(device.host, port, device.token)
+            }
         }
 
         Log.i(TAG, "Cached IP ${device.host}:${device.port} unreachable. Starting dynamic LAN auto-healing sweep...")
@@ -49,15 +58,26 @@ class DeviceEndpointResolver(
             return@withContext ConnectionEndpoint(mdnsMatch.ipAddress, mdnsMatch.port, device.token)
         }
 
-        // 3. Parallel subnet sweep across /24
+        // 3. Subnet prefix discovery: scan both local Wi-Fi subnet and cached device subnet
+        val subnetPrefixes = mutableSetOf<String>()
         val localIp = getLocalWifiIpAddress()
         if (localIp != null && localIp.count { it == '.' } == 3) {
-            val subnetPrefix = localIp.substringBeforeLast('.')
-            val discoveredHost = scanSubnetForPort(subnetPrefix, device.port)
-            if (discoveredHost != null) {
-                Log.i(TAG, "Subnet sweep discovered server for ${device.name} at: $discoveredHost:${device.port}")
-                onIpUpdated?.invoke(discoveredHost)
-                return@withContext ConnectionEndpoint(discoveredHost, device.port, device.token)
+            subnetPrefixes.add(localIp.substringBeforeLast('.'))
+        }
+        if (device.host.count { it == '.' } == 3) {
+            subnetPrefixes.add(device.host.substringBeforeLast('.'))
+        }
+
+        val lastKnownHostNum = device.host.substringAfterLast('.', "").toIntOrNull()
+
+        for (prefix in subnetPrefixes) {
+            for (port in candidatePorts) {
+                val discoveredHost = scanSubnetForPort(prefix, port, lastKnownHostNum)
+                if (discoveredHost != null) {
+                    Log.i(TAG, "Subnet sweep discovered server for ${device.name} at: $discoveredHost:$port")
+                    onIpUpdated?.invoke(discoveredHost)
+                    return@withContext ConnectionEndpoint(discoveredHost, port, device.token)
+                }
             }
         }
 
@@ -97,20 +117,44 @@ class DeviceEndpointResolver(
         }
     }
 
-    private suspend fun scanSubnetForPort(subnetPrefix: String, port: Int): String? = coroutineScope {
-        val sweepJobs = (1..254).map { hostNum ->
+    private suspend fun scanSubnetForPort(
+        subnetPrefix: String,
+        port: Int,
+        lastKnownHostNum: Int? = null
+    ): String? = coroutineScope {
+        // Prioritize: previous host number +/- 10 first, then common DHCP ranges, then remainder
+        val allHosts = (1..254).toList()
+        val prioritizedHosts = if (lastKnownHostNum != null && lastKnownHostNum in 1..254) {
+            val nearby = (maxOf(1, lastKnownHostNum - 15)..minOf(254, lastKnownHostNum + 15)).toList()
+            val remaining = allHosts.filterNot { it in nearby }
+            nearby + remaining
+        } else {
+            allHosts
+        }
+
+        // Bound concurrency to 32 parallel sockets to prevent Wi-Fi router packet drops
+        val semaphore = Semaphore(32)
+
+        val sweepJobs = prioritizedHosts.map { hostNum ->
             val targetIp = "$subnetPrefix.$hostNum"
             async(Dispatchers.IO) {
-                if (isReachable(targetIp, port, timeoutMs = 400)) {
-                    targetIp
-                } else {
-                    null
+                semaphore.withPermit {
+                    if (isReachable(targetIp, port, timeoutMs = 1200)) {
+                        targetIp
+                    } else {
+                        null
+                    }
                 }
             }
         }
 
-        val results = sweepJobs.awaitAll()
-        results.firstOrNull { it != null }
+        for (job in sweepJobs) {
+            val result = job.await()
+            if (result != null) {
+                return@coroutineScope result
+            }
+        }
+        null
     }
 
     private fun getLocalWifiIpAddress(): String? {

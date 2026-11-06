@@ -269,7 +269,11 @@ class PrismPreferencesRepository(context: Context) {
     }
 
     fun savePairedDevice(device: PairedDevice) {
-        val current = _pairedDevices.value.filter { !(it.host == device.host && it.port == device.port) }.toMutableList()
+        val current = _pairedDevices.value.filterNot {
+            (device.token.isNotBlank() && it.token == device.token) ||
+            (device.id.isNotBlank() && it.id == device.id) ||
+            (it.host == device.host && it.port == device.port)
+        }.toMutableList()
         current.add(0, device) // most recent at top
         val serialized = json.encodeToString(current)
         prefs.edit().putString(KEY_PAIRED_DEVICES, serialized).apply()
@@ -277,7 +281,9 @@ class PrismPreferencesRepository(context: Context) {
     }
 
     fun removePairedDevice(deviceIdOrHost: String) {
-        val updated = _pairedDevices.value.filter { it.id != deviceIdOrHost && it.host != deviceIdOrHost }
+        val updated = _pairedDevices.value.filter {
+            it.id != deviceIdOrHost && it.host != deviceIdOrHost && it.token != deviceIdOrHost
+        }
         val serialized = json.encodeToString(updated)
         prefs.edit().putString(KEY_PAIRED_DEVICES, serialized).apply()
         _pairedDevices.value = updated

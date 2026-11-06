@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BluetoothAudio
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -42,9 +43,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.secondjb.prism.core.data.PairedDevice
 import com.secondjb.prism.domain.model.DeviceNode
+
+/**
+ * Clean device name formatter: strips raw machine hostnames (e.g., "(AHHHHHHHHHHHHHH)")
+ * and formats paired devices sequentially as "Prism Desktop", "Prism Desktop 2", etc.
+ */
+fun formatDeviceDisplayName(rawName: String?, index: Int = 0): String {
+    val name = rawName.orEmpty()
+    val isDesktop = name.contains("Desktop", ignoreCase = true) ||
+            name.contains("Windows", ignoreCase = true) ||
+            name.contains("PC", ignoreCase = true) ||
+            name.isBlank()
+    val base = if (isDesktop) "Prism Desktop" else "Prism Android"
+    return if (index <= 0) base else "$base ${index + 1}"
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,6 +73,8 @@ fun DeviceSwitcherSheet(
     availableDiscoveredDevices: List<DeviceNode> = emptyList(),
     pairedDevices: List<PairedDevice> = emptyList(),
     starredDeviceId: String = "desktop",
+    isBluetoothConnected: Boolean = false,
+    bluetoothDeviceName: String? = null,
     onSetStarredDevice: (String) -> Unit = {},
     onToggleDesktopOutput: (Boolean) -> Unit,
     onToggleLocalOutput: (Boolean) -> Unit,
@@ -126,16 +144,17 @@ fun DeviceSwitcherSheet(
                 }
             }
 
-            // 1. Connected or Paired Device Output
+            // 1. Connected or Active Desktop Output
             val hasRemoteDevice = isDesktopConnected || pairedDevices.isNotEmpty()
             if (hasRemoteDevice) {
                 val desktopActive = isDesktopConnected && isDesktopOutputEnabled
                 val isDesktopStarred = starredDeviceId == "desktop"
-                val remoteDeviceDisplayName = if (isDesktopConnected) {
-                    connectedServerName ?: "Prism Device"
+                val rawDisplayName = if (isDesktopConnected) {
+                    connectedServerName ?: "Prism Desktop"
                 } else {
-                    pairedDevices.firstOrNull()?.name ?: "Prism Device"
+                    pairedDevices.firstOrNull()?.name ?: "Prism Desktop"
                 }
+                val remoteDeviceDisplayName = formatDeviceDisplayName(rawDisplayName, 0)
 
                 Surface(
                     shape = MaterialTheme.shapes.medium,
@@ -173,7 +192,10 @@ fun DeviceSwitcherSheet(
                                     text = remoteDeviceDisplayName,
                                     style = MaterialTheme.typography.bodyLarge,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
                                 )
                                 if (isDesktopConnected) {
                                     Box(
@@ -192,6 +214,8 @@ fun DeviceSwitcherSheet(
                                     "Not Connected • Tap to connect"
                                 },
                                 style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                                 color = if (isDesktopConnected) {
                                     MaterialTheme.colorScheme.onSurfaceVariant
                                 } else {
@@ -239,7 +263,7 @@ fun DeviceSwitcherSheet(
                 }
             }
 
-            // 2. This Phone Device Row
+            // 2. This Phone Device Row (with Bluetooth detection)
             val isLocalStarred = starredDeviceId == "local" || starredDeviceId == "phone"
             Surface(
                 shape = MaterialTheme.shapes.medium,
@@ -254,7 +278,7 @@ fun DeviceSwitcherSheet(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.PhoneAndroid,
+                        imageVector = if (isBluetoothConnected) Icons.Default.BluetoothAudio else Icons.Default.PhoneAndroid,
                         contentDescription = null,
                         tint = if (isLocalOutputEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(28.dp)
@@ -265,8 +289,19 @@ fun DeviceSwitcherSheet(
                             text = "This Phone",
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
+                        if (isBluetoothConnected && !bluetoothDeviceName.isNullOrBlank()) {
+                            Text(
+                                text = "Bluetooth • $bluetoothDeviceName",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
 
                     // Star button to designate as queue authority
@@ -317,8 +352,9 @@ fun DeviceSwitcherSheet(
                     modifier = Modifier.padding(top = 4.dp)
                 )
 
-                pairedDevices.forEach { paired ->
+                pairedDevices.forEachIndexed { index, paired ->
                     val isThisCurrentlyConnected = isDesktopConnected && connectedEndpointInfo?.contains(paired.host) == true
+                    val formattedName = formatDeviceDisplayName(paired.name, index)
 
                     Surface(
                         shape = MaterialTheme.shapes.small,
@@ -339,13 +375,17 @@ fun DeviceSwitcherSheet(
 
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = paired.name,
+                                    text = formattedName,
                                     style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
                                     text = if (isThisCurrentlyConnected) "Connected • ${paired.host}:${paired.port}" else "${paired.host}:${paired.port}",
                                     style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                     color = if (isThisCurrentlyConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
@@ -388,7 +428,9 @@ fun DeviceSwitcherSheet(
                     modifier = Modifier.padding(top = 4.dp)
                 )
 
-                availableDiscoveredDevices.forEach { device ->
+                availableDiscoveredDevices.forEachIndexed { index, device ->
+                    val formattedName = formatDeviceDisplayName(device.name, index)
+
                     Surface(
                         shape = MaterialTheme.shapes.small,
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -409,14 +451,18 @@ fun DeviceSwitcherSheet(
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = device.name,
+                                    text = formattedName,
                                     style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
                                     text = "${device.ipAddress}:${device.port}",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                             Text(

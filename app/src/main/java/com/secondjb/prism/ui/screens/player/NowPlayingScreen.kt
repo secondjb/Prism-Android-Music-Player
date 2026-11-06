@@ -25,11 +25,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.BluetoothAudio
+import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.runtime.collectAsState
 import com.secondjb.prism.core.data.PrismPreferencesRepository
 import com.secondjb.prism.ui.components.lyrics.LyricDisplayMode
@@ -53,7 +57,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -117,6 +123,8 @@ fun NowPlayingScreen(
     isDesktopConnected: Boolean = false,
     isDesktopOutputEnabled: Boolean = false,
     isLocalOutputEnabled: Boolean = true,
+    isBluetoothConnected: Boolean = false,
+    bluetoothDeviceName: String? = null,
     connectedDeviceName: String? = null,
     connectedEndpointInfo: String? = null,
     availableDiscoveredDevices: List<DeviceNode> = emptyList(),
@@ -155,12 +163,16 @@ fun NowPlayingScreen(
         LyricDisplayMode.fromString(userPreferences.lyricsTranslationMode)
     }
     val lyricsFontScale = userPreferences.lyricsFontScale
+    val scope = rememberCoroutineScope()
     val lyricsEngine = remember { PrismLyricsEngine(context) }
     var resolvedLyrics by remember(track.id) { mutableStateOf(track.lyrics) }
 
-    LaunchedEffect(track.id) {
-        if (resolvedLyrics.isNullOrBlank()) {
-            resolvedLyrics = lyricsEngine.resolveLyrics(track, allowOnlineFetch = false)
+    LaunchedEffect(track.id, userPreferences.lrclibAutoFetch) {
+        if (resolvedLyrics.isNullOrBlank() || userPreferences.preferOnlineLyrics) {
+            val fetched = lyricsEngine.resolveLyrics(track, allowOnlineFetch = true)
+            if (!fetched.isNullOrBlank()) {
+                resolvedLyrics = fetched
+            }
         }
     }
 
@@ -193,6 +205,14 @@ fun NowPlayingScreen(
             },
             onUpdateFontScale = { scale ->
                 prefsRepo.setLyricsFontScale(scale)
+            },
+            onFetchOnlineLyrics = {
+                scope.launch {
+                    val fetched = lyricsEngine.resolveLyrics(track, allowOnlineFetch = true)
+                    if (!fetched.isNullOrBlank()) {
+                        resolvedLyrics = fetched
+                    }
+                }
             }
         )
         return
@@ -297,7 +317,10 @@ fun NowPlayingScreen(
                 color = Color.White,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .basicMarquee(iterations = Int.MAX_VALUE)
             )
             Spacer(Modifier.height(4.dp))
             Text(
@@ -306,7 +329,10 @@ fun NowPlayingScreen(
                 color = Color.White.copy(alpha = 0.8f),
                 textAlign = TextAlign.Center,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .fillMaxWidth(0.85f)
+                    .basicMarquee(iterations = Int.MAX_VALUE)
             )
 
             Spacer(Modifier.height(12.dp))
@@ -442,14 +468,27 @@ fun NowPlayingScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+                        val isLocal = playbackState.activeDeviceId == "local"
+                        val icon = when {
+                            isLocal && isBluetoothConnected -> Icons.Default.BluetoothAudio
+                            isLocal -> Icons.Default.PhoneAndroid
+                            else -> Icons.Default.Computer
+                        }
+                        val label = when {
+                            isLocal && isBluetoothConnected -> bluetoothDeviceName ?: "Bluetooth"
+                            isLocal -> "This Phone"
+                            else -> connectedDeviceName?.let { formatDeviceDisplayName(it, 0) } ?: "Desktop"
+                        }
                         Icon(
-                            imageVector = Icons.Default.Devices,
+                            imageVector = icon,
                             contentDescription = "Swap Device",
                             modifier = Modifier.size(18.dp)
                         )
                         Text(
-                            text = if (playbackState.activeDeviceId == "local") "This Phone" else "Desktop",
-                            style = MaterialTheme.typography.labelSmall
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -566,6 +605,8 @@ fun NowPlayingScreen(
             isDesktopConnected = isDesktopConnected,
             isDesktopOutputEnabled = isDesktopOutputEnabled,
             isLocalOutputEnabled = isLocalOutputEnabled,
+            isBluetoothConnected = isBluetoothConnected,
+            bluetoothDeviceName = bluetoothDeviceName,
             connectedServerName = connectedDeviceName,
             connectedEndpointInfo = connectedEndpointInfo,
             availableDiscoveredDevices = availableDiscoveredDevices,

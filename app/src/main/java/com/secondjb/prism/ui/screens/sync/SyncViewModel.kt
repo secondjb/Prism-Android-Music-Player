@@ -339,7 +339,11 @@ class SyncViewModel(
                                         token = lastPairingToken,
                                         lastConnectedTimeMs = System.currentTimeMillis()
                                     )
-                                    val existing = repo.pairedDevices.value.find { it.id == paired.id || it.host == paired.host }
+                                    val existing = repo.pairedDevices.value.find {
+                                        (paired.token.isNotBlank() && it.token == paired.token) ||
+                                        it.id == paired.id ||
+                                        it.host == paired.host
+                                    }
                                     if (existing == null) {
                                         _pendingFamilyPairingDevice.value = paired
                                         repo.savePairedDevice(paired.copy(isFamilyMember = false))

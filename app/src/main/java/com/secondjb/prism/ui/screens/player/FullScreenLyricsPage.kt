@@ -67,6 +67,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.filled.Refresh
+import com.secondjb.prism.ui.theme.PillShape
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -106,6 +111,7 @@ fun FullScreenLyricsPage(
     onUpdateRomanizationMode: (LyricDisplayMode) -> Unit = {},
     onUpdateTranslationMode: (LyricDisplayMode) -> Unit = {},
     onUpdateFontScale: (Float) -> Unit = {},
+    onFetchOnlineLyrics: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     BackHandler(enabled = true) {
@@ -211,11 +217,29 @@ fun FullScreenLyricsPage(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "No synchronized lyrics available",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White.copy(alpha = 0.6f)
-                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.padding(24.dp)
+                ) {
+                    Text(
+                        text = "No synchronized lyrics available",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                    Button(
+                        onClick = onFetchOnlineLyrics,
+                        shape = PillShape,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Search & Fetch Lyrics (LRCLIB)")
+                    }
+                }
             }
         } else {
             LazyColumn(

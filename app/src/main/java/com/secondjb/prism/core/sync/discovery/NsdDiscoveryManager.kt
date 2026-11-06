@@ -9,10 +9,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
  * mDNS discovery manager powered by Android NsdManager.
  * Discovers Prism Windows desktop nodes running on the same local Wi-Fi.
+ * Serializes service resolution to prevent NsdManager.FAILURE_ALREADY_ACTIVE.
  */
 class NsdDiscoveryManager(private val context: Context) {
 
@@ -27,6 +29,9 @@ class NsdDiscoveryManager(private val context: Context) {
     val discoveredDevices: StateFlow<List<DeviceNode>> = _discoveredDevices.asStateFlow()
 
     private var discoveryListener: NsdManager.DiscoveryListener? = null
+    private val resolveQueue = ConcurrentLinkedQueue<NsdServiceInfo>()
+    @Volatile
+    private var isResolving = false
 
     fun startDiscovery() {
         if (nsdManager == null || discoveryListener != null) return
@@ -36,7 +41,7 @@ class NsdDiscoveryManager(private val context: Context) {
 
             override fun onServiceFound(service: NsdServiceInfo) {
                 if (service.serviceType.contains("prism", ignoreCase = true)) {
-                    resolveService(service)
+                    enqueueServiceResolution(service)
                 }
             }
 
@@ -61,31 +66,56 @@ class NsdDiscoveryManager(private val context: Context) {
         }
     }
 
-    private fun resolveService(serviceInfo: NsdServiceInfo) {
-        nsdManager?.resolveService(serviceInfo, object : NsdManager.ResolveListener {
-            override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {}
+    private fun enqueueServiceResolution(serviceInfo: NsdServiceInfo) {
+        resolveQueue.add(serviceInfo)
+        processNextResolve()
+    }
 
-            override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
-                val host = serviceInfo.host?.hostAddress ?: return
-                val port = serviceInfo.port
-                val deviceName = serviceInfo.serviceName
+    @Synchronized
+    private fun processNextResolve() {
+        if (isResolving) return
+        val next = resolveQueue.poll() ?: return
+        isResolving = true
 
-                val node = DeviceNode(
-                    id = "$host:$port",
-                    name = deviceName,
-                    type = DeviceType.WINDOWS_DESKTOP,
-                    ipAddress = host,
-                    port = port
-                )
-
-                _discoveredDevices.update { current ->
-                    if (current.none { it.id == node.id }) current + node else current
+        try {
+            nsdManager?.resolveService(next, object : NsdManager.ResolveListener {
+                override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                    isResolving = false
+                    processNextResolve()
                 }
-            }
-        })
+
+                override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
+                    val host = serviceInfo.host?.hostAddress
+                    val port = serviceInfo.port
+                    val deviceName = serviceInfo.serviceName
+
+                    if (host != null) {
+                        val node = DeviceNode(
+                            id = "$host:$port",
+                            name = deviceName,
+                            type = DeviceType.WINDOWS_DESKTOP,
+                            ipAddress = host,
+                            port = port
+                        )
+
+                        _discoveredDevices.update { current ->
+                            if (current.none { it.id == node.id }) current + node else current
+                        }
+                    }
+
+                    isResolving = false
+                    processNextResolve()
+                }
+            })
+        } catch (e: Exception) {
+            isResolving = false
+            processNextResolve()
+        }
     }
 
     fun stopDiscovery() {
+        resolveQueue.clear()
+        isResolving = false
         discoveryListener?.let {
             try {
                 nsdManager?.stopServiceDiscovery(it)

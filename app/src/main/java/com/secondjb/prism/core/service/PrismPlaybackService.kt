@@ -76,16 +76,19 @@ class PrismPlaybackService : MediaSessionService() {
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
 
+        player.setAudioAttributes(audioAttributes, /* handleAudioFocus = */ false)
         exoPlayer = player
         audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
 
         val listener = AudioManager.OnAudioFocusChangeListener { focusChange ->
             when (focusChange) {
                 AudioManager.AUDIOFOCUS_LOSS -> {
+                    // Permanent loss of audio focus (e.g., another media player started)
                     resumeOnFocusGain = false
                     player.pause()
                 }
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                    // Transient loss (e.g., phone call or navigation prompt)
                     val wasPlaying = player.isPlaying || player.playWhenReady
                     resumeOnFocusGain = wasPlaying
                     player.pause()
@@ -94,10 +97,9 @@ class PrismPlaybackService : MediaSessionService() {
                     // DO NOT DUCK: Maintain 100% volume across screen wake, unlock, and key click sounds
                 }
                 AudioManager.AUDIOFOCUS_GAIN -> {
-                    if (resumeOnFocusGain) {
+                    // Focus regained - reliably resume playback if we were interrupted
+                    if (resumeOnFocusGain || player.playWhenReady) {
                         resumeOnFocusGain = false
-                        player.play()
-                    } else if (player.playWhenReady) {
                         player.play()
                     }
                 }
@@ -113,6 +115,7 @@ class PrismPlaybackService : MediaSessionService() {
             focusRequest = android.media.AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(playbackAttributes)
                 .setAcceptsDelayedFocusGain(false)
+                .setWillPauseWhenDucked(true)
                 .setOnAudioFocusChangeListener(listener)
                 .build()
         }
@@ -129,6 +132,18 @@ class PrismPlaybackService : MediaSessionService() {
                             AudioManager.STREAM_MUSIC,
                             AudioManager.AUDIOFOCUS_GAIN
                         )
+                    }
+                } else {
+                    // Abandon focus when playback stops/pauses, unless waiting to resume on focus gain
+                    if (!resumeOnFocusGain) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            focusRequest?.let { audioManager?.abandonAudioFocusRequest(it) }
+                        } else {
+                            focusListener?.let {
+                                @Suppress("DEPRECATION")
+                                audioManager?.abandonAudioFocus(it)
+                            }
+                        }
                     }
                 }
             }
