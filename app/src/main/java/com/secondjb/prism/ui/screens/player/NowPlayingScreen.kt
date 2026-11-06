@@ -544,12 +544,23 @@ fun NowPlayingScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Sleep Timer Button with adjacent text aligned so left side of text is close to sleep timer button
+                    // Sleep Timer Button with adjacent text: text to the LEFT of sleep timer button, pressed close to it
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier.clickable { showSleepTimer = true }
                     ) {
+                        if (sleepTimerText != null) {
+                            Text(
+                                text = sleepTimerText,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
                         FilledIconButton(
                             onClick = { showSleepTimer = true },
                             shape = CircleShape,
@@ -563,17 +574,6 @@ fun NowPlayingScreen(
                                 imageVector = Icons.Outlined.Timer,
                                 contentDescription = "Sleep Timer",
                                 modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        if (sleepTimerText != null) {
-                            Text(
-                                text = sleepTimerText,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }

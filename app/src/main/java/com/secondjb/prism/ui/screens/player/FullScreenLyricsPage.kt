@@ -278,18 +278,20 @@ fun FullScreenLyricsPage(
                     val interludeBefore = interludeList.find { it.insertIndex == index }
                     if (interludeBefore != null) {
                         val isInterludeActive = playbackState.positionMs in interludeBefore.startMs..interludeBefore.endMs
-                        InstrumentalDotsIndicator(
-                            startMs = interludeBefore.startMs,
-                            endMs = interludeBefore.endMs,
-                            currentPositionMs = playbackState.positionMs,
-                            isPlaying = playbackState.isPlaying,
-                            isActive = isInterludeActive,
-                            onSeek = {
-                                onSeek(interludeBefore.startMs)
-                                isUserScrolled = false
-                                resetControlsTimer()
-                            }
-                        )
+                        if (isInterludeActive || (index == 0 && playbackState.positionMs < interludeBefore.endMs)) {
+                            InstrumentalDotsIndicator(
+                                startMs = interludeBefore.startMs,
+                                endMs = interludeBefore.endMs,
+                                currentPositionMs = playbackState.positionMs,
+                                isPlaying = playbackState.isPlaying,
+                                isActive = true,
+                                onSeek = {
+                                    onSeek(interludeBefore.startMs)
+                                    isUserScrolled = false
+                                    resetControlsTimer()
+                                }
+                            )
+                        }
                     }
 
                     val isActive = index == activeIndex && activeInterlude == null

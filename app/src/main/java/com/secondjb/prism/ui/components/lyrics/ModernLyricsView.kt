@@ -182,14 +182,16 @@ fun ModernLyricsView(
                     val interludeBefore = interludeList.find { it.insertIndex == index }
                     if (interludeBefore != null) {
                         val isInterludeActive = currentPositionMs in interludeBefore.startMs..interludeBefore.endMs
-                        InstrumentalDotsIndicator(
-                            startMs = interludeBefore.startMs,
-                            endMs = interludeBefore.endMs,
-                            currentPositionMs = currentPositionMs,
-                            isPlaying = true,
-                            isActive = isInterludeActive,
-                            onSeek = { onSeek(interludeBefore.startMs) }
-                        )
+                        if (isInterludeActive || (index == 0 && currentPositionMs < interludeBefore.endMs)) {
+                            InstrumentalDotsIndicator(
+                                startMs = interludeBefore.startMs,
+                                endMs = interludeBefore.endMs,
+                                currentPositionMs = currentPositionMs,
+                                isPlaying = true,
+                                isActive = true,
+                                onSeek = { onSeek(interludeBefore.startMs) }
+                            )
+                        }
                     }
 
                     val isActive = index == activeIndex && activeInterlude == null
