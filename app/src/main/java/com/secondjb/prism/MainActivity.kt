@@ -359,10 +359,20 @@ class MainActivity : ComponentActivity() {
 				val desktopActive = isDesktopConnected && isDesktopOutputEnabled
 				val localActive = isLocalOutputEnabled
 
-				if (desktopActive) {
+				if (desktopActive && localActive) {
+					// Multi-room synchronization: align both devices to the same target state
+					val shouldPlay = !effectivePlaybackState.isPlaying
+					if (shouldPlay) {
+						syncViewModel.sendRemoteCommand(CommandAction.PLAY)
+						playbackEngine.restoreLocalOutput()
+						playbackEngine.play()
+					} else {
+						syncViewModel.sendRemoteCommand(CommandAction.PAUSE)
+						playbackEngine.pause()
+					}
+				} else if (desktopActive) {
 					syncViewModel.sendRemoteCommand(CommandAction.TOGGLE_PLAY_PAUSE)
-				}
-				if (localActive || !isDesktopConnected) {
+				} else if (localActive || !isDesktopConnected) {
 					playbackEngine.restoreLocalOutput()
 					playbackEngine.togglePlayPause()
 				}
