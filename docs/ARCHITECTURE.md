@@ -18,10 +18,11 @@ Prism Android is a modern, high-fidelity music player and companion controller b
 |     ├── [LibraryScreen.kt] Swipeable Library Tabs (Playlists, Artists, Songs, ...) |
 |     │     └── [FastScrollbar.kt] Dynamic-Themed Fast Scroller with 3s Auto-Hide    |
 |     ├── [NowPlayingScreen.kt] Fullscreen Player (Fluid Art, WavySeekBar, Lyrics)   |
-|     │     ├── [SleepTimerModal.kt] M3 Timer (Icons.Outlined.Timer)                |
+|     │     ├── [SleepTimerModal.kt] M3 Timer (Icons.Outlined.Timer, clean action icons) |
 |     │     ├── [DeviceSwitcherSheet.kt] Local vs Desktop Output Routing & Disconnect |
 |     │     └── [QueueBottomSheet.kt] Queue Inspector, Drag Handles & Reorder Menu   |
 |     ├── [FullScreenLyricsPage.kt] Syllable/Line Synced Lyrics + Romanization      |
+|     │     └── [InstrumentalDotsIndicator.kt] Material 3 Instrumental 3-Dot Animation |
 |     ├── [StatsScreen.kt] Listening Analytics (Time vs Plays Leaderboards)         |
 |     └── [SettingsScreen.kt] Companion Pairing, Double-Counting, Storage Clears    |
 |                                                                                   |
@@ -67,11 +68,12 @@ Playback is powered by **AndroidX Media3 (ExoPlayer)**:
 ### 2.2 Sleep Timer (`SleepTimerManager.kt`)
 - Supports 3 modes:
   1. **Time-Based**: Countdown by minutes.
-  2. **Track-Based**: Countdown by remaining track completions.
+  2. **Track-Based**: Countdown by remaining track completions using normalized composite keys (`title|artist`) to prevent duplicate transitions across multi-room state echoes.
   3. **End-of-Queue**: Stops playback once the active queue runs out.
 - Options:
   - `finishLastSong`: Waits for the currently playing track to finish before executing the pause.
-- Coordinates pause events locally and dispatches remote pause commands to the paired desktop over WebSocket.
+- Coordinates pause events locally and dispatches remote pause commands to the paired desktop over WebSocket with a 3-second multi-room sync latch (`sleepTimerJustPaused`) to prevent rapid pause/play oscillation.
+- UI: Plain text countdown displayed in the bottom bar middle space (`NowPlayingScreen.kt`); borderless action buttons tightly spaced in `SleepTimerModal.kt`.
 
 ---
 

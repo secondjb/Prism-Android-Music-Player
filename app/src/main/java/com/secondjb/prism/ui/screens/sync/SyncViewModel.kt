@@ -610,10 +610,10 @@ class SyncViewModel(
         if (isConnectingOrResolving || currentConn is TransportConnectionState.Connected || currentConn is TransportConnectionState.Connecting) {
             return
         }
+        isConnectingOrResolving = true
         isManuallyDisconnected = false
         connectJob?.cancel()
         connectJob = viewModelScope.launch {
-            isConnectingOrResolving = true
             try {
                 _lastPairingError.value = null
                 val resolver = endpointResolver

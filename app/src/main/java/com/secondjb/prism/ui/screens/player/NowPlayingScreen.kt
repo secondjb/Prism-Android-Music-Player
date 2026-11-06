@@ -496,7 +496,7 @@ fun NowPlayingScreen(
                     }
                 }
 
-                // Action Buttons: Sleep Timer & Queue
+                // Sleep Timer Plain Text in the middle space (e.g. "5 minutes" or "3 tracks (5m)")
                 val sleepTimerRemainingMinutes: Int? = if (sleepTimerState.isActive) {
                     when (sleepTimerState.mode) {
                         SleepTimerMode.TIME -> {
@@ -520,42 +520,60 @@ fun NowPlayingScreen(
                     }
                 } else null
 
+                val sleepTimerText: String? = if (sleepTimerState.isActive) {
+                    when (sleepTimerState.mode) {
+                        SleepTimerMode.TIME -> {
+                            val mins = sleepTimerRemainingMinutes ?: maxOf(1, ((sleepTimerState.remainingSeconds + 59) / 60).toInt())
+                            "$mins ${if (mins == 1) "minute" else "minutes"}"
+                        }
+                        SleepTimerMode.TRACKS -> {
+                            val tracks = sleepTimerState.remainingTracks
+                            val mins = sleepTimerRemainingMinutes ?: 1
+                            "$tracks ${if (tracks == 1) "track" else "tracks"} (${mins}m)"
+                        }
+                        SleepTimerMode.END_OF_QUEUE -> {
+                            val mins = sleepTimerRemainingMinutes ?: 1
+                            "End of queue (${mins}m)"
+                        }
+                    }
+                } else null
+
+                if (sleepTimerText != null) {
+                    Text(
+                        text = sleepTimerText,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp)
+                            .clickable { showSleepTimer = true }
+                    )
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
+
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Sleep Timer Button with Active Badge
-                    BadgedBox(
-                        badge = {
-                            if (sleepTimerRemainingMinutes != null) {
-                                Badge(
-                                    containerColor = MaterialTheme.colorScheme.error,
-                                    contentColor = MaterialTheme.colorScheme.onError
-                                ) {
-                                    Text(
-                                        text = "${sleepTimerRemainingMinutes}m",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
+                    // Sleep Timer Button (clean, no badge, standard primary coloring)
+                    FilledIconButton(
+                        onClick = { showSleepTimer = true },
+                        shape = CircleShape,
+                        modifier = Modifier.size(40.dp),
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
                     ) {
-                        FilledIconButton(
-                            onClick = { showSleepTimer = true },
-                            shape = CircleShape,
-                            modifier = Modifier.size(40.dp),
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = if (sleepTimerState.isActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.primary,
-                                contentColor = if (sleepTimerState.isActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onPrimary
-                            )
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Timer,
-                                contentDescription = "Sleep Timer",
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Outlined.Timer,
+                            contentDescription = "Sleep Timer",
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
 
                     // Full Screen Lyrics Button (between Sleep Timer & Queue)

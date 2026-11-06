@@ -214,6 +214,7 @@ class MainActivity : ComponentActivity() {
 			val pairedDevices by syncViewModel.pairedDevices.collectAsState()
 			val starredDeviceId by syncViewModel.starredDeviceId.collectAsState()
 			val scope = rememberCoroutineScope()
+			var sleepTimerJustPaused by remember { mutableStateOf(false) }
 
 			// Effective playback state prefers remote companion state when desktop output is active
 			val effectivePlaybackState = if (isDesktopConnected && isDesktopOutputEnabled && remotePlaybackState != null) {
@@ -270,12 +271,15 @@ class MainActivity : ComponentActivity() {
 			// Wire up SleepTimerManager callbacks for local pause & remote desktop sync
 			LaunchedEffect(sleepTimerManager, isDesktopConnected, isDesktopOutputEnabled) {
 				sleepTimerManager.onStopPlaybackCallback = {
+					sleepTimerJustPaused = true
+					scope.launch {
+						kotlinx.coroutines.delay(3000L)
+						sleepTimerJustPaused = false
+					}
 					if (isDesktopConnected && isDesktopOutputEnabled) {
 						syncViewModel.sendRemoteCommand(CommandAction.PAUSE)
 					}
-					if (isLocalOutputEnabled) {
-						playbackEngine.pause()
-					}
+					playbackEngine.pause()
 				}
 				sleepTimerManager.onStartSleepTimerCallback = { mode, value ->
 					if (isDesktopConnected) {
@@ -322,8 +326,8 @@ class MainActivity : ComponentActivity() {
 			}
 
 			// Multi-room synchronization: when both Windows and Phone outputs are enabled, keep them in sync!
-			LaunchedEffect(remotePlaybackState?.currentTrack?.title, remotePlaybackState?.isPlaying, isDesktopOutputEnabled, isLocalOutputEnabled, isDesktopConnected) {
-				if (!isDesktopConnected || !isDesktopOutputEnabled || !isLocalOutputEnabled) return@LaunchedEffect
+			LaunchedEffect(remotePlaybackState?.currentTrack?.title, remotePlaybackState?.isPlaying, isDesktopOutputEnabled, isLocalOutputEnabled, isDesktopConnected, sleepTimerJustPaused) {
+				if (!isDesktopConnected || !isDesktopOutputEnabled || !isLocalOutputEnabled || sleepTimerJustPaused) return@LaunchedEffect
 				val remote = remotePlaybackState ?: return@LaunchedEffect
 				val remoteTrack = remote.currentTrack ?: return@LaunchedEffect
 				val localState = playbackEngine.playbackState.value

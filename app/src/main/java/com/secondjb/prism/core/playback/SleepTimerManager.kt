@@ -1,6 +1,7 @@
 package com.secondjb.prism.core.playback
 
 import com.secondjb.prism.domain.model.PlaybackState
+import com.secondjb.prism.domain.model.Track
 import com.secondjb.prism.domain.playback.PlaybackController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,14 +39,14 @@ class SleepTimerManager(
     val timerState: StateFlow<SleepTimerState> = _timerState.asStateFlow()
 
     private var countdownJob: Job? = null
-    private var lastObservedTrackId: String? = null
+    private var lastObservedTrackKey: String? = null
 
     var onStopPlaybackCallback: (() -> Unit)? = null
     var onStartSleepTimerCallback: ((SleepTimerMode, Long) -> Unit)? = null
     var onCancelSleepTimerCallback: (() -> Unit)? = null
 
     init {
-        // Observe playback state changes to count track completions
+        // Observe playback controller state changes to count track completions
         scope.launch {
             playbackController.playbackState.collect { state ->
                 handlePlaybackStateUpdate(state)
@@ -53,9 +54,19 @@ class SleepTimerManager(
         }
     }
 
+    private fun getTrackKey(track: Track?): String? {
+        if (track == null) return null
+        val title = track.title.trim().lowercase()
+        val artist = track.artist.trim().lowercase()
+        if (title.isNotEmpty()) {
+            return "$title|$artist"
+        }
+        return track.id
+    }
+
     fun handlePlaybackStateUpdate(state: PlaybackState) {
         val currentTrack = state.currentTrack ?: return
-        val currentTrackId = currentTrack.id
+        val currentTrackKey = getTrackKey(currentTrack) ?: return
 
         val current = _timerState.value
         if (current.isActive) {
@@ -69,11 +80,11 @@ class SleepTimerManager(
             }
         }
 
-        if (lastObservedTrackId != null && lastObservedTrackId != currentTrackId) {
+        if (lastObservedTrackKey != null && lastObservedTrackKey != currentTrackKey) {
             // Track transitioned!
             onTrackFinished()
         }
-        lastObservedTrackId = currentTrackId
+        lastObservedTrackKey = currentTrackKey
     }
 
     fun startTimerByMinutes(
@@ -123,6 +134,9 @@ class SleepTimerManager(
     ) {
         cancelTimer()
 
+        // Snapshot current track key so we only count down when a track actually finishes
+        lastObservedTrackKey = getTrackKey(playbackController.playbackState.value.currentTrack)
+
         _timerState.value = SleepTimerState(
             isActive = true,
             mode = if (playToEndOfQueue) SleepTimerMode.END_OF_QUEUE else SleepTimerMode.TRACKS,
@@ -136,6 +150,7 @@ class SleepTimerManager(
     fun cancelTimer() {
         countdownJob?.cancel()
         countdownJob = null
+        lastObservedTrackKey = null
         _timerState.value = SleepTimerState()
         onCancelSleepTimerCallback?.invoke()
     }

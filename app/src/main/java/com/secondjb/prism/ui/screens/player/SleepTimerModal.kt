@@ -196,39 +196,51 @@ fun SleepTimerModal(
                         )
                     )
 
-                    // Action Button: Trash can if active (clears timer), Checkmark (confirms & closes)
-                    if (timerState.isActive) {
-                        FilledTonalIconButton(
-                            onClick = onCancelTimer,
-                            colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer,
-                                contentColor = MaterialTheme.colorScheme.onErrorContainer
-                            ),
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(Icons.Default.Delete, contentDescription = "Clear sleep timer", modifier = Modifier.size(20.dp))
-                        }
-                    } else {
-                        FilledIconButton(
-                            onClick = {
-                                triggerAutoStart()
-                                onDismiss()
-                            },
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            ),
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(Icons.Default.Check, contentDescription = "Confirm sleep timer", modifier = Modifier.size(20.dp))
-                        }
-                    }
-
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.size(36.dp)
+                    // Action Button & Close Button: no colored background circles, moved close together
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(20.dp))
+                        if (timerState.isActive) {
+                            IconButton(
+                                onClick = onCancelTimer,
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = "Clear sleep timer",
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        } else {
+                            IconButton(
+                                onClick = {
+                                    triggerAutoStart()
+                                    onDismiss()
+                                },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = "Confirm sleep timer",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Close",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
                 }
             }
