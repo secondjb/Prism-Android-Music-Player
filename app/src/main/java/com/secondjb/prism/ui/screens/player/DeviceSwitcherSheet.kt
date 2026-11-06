@@ -58,7 +58,7 @@ fun formatDeviceDisplayName(rawName: String?, index: Int = 0): String {
             name.contains("Windows", ignoreCase = true) ||
             name.contains("PC", ignoreCase = true) ||
             name.isBlank()
-    val base = if (isDesktop) "Prism Desktop" else "Prism Android"
+    val base = if (isDesktop) "Desktop" else "Phone"
     return if (index <= 0) base else "$base ${index + 1}"
 }
 
@@ -209,7 +209,7 @@ fun DeviceSwitcherSheet(
 
                             Text(
                                 text = if (isDesktopConnected) {
-                                    "Connected • ${connectedEndpointInfo ?: "LAN Synced"}"
+                                    "Connected"
                                 } else {
                                     "Not Connected • Tap to connect"
                                 },
@@ -382,7 +382,7 @@ fun DeviceSwitcherSheet(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = if (isThisCurrentlyConnected) "Connected • ${paired.host}:${paired.port}" else "${paired.host}:${paired.port}",
+                                    text = if (isThisCurrentlyConnected) "Connected" else "${paired.host}:${paired.port}",
                                     style = MaterialTheme.typography.labelSmall,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,

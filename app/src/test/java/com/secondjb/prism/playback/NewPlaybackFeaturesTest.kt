@@ -12,21 +12,21 @@ class NewPlaybackFeaturesTest {
 
     @Test
     fun testFormatDeviceDisplayNameSingleDesktop() {
-        val formatted = formatDeviceDisplayName("Prism Desktop (AHHHHHHHHHHHHHH)", 0)
-        assertEquals("Prism Desktop", formatted)
+        val formatted = formatDeviceDisplayName("Desktop (AHHHHHHHHHHHHHH)", 0)
+        assertEquals("Desktop", formatted)
     }
 
     @Test
     fun testFormatDeviceDisplayNameMultipleDesktops() {
-        assertEquals("Prism Desktop", formatDeviceDisplayName("Prism Desktop", 0))
-        assertEquals("Prism Desktop 2", formatDeviceDisplayName("Prism-Windows-DESKTOP-XYZ", 1))
-        assertEquals("Prism Desktop 3", formatDeviceDisplayName("Living Room PC", 2))
+        assertEquals("Desktop", formatDeviceDisplayName("Desktop", 0))
+        assertEquals("Desktop 2", formatDeviceDisplayName("Prism-Windows-DESKTOP-XYZ", 1))
+        assertEquals("Desktop 3", formatDeviceDisplayName("Living Room PC", 2))
     }
 
     @Test
     fun testFormatDeviceDisplayNameAndroidDevices() {
-        assertEquals("Prism Android", formatDeviceDisplayName("Pixel 7", 0))
-        assertEquals("Prism Android 2", formatDeviceDisplayName("Galaxy S24", 1))
+        assertEquals("Phone", formatDeviceDisplayName("Pixel 7", 0))
+        assertEquals("Phone 2", formatDeviceDisplayName("Galaxy S24", 1))
     }
 
     @Test
@@ -69,5 +69,26 @@ class NewPlaybackFeaturesTest {
         assertEquals(1, deduplicated.size)
         assertEquals("10.6.0.170", deduplicated.first().host)
         assertEquals("crypto-auth-token-12345", deduplicated.first().token)
+    }
+
+    @Test
+    fun testLrcStandardLineDoesNotInferSyllables() {
+        val rawLrc = "[00:10.00]This is a standard line-by-line lyric\n[00:15.00]Second line here"
+        val parsed = com.secondjb.prism.ui.components.lyrics.LrcParser.parse(rawLrc)
+        assertEquals(2, parsed.size)
+        assertFalse("Standard LRC lines should not infer synthetic syllables", parsed[0].hasExplicitSyllables)
+        assertFalse(parsed[0].hasSyllables)
+        assertTrue(parsed[0].syllables.isEmpty())
+        assertEquals("This is a standard line-by-line lyric", parsed[0].text)
+    }
+
+    @Test
+    fun testLrcExplicitWordTagsPopulateSyllables() {
+        val enhancedLrc = "[00:10.00]<00:10.00>This <00:10.50>is <00:11.00>word <00:11.50>synced"
+        val parsed = com.secondjb.prism.ui.components.lyrics.LrcParser.parse(enhancedLrc)
+        assertEquals(1, parsed.size)
+        assertTrue("Enhanced LRC lines with inline tags must have explicit syllables", parsed[0].hasExplicitSyllables)
+        assertTrue(parsed[0].hasSyllables)
+        assertEquals(4, parsed[0].syllables.size)
     }
 }

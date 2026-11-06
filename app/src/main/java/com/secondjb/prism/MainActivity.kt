@@ -157,8 +157,12 @@ class MainActivity : ComponentActivity() {
 				}
 				syncViewModel.onRemoteStateReconciled = { remoteState ->
 					val localState = playbackEngine.playbackState.value
-					val phoneIsMoreRecent = localState.isPlaying || (localState.lastActionTimestampMs > remoteState.lastActionTimestampMs && localState.currentTrack != null)
-					if (!phoneIsMoreRecent && remoteState.currentTrack != null) {
+					val isDesktopConnectedNow = syncViewModel.connectionState.value is TransportConnectionState.Connected
+					val isDesktopOut = syncViewModel.isDesktopOutputEnabled.value
+					val isLocalOut = syncViewModel.isLocalOutputEnabled.value
+					val desktopIsAuthority = isDesktopConnectedNow && isDesktopOut
+
+					if (desktopIsAuthority && remoteState.currentTrack != null) {
 						lifecycleScope.launch(Dispatchers.Main) {
 							val localMatch = syncViewModel.findLocalMatch(remoteState.currentTrack) ?: remoteState.currentTrack
 							val matchedQueue = remoteState.queue.map { syncViewModel.findLocalMatch(it) ?: it }
@@ -168,8 +172,26 @@ class MainActivity : ComponentActivity() {
 								queue = matchedQueue,
 								userQueue = matchedUserQueue,
 								positionMs = remoteState.positionMs,
-								isPlaying = remoteState.isPlaying
+								isPlaying = remoteState.isPlaying,
+								loadToPlayer = isLocalOut
 							)
+						}
+					} else {
+						val phoneIsMoreRecent = localState.isPlaying || (localState.lastActionTimestampMs > remoteState.lastActionTimestampMs && localState.currentTrack != null)
+						if (!phoneIsMoreRecent && remoteState.currentTrack != null) {
+							lifecycleScope.launch(Dispatchers.Main) {
+								val localMatch = syncViewModel.findLocalMatch(remoteState.currentTrack) ?: remoteState.currentTrack
+								val matchedQueue = remoteState.queue.map { syncViewModel.findLocalMatch(it) ?: it }
+								val matchedUserQueue = remoteState.userQueue.map { syncViewModel.findLocalMatch(it) ?: it }
+								playbackEngine.syncFromRemoteQueue(
+									currentTrack = localMatch,
+									queue = matchedQueue,
+									userQueue = matchedUserQueue,
+									positionMs = remoteState.positionMs,
+									isPlaying = remoteState.isPlaying,
+									loadToPlayer = isLocalOut
+								)
+							}
 						}
 					}
 				}
@@ -205,10 +227,28 @@ class MainActivity : ComponentActivity() {
 				!isLocalOutputEnabled || (remotePlaybackState?.isPlaying == true && !localPlaybackState.isPlaying && localPlaybackState.currentTrack == null)
 			)
 
+			var lastKnownRemoteState by remember { mutableStateOf<PlaybackState?>(null) }
+			LaunchedEffect(remotePlaybackState) {
+				if (remotePlaybackState != null) {
+					lastKnownRemoteState = remotePlaybackState
+				}
+			}
+
 			LaunchedEffect(isDesktopConnected) {
 				if (!isDesktopConnected) {
 					playbackEngine.restoreLocalOutput()
 					playbackEngine.isRemoteOnlyActive = false
+					val lastRemote = lastKnownRemoteState
+					if (lastRemote?.currentTrack != null) {
+						val matchedTrack = syncViewModel.findLocalMatch(lastRemote.currentTrack) ?: lastRemote.currentTrack
+						val matchedQueue = lastRemote.queue.map { syncViewModel.findLocalMatch(it) ?: it }
+						playbackEngine.handoffFromRemote(
+							track = matchedTrack,
+							queue = if (matchedQueue.isNotEmpty()) matchedQueue else listOf(matchedTrack),
+							positionMs = lastRemote.positionMs,
+							isPlaying = lastRemote.isPlaying
+						)
+					}
 				}
 			}
 
@@ -272,7 +312,7 @@ class MainActivity : ComponentActivity() {
 						playableUri = playableUri,
 						isPlaying = remote.isPlaying,
 						positionMs = remote.positionMs,
-						serverName = connectedServerName?.ifBlank { "Prism Desktop" } ?: "Prism Desktop"
+						serverName = connectedServerName?.ifBlank { "Desktop" } ?: "Desktop"
 					)
 				} else if (isLocalOutputEnabled) {
 					com.secondjb.prism.core.service.MediaSessionBridge.isRemoteActive = false
@@ -301,14 +341,14 @@ class MainActivity : ComponentActivity() {
 				)
 
 				if (!isSameTrack) {
-					val match = syncViewModel.findLocalMatch(remoteTrack)
-					if (match != null) {
-						playbackEngine.playTrack(match, syncViewModel.getAllLocalTracks())
-						playbackEngine.seekTo(remote.positionMs)
-						if (!remote.isPlaying) {
-							playbackEngine.pause()
-						}
-					}
+					val match = syncViewModel.findLocalMatch(remoteTrack) ?: remoteTrack
+					val matchedQueue = remote.queue.map { syncViewModel.findLocalMatch(it) ?: it }
+					playbackEngine.handoffFromRemote(
+						track = match,
+						queue = if (matchedQueue.isNotEmpty()) matchedQueue else listOf(match),
+						positionMs = remote.positionMs,
+						isPlaying = remote.isPlaying
+					)
 				} else {
 					if (remote.isPlaying && !localState.isPlaying) {
 						playbackEngine.play()
@@ -318,7 +358,7 @@ class MainActivity : ComponentActivity() {
 
 					val drift = Math.abs(remote.positionMs - localState.positionMs)
 					val isNearEnd = remote.durationMs > 0L && remote.positionMs >= (remote.durationMs - 3000L)
-					if (drift > 1200L && !isNearEnd) {
+					if (drift > 1500L && !isNearEnd) {
 						playbackEngine.seekTo(remote.positionMs)
 					}
 				}
@@ -397,8 +437,7 @@ class MainActivity : ComponentActivity() {
 
 				if (desktopActive) {
 					syncViewModel.sendRemoteCommand(CommandAction.SKIP_NEXT)
-				}
-				if (localActive || !isDesktopConnected) {
+				} else if (localActive || !isDesktopConnected) {
 					playbackEngine.restoreLocalOutput()
 					playbackEngine.skipNext()
 				}
@@ -410,8 +449,7 @@ class MainActivity : ComponentActivity() {
 
 				if (desktopActive) {
 					syncViewModel.sendRemoteCommand(CommandAction.SKIP_PREVIOUS)
-				}
-				if (localActive || !isDesktopConnected) {
+				} else if (localActive || !isDesktopConnected) {
 					playbackEngine.restoreLocalOutput()
 					playbackEngine.skipPrevious()
 				}
@@ -423,8 +461,7 @@ class MainActivity : ComponentActivity() {
 
 				if (desktopActive) {
 					syncViewModel.sendRemoteCommand(CommandAction.TOGGLE_SHUFFLE)
-				}
-				if (localActive || !isDesktopConnected) {
+				} else if (localActive || !isDesktopConnected) {
 					playbackEngine.restoreLocalOutput()
 					playbackEngine.toggleShuffle()
 				}
@@ -437,8 +474,7 @@ class MainActivity : ComponentActivity() {
 
 				if (desktopActive) {
 					syncViewModel.sendRemoteCommand(CommandAction.SET_REPEAT, repeatMode = nextMode)
-				}
-				if (localActive || !isDesktopConnected) {
+				} else if (localActive || !isDesktopConnected) {
 					playbackEngine.restoreLocalOutput()
 					playbackEngine.setRepeatMode(nextMode)
 				}
@@ -552,9 +588,9 @@ class MainActivity : ComponentActivity() {
 				}
 			}
 
-			LaunchedEffect(shouldShowRemoteInNotification, connectedServerName) {
+			LaunchedEffect(shouldShowRemoteInNotification, connectedServerName, isDesktopConnected, isDesktopOutputEnabled, isLocalOutputEnabled) {
 				com.secondjb.prism.core.service.MediaSessionBridge.isRemoteActive = shouldShowRemoteInNotification
-				com.secondjb.prism.core.service.MediaSessionBridge.remoteServerName = connectedServerName?.ifBlank { "Prism Desktop" } ?: "Prism Desktop"
+				com.secondjb.prism.core.service.MediaSessionBridge.remoteServerName = connectedServerName?.ifBlank { "Desktop" } ?: "Desktop"
 				com.secondjb.prism.core.service.MediaSessionBridge.onRemotePlay = {
 					syncViewModel.sendRemoteCommand(CommandAction.PLAY)
 				}
@@ -569,6 +605,24 @@ class MainActivity : ComponentActivity() {
 				}
 				com.secondjb.prism.core.service.MediaSessionBridge.onRemoteSeek = { pos ->
 					syncViewModel.sendRemoteCommand(CommandAction.SEEK, seekMs = pos)
+				}
+				com.secondjb.prism.core.service.MediaSessionBridge.onLocalPlay = {
+					if (isDesktopConnected && isDesktopOutputEnabled && isLocalOutputEnabled) {
+						syncViewModel.sendRemoteCommand(CommandAction.PLAY)
+					}
+				}
+				com.secondjb.prism.core.service.MediaSessionBridge.onLocalPause = {
+					if (isDesktopConnected && isDesktopOutputEnabled && isLocalOutputEnabled) {
+						syncViewModel.sendRemoteCommand(CommandAction.PAUSE)
+					}
+				}
+				com.secondjb.prism.core.service.MediaSessionBridge.onAudioBecomingNoisy = {
+					if (isDesktopConnected && isDesktopOutputEnabled && isLocalOutputEnabled) {
+						syncViewModel.sendRemoteCommand(CommandAction.PAUSE)
+						playbackEngine.pause()
+					} else if (isLocalOutputEnabled) {
+						playbackEngine.pause()
+					}
 				}
 			}
 
@@ -681,7 +735,7 @@ class MainActivity : ComponentActivity() {
 						isRemoteActive = isRemoteOnlyActive,
 						isBluetoothActive = isBluetoothConnected && !isRemoteOnlyActive,
 						bluetoothDeviceName = bluetoothDeviceName,
-						remoteDeviceName = connectedServerName?.ifBlank { "Prism Desktop" } ?: "Prism Desktop",
+						remoteDeviceName = connectedServerName?.ifBlank { "Desktop" } ?: "Desktop",
 						connectedDeviceName = connectedServerName,
 						isDesktopConnected = isDesktopConnected,
 						pairedDevices = pairedDevices,
@@ -872,7 +926,20 @@ class MainActivity : ComponentActivity() {
 							onConnectToDevice = { syncViewModel.connectToDevice(it) },
 							onConnectToPairedDevice = { syncViewModel.connectToPairedDevice(it) },
 							onDeletePairing = { syncViewModel.deletePairing(it) },
-							onDisconnect = { syncViewModel.disconnect() },
+							onDisconnect = {
+								val currentRemote = remotePlaybackState
+								if (currentRemote?.currentTrack != null) {
+									val matchedTrack = syncViewModel.findLocalMatch(currentRemote.currentTrack) ?: currentRemote.currentTrack
+									val matchedQueue = currentRemote.queue.map { syncViewModel.findLocalMatch(it) ?: it }
+									playbackEngine.handoffFromRemote(
+										track = matchedTrack,
+										queue = if (matchedQueue.isNotEmpty()) matchedQueue else listOf(matchedTrack),
+										positionMs = currentRemote.positionMs,
+										isPlaying = currentRemote.isPlaying
+									)
+								}
+								syncViewModel.disconnect()
+							},
 							sleepTimerState = sleepTimerState,
 							onStartSleepTimerMinutes = { mins, finishLast, endOfQ ->
 								sleepTimerManager.startTimerByMinutes(mins, finishLast, endOfQ)
@@ -1144,7 +1211,7 @@ fun PrismAppRoot(
 	isRemoteActive: Boolean = false,
 	isBluetoothActive: Boolean = false,
 	bluetoothDeviceName: String? = null,
-	remoteDeviceName: String = "Prism Desktop",
+	remoteDeviceName: String = "Desktop",
 	connectedDeviceName: String? = null,
 	isDesktopConnected: Boolean = false,
 	pairedDevices: List<com.secondjb.prism.core.data.PairedDevice> = emptyList(),

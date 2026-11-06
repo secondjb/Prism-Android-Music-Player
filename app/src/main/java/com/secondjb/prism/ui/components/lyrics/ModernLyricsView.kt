@@ -202,7 +202,7 @@ fun ModernLyricsView(
                         horizontalAlignment = Alignment.Start
                     ) {
                         // Word-by-word syllable lighting when active
-                        if (isActive && line.hasSyllables && !isTranslationReplacing && !isRomanizationReplacing) {
+                        if (isActive && line.hasExplicitSyllables && line.hasSyllables && !isTranslationReplacing && !isRomanizationReplacing) {
                             val annotated = buildAnnotatedString {
                                 for (syl in line.syllables) {
                                     val isPast = currentPositionMs >= syl.timeMs + syl.durationMs

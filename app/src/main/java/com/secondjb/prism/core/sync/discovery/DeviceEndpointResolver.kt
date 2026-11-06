@@ -6,13 +6,16 @@ import android.net.NetworkCapabilities
 import android.util.Log
 import com.secondjb.prism.core.data.PairedDevice
 import com.secondjb.prism.core.sync.transport.ConnectionEndpoint
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.Socket
@@ -122,7 +125,7 @@ class DeviceEndpointResolver(
         port: Int,
         lastKnownHostNum: Int? = null
     ): String? = coroutineScope {
-        // Prioritize: previous host number +/- 10 first, then common DHCP ranges, then remainder
+        // Prioritize: previous host number +/- 15 first, then common DHCP ranges, then remainder
         val allHosts = (1..254).toList()
         val prioritizedHosts = if (lastKnownHostNum != null && lastKnownHostNum in 1..254) {
             val nearby = (maxOf(1, lastKnownHostNum - 15)..minOf(254, lastKnownHostNum + 15)).toList()
@@ -132,29 +135,27 @@ class DeviceEndpointResolver(
             allHosts
         }
 
-        // Bound concurrency to 32 parallel sockets to prevent Wi-Fi router packet drops
-        val semaphore = Semaphore(32)
+        val foundIp = CompletableDeferred<String>()
+        val semaphore = Semaphore(48)
 
         val sweepJobs = prioritizedHosts.map { hostNum ->
             val targetIp = "$subnetPrefix.$hostNum"
-            async(Dispatchers.IO) {
+            launch(Dispatchers.IO) {
+                if (foundIp.isCompleted) return@launch
                 semaphore.withPermit {
-                    if (isReachable(targetIp, port, timeoutMs = 1200)) {
-                        targetIp
-                    } else {
-                        null
+                    if (foundIp.isCompleted) return@launch
+                    if (isReachable(targetIp, port, timeoutMs = 750)) {
+                        foundIp.complete(targetIp)
                     }
                 }
             }
         }
 
-        for (job in sweepJobs) {
-            val result = job.await()
-            if (result != null) {
-                return@coroutineScope result
-            }
+        val result = withTimeoutOrNull(2500L) {
+            foundIp.await()
         }
-        null
+        sweepJobs.forEach { it.cancel() }
+        result
     }
 
     private fun getLocalWifiIpAddress(): String? {

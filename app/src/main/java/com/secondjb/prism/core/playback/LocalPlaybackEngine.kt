@@ -935,13 +935,42 @@ class LocalPlaybackEngine(
         queue: List<Track>,
         userQueue: List<Track>,
         positionMs: Long,
-        isPlaying: Boolean
+        isPlaying: Boolean,
+        loadToPlayer: Boolean = false
     ) {
         if (currentTrack == null && queue.isEmpty()) return
         this.contextQueue = queue.toMutableList()
         this.userQueue = userQueue.toMutableList()
         this.originalQueue = queue.toMutableList()
         this.currentQueueIndex = if (currentTrack != null) queue.indexOfFirst { it.id == currentTrack.id } else -1
+
+        val controller = mediaController
+        if (loadToPlayer && currentTrack != null && controller != null) {
+            val currentMediaId = controller.currentMediaItem?.mediaId
+            if (currentMediaId != currentTrack.id) {
+                val matchedQueue = if (queue.isNotEmpty()) queue else listOf(currentTrack)
+                val targetIdx = matchedQueue.indexOfFirst { it.id == currentTrack.id }.coerceAtLeast(0)
+                val items = matchedQueue.map { it.toMediaItem() }
+                controller.setMediaItems(items, targetIdx, positionMs.coerceAtLeast(0L))
+                controller.prepare()
+                if (isPlaying) {
+                    controller.play()
+                } else {
+                    controller.pause()
+                }
+            } else {
+                val drift = Math.abs(controller.currentPosition - positionMs)
+                if (drift > 1500L) {
+                    controller.seekTo(positionMs.coerceAtLeast(0L))
+                }
+                if (isPlaying && !controller.isPlaying) {
+                    controller.play()
+                } else if (!isPlaying && controller.isPlaying) {
+                    controller.pause()
+                }
+            }
+        }
+
         _playbackState.update {
             it.copy(
                 currentTrack = currentTrack,

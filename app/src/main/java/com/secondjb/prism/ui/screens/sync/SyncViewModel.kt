@@ -144,6 +144,27 @@ class SyncViewModel(
         registerNetworkCallback()
         startAutoReconnectLoop()
         autoConnectRecentPairedDevice()
+        observeDiscoveredDevices()
+    }
+
+    private fun observeDiscoveredDevices() {
+        val dm = discoveryManager ?: return
+        viewModelScope.launch {
+            dm.discoveredDevices.collect { nodes ->
+                val currentConn = connectionState.value
+                val isBusy = isConnectingOrResolving || currentConn is TransportConnectionState.Connected || currentConn is TransportConnectionState.Connecting
+                if (!isBusy && !isManuallyDisconnected && nodes.isNotEmpty()) {
+                    val paired = preferencesRepository?.pairedDevices?.value ?: emptyList()
+                    val match = paired.firstOrNull { p ->
+                        nodes.any { n -> n.ipAddress == p.host || n.name.equals(p.name, ignoreCase = true) }
+                    }
+                    if (match != null) {
+                        Log.i("PrismSync", "Discovered paired device via mDNS! Triggering immediate connect: ${match.name}")
+                        connectToPairedDevice(match)
+                    }
+                }
+            }
+        }
     }
 
     private fun registerNetworkCallback() {

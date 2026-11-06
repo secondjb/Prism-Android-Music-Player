@@ -44,6 +44,8 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -92,6 +94,7 @@ import com.secondjb.prism.ui.theme.PillShape
  * audio quality badges, device handover modal, queue sheet, and synced lyrics.
  */
 import androidx.compose.material.icons.outlined.Timer
+import com.secondjb.prism.core.playback.SleepTimerMode
 import com.secondjb.prism.core.playback.SleepTimerState
 import com.secondjb.prism.ui.screens.player.SleepTimerModal
 
@@ -494,25 +497,65 @@ fun NowPlayingScreen(
                 }
 
                 // Action Buttons: Sleep Timer & Queue
+                val sleepTimerRemainingMinutes: Int? = if (sleepTimerState.isActive) {
+                    when (sleepTimerState.mode) {
+                        SleepTimerMode.TIME -> {
+                            maxOf(1, ((sleepTimerState.remainingSeconds + 59) / 60).toInt())
+                        }
+                        SleepTimerMode.TRACKS -> {
+                            val currentRemainingMs = (playbackState.durationMs - playbackState.positionMs).coerceAtLeast(0L)
+                            val upcomingTracks = playbackState.userQueue + playbackState.queue.drop(playbackState.queueIndex + 1)
+                            val tracksToCount = upcomingTracks.take((sleepTimerState.remainingTracks - 1).coerceAtLeast(0))
+                            val upcomingMs = tracksToCount.sumOf { if (it.durationMs > 0L) it.durationMs else 210_000L }
+                            val totalMs = currentRemainingMs + upcomingMs
+                            maxOf(1, ((totalMs + 59_999L) / 60_000L).toInt())
+                        }
+                        SleepTimerMode.END_OF_QUEUE -> {
+                            val currentRemainingMs = (playbackState.durationMs - playbackState.positionMs).coerceAtLeast(0L)
+                            val upcomingTracks = playbackState.userQueue + playbackState.queue.drop(playbackState.queueIndex + 1)
+                            val upcomingMs = upcomingTracks.sumOf { if (it.durationMs > 0L) it.durationMs else 210_000L }
+                            val totalMs = currentRemainingMs + upcomingMs
+                            maxOf(1, ((totalMs + 59_999L) / 60_000L).toInt())
+                        }
+                    }
+                } else null
+
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Sleep Timer Button
-                    FilledIconButton(
-                        onClick = { showSleepTimer = true },
-                        shape = CircleShape,
-                        modifier = Modifier.size(40.dp),
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        )
+                    // Sleep Timer Button with Active Badge
+                    BadgedBox(
+                        badge = {
+                            if (sleepTimerRemainingMinutes != null) {
+                                Badge(
+                                    containerColor = MaterialTheme.colorScheme.error,
+                                    contentColor = MaterialTheme.colorScheme.onError
+                                ) {
+                                    Text(
+                                        text = "${sleepTimerRemainingMinutes}m",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Timer,
-                            contentDescription = "Sleep Timer",
-                            modifier = Modifier.size(20.dp)
-                        )
+                        FilledIconButton(
+                            onClick = { showSleepTimer = true },
+                            shape = CircleShape,
+                            modifier = Modifier.size(40.dp),
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = if (sleepTimerState.isActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.primary,
+                                contentColor = if (sleepTimerState.isActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onPrimary
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Timer,
+                                contentDescription = "Sleep Timer",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
 
                     // Full Screen Lyrics Button (between Sleep Timer & Queue)

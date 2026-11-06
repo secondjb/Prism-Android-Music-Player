@@ -609,7 +609,7 @@ private fun LyricLineRow(
         horizontalAlignment = Alignment.Start
     ) {
         // Main Text: If original text with word-by-word syllable timings, render syllable animation
-        if (isActive && line.hasSyllables && !isTranslationReplacing && !isRomanizationReplacing) {
+        if (isActive && line.hasExplicitSyllables && line.hasSyllables && !isTranslationReplacing && !isRomanizationReplacing) {
             val annotated = buildAnnotatedString {
                 for (syl in line.syllables) {
                     val isPastSyl = currentPosMs >= syl.timeMs + syl.durationMs

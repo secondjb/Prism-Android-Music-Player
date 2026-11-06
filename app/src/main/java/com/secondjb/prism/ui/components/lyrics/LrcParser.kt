@@ -16,7 +16,8 @@ data class LyricLine(
     val romanized: String? = null,
     val translation: String? = null,
     val syllables: List<LyricSyllable> = emptyList(),
-    val hasSyllables: Boolean = syllables.isNotEmpty()
+    val hasSyllables: Boolean = syllables.isNotEmpty(),
+    val hasExplicitSyllables: Boolean = false
 )
 
 object LrcParser {
@@ -287,8 +288,7 @@ object LrcParser {
                 }
                 sylList
             } else {
-                // Musical vocal inference (adapted from Prism Windows lyricsParser)
-                inferLineSyllables(primaryBody, timeMs, lineDurationMs)
+                emptyList()
             }
 
             val cleanText = if (inlineMatches.isNotEmpty()) {
@@ -307,7 +307,8 @@ object LrcParser {
                     romanized = romanized,
                     translation = inlineTranslation,
                     syllables = syllables,
-                    hasSyllables = syllables.isNotEmpty()
+                    hasSyllables = syllables.isNotEmpty(),
+                    hasExplicitSyllables = inlineMatches.isNotEmpty()
                 )
             )
             i++

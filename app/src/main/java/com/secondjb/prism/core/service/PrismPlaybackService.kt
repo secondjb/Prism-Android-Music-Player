@@ -40,8 +40,11 @@ object MediaSessionBridge {
     var onRemoteSkipNext: (() -> Unit)? = null
     var onRemoteSkipPrevious: (() -> Unit)? = null
     var onRemoteSeek: ((Long) -> Unit)? = null
+    var onLocalPlay: (() -> Unit)? = null
+    var onLocalPause: (() -> Unit)? = null
     var onLocalSkipNext: (() -> Unit)? = null
     var onLocalSkipPrevious: (() -> Unit)? = null
+    var onAudioBecomingNoisy: (() -> Unit)? = null
     var onStateChanged: (() -> Unit)? = null
 }
 
@@ -59,6 +62,13 @@ class PrismPlaybackService : MediaSessionService() {
     private var focusRequest: android.media.AudioFocusRequest? = null
     private var focusListener: AudioManager.OnAudioFocusChangeListener? = null
     private var resumeOnFocusGain = false
+    private val becomingNoisyReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                MediaSessionBridge.onAudioBecomingNoisy?.invoke()
+            }
+        }
+    }
 
     @OptIn(UnstableApi::class)
     override fun onCreate() {
@@ -214,6 +224,7 @@ class PrismPlaybackService : MediaSessionService() {
                 if (MediaSessionBridge.isRemoteActive) {
                     MediaSessionBridge.onRemotePlay?.invoke()
                 } else {
+                    MediaSessionBridge.onLocalPlay?.invoke()
                     super.play()
                 }
             }
@@ -223,6 +234,7 @@ class PrismPlaybackService : MediaSessionService() {
                 if (MediaSessionBridge.isRemoteActive) {
                     MediaSessionBridge.onRemotePause?.invoke()
                 } else {
+                    MediaSessionBridge.onLocalPause?.invoke()
                     super.pause()
                 }
             }
@@ -383,6 +395,13 @@ class PrismPlaybackService : MediaSessionService() {
                 session.setCustomLayout(emptyList())
             }
         }
+
+        try {
+            registerReceiver(
+                becomingNoisyReceiver,
+                android.content.IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+            )
+        } catch (e: Exception) {}
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
@@ -397,7 +416,13 @@ class PrismPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        try {
+            unregisterReceiver(becomingNoisyReceiver)
+        } catch (e: Exception) {}
         MediaSessionBridge.onStateChanged = null
+        MediaSessionBridge.onLocalPlay = null
+        MediaSessionBridge.onLocalPause = null
+        MediaSessionBridge.onAudioBecomingNoisy = null
         MediaSessionBridge.onLocalSkipNext = null
         MediaSessionBridge.onLocalSkipPrevious = null
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
