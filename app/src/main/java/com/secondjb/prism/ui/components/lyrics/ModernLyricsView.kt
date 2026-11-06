@@ -98,7 +98,7 @@ fun ModernLyricsView(
     val interludeList = remember(parsedLines) { computeLyricInterludes(parsedLines) }
     val activeInterlude by remember(currentPositionMs, interludeList) {
         derivedStateOf {
-            interludeList.find { currentPositionMs in it.startMs..it.endMs }
+            interludeList.find { currentPositionMs in it.startMs until it.endMs }
         }
     }
     val activeIndex by remember(currentPositionMs, parsedLines) {
@@ -181,7 +181,7 @@ fun ModernLyricsView(
                 itemsIndexed(parsedLines) { index, line ->
                     val interludeBefore = interludeList.find { it.insertIndex == index }
                     if (interludeBefore != null) {
-                        val isInterludeActive = currentPositionMs in interludeBefore.startMs..interludeBefore.endMs
+                        val isInterludeActive = currentPositionMs in interludeBefore.startMs until interludeBefore.endMs
                         if (isInterludeActive || (index == 0 && currentPositionMs < interludeBefore.endMs)) {
                             InstrumentalDotsIndicator(
                                 startMs = interludeBefore.startMs,
