@@ -1,23 +1,19 @@
 package com.secondjb.prism.ui.components.lyrics
 
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
@@ -25,16 +21,22 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.graphics.Matrix
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.vector.PathNode
+import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlin.math.PI
+import kotlin.math.max
 import kotlin.math.sin
 
 /**
@@ -93,11 +95,8 @@ fun computeLyricInterludes(lines: List<LyricLine>): List<LyricInterlude> {
 }
 
 /**
- * Material 3 Expressive Instrumental 3-Dot Indicator:
- * Mirrors Prism Desktop InterludeIndicator and PixelPlayer:
- * 1. Ambient Phase (> 3.0s remaining or continuous instrumental): Staggered rhythmic wave bounce.
- * 2. Countdown Phase (last 3.0s -> 0.0s): Three sequential jumping balls (3 -> 2 -> 1) landing right as vocals start.
- * 3. Inactive Phase: Subtle muted row (··· ♪ ···) with tap-to-seek.
+ * PixelPlayer-Inspired Animated Instrumental Bubble Morphing Indicator.
+ * Displays bubbles that morph into musical notes as they rise and back to circles as they fall.
  */
 @Composable
 fun InstrumentalDotsIndicator(
@@ -116,7 +115,7 @@ fun InstrumentalDotsIndicator(
             modifier = modifier
                 .fillMaxWidth()
                 .height(44.dp)
-                .clickable { onSeek?.invoke() },
+                .clickable(enabled = onSeek != null) { onSeek?.invoke() },
             contentAlignment = Alignment.Center
         ) {
             Row(
@@ -145,33 +144,6 @@ fun InstrumentalDotsIndicator(
         return
     }
 
-    val totalGapMs = (endMs - startMs).coerceAtLeast(100L)
-    val countdownDurationMs = minOf(3000L, totalGapMs)
-    val countdownStartMs = endMs - countdownDurationMs
-    val timeRemainingMs = (endMs - currentPositionMs).coerceAtLeast(0L)
-
-    val isCountdown = !isContinuous && (timeRemainingMs in 0L..countdownDurationMs)
-    val isAmbient = isContinuous || !isCountdown
-
-    // Continuous or Ambient Infinite Wave Animation
-    val infiniteTransition = rememberInfiniteTransition(label = "ambientWave")
-    val waveProgress by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1500, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "ambientWaveProgress"
-    )
-
-    // Primary gradient colors
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val secondaryColor = MaterialTheme.colorScheme.primaryContainer
-
-    val dotSize = 14.dp
-    val jumpHeightPx = 48f // ~18dp in pixel terms
-
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -179,122 +151,227 @@ fun InstrumentalDotsIndicator(
             .clickable(enabled = onSeek != null) { onSeek?.invoke() },
         contentAlignment = Alignment.Center
     ) {
-        if (isCountdown) {
-            // Final 3-2-1 countdown jumping balls
-            val clampedTime = currentPositionMs.coerceIn(countdownStartMs, endMs)
-            val p = ((clampedTime - countdownStartMs).toFloat() / countdownDurationMs.toFloat()).coerceIn(0f, 1f)
+        PixelPlayerBubbles(
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
+}
 
-            // Ball 1 (3.0s -> 2.0s: p from 0 to 1/3)
-            var y1 = 0f
-            var scale1 = 0.95f
-            var alpha1 = 0.35f
-            if (p in 0f..(1f / 3f)) {
-                val p1 = p * 3f
-                y1 = -sin(p1 * PI.toFloat()) * jumpHeightPx
-                scale1 = 1.30f
-                alpha1 = 1.0f
-            } else if (p > 1f / 3f) {
-                scale1 = 1.05f
-                alpha1 = 0.85f
-            }
+/**
+ * PixelPlayer Canvas Animation:
+ * Displays a row of 3 animated bubbles that morph into musical notes as they rise
+ * and back into circles as they fall.
+ */
+@Composable
+fun PixelPlayerBubbles(
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    val transition = rememberInfiniteTransition(label = "bubbles_transition")
+    val animatedValue by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 3500, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "bubble_animation_progress"
+    )
 
-            // Ball 2 (2.0s -> 1.0s: p from 1/3 to 2/3)
-            var y2 = 0f
-            var scale2 = 0.95f
-            var alpha2 = 0.35f
-            if (p in (1f / 3f)..(2f / 3f)) {
-                val p2 = (p - 1f / 3f) * 3f
-                y2 = -sin(p2 * PI.toFloat()) * jumpHeightPx
-                scale2 = 1.30f
-                alpha2 = 1.0f
-            } else if (p > 2f / 3f) {
-                scale2 = 1.05f
-                alpha2 = 0.85f
-            }
+    val density = LocalDensity.current
+    val bubbleRadius = remember(density) { with(density) { 4.dp.toPx() } }
 
-            // Ball 3 (1.0s -> 0.0s: p from 2/3 to 1.0)
-            var y3 = 0f
-            var scale3 = 0.95f
-            var alpha3 = 0.35f
-            if (p in (2f / 3f)..1.0f) {
-                val p3 = (p - 2f / 3f) * 3f
-                y3 = -sin(p3 * PI.toFloat()) * jumpHeightPx
-                scale3 = 1.30f
-                alpha3 = 1.0f
-            }
+    val (morphableCircle, morphableNote) = remember(bubbleRadius) {
+        val circleNodes = createCirclePathNodes(radius = bubbleRadius)
+        val noteNodes = createVectorNotePathNodes(targetSize = bubbleRadius * 2.5f)
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Ball 1
-                Box(
-                    modifier = Modifier
-                        .offset { IntOffset(0, y1.toInt()) }
-                        .scale(scale1)
-                        .alpha(alpha1)
-                        .size(dotSize)
-                        .background(
-                            brush = Brush.radialGradient(listOf(Color.White, primaryColor)),
-                            shape = CircleShape
+        makePathsCompatible(circleNodes, noteNodes)
+        circleNodes to noteNodes
+    }
+
+    Canvas(modifier = modifier.size(72.dp, 48.dp)) {
+        val bubbleCount = 3
+        val bubbleColor = color.copy(alpha = 0.85f)
+
+        for (i in 0 until bubbleCount) {
+            val progress = (animatedValue + i * (1f / bubbleCount)) % 1f
+            val yOffset = sin(progress * 2 * PI).toFloat() * 8.dp.toPx()
+
+            val morphProgress = when {
+                progress in 0f..0.25f -> progress / 0.25f
+                progress in 0.25f..0.5f -> 1.0f - (progress - 0.25f) / 0.25f
+                else -> 0f
+            }.coerceIn(0f, 1f)
+
+            val scale = lerpFloat(1.0f, 1.4f, morphProgress)
+            val xOffsetCorrection = lerpFloat(0f, bubbleRadius * 1.8f, morphProgress)
+
+            val morphedPath = lerpPath(
+                start = morphableCircle,
+                stop = morphableNote,
+                fraction = morphProgress
+            ).toPath()
+
+            translate(left = (size.width / (bubbleCount + 1)) * (i + 1)) {
+                val drawOffset = Offset(x = xOffsetCorrection, y = size.height / 2 + yOffset)
+                translate(left = drawOffset.x, top = drawOffset.y) {
+                    scale(scale = scale, pivot = Offset.Zero) {
+                        drawPath(
+                            path = morphedPath,
+                            color = bubbleColor
                         )
-                )
-
-                // Ball 2
-                Box(
-                    modifier = Modifier
-                        .offset { IntOffset(0, y2.toInt()) }
-                        .scale(scale2)
-                        .alpha(alpha2)
-                        .size(dotSize)
-                        .background(
-                            brush = Brush.radialGradient(listOf(Color.White, primaryColor)),
-                            shape = CircleShape
-                        )
-                )
-
-                // Ball 3
-                Box(
-                    modifier = Modifier
-                        .offset { IntOffset(0, y3.toInt()) }
-                        .scale(scale3)
-                        .alpha(alpha3)
-                        .size(dotSize)
-                        .background(
-                            brush = Brush.radialGradient(listOf(Color.White, primaryColor)),
-                            shape = CircleShape
-                        )
-                )
-            }
-        } else {
-            // Ambient Phase: Smooth rhythmic dancing wave
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val effectivePlaying = isPlaying || isContinuous
-                listOf(0f, 0.22f, 0.44f).forEach { offset ->
-                    val dotP = if (effectivePlaying) ((waveProgress + offset) % 1f) else 0f
-                    val bounce = if (dotP < 0.5f) sin(dotP * 2f * PI.toFloat()) else 0f
-                    val y = -bounce * (jumpHeightPx * 0.45f)
-                    val scale = 0.95f + 0.25f * bounce
-                    val alpha = 0.45f + 0.55f * bounce
-
-                    Box(
-                        modifier = Modifier
-                            .offset { IntOffset(0, y.toInt()) }
-                            .scale(scale)
-                            .alpha(alpha)
-                            .size(dotSize)
-                            .background(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(Color.White, primaryColor)
-                                ),
-                                shape = CircleShape
-                            )
-                    )
+                    }
                 }
             }
         }
     }
+}
+
+// --- Path Morphing Helpers from PixelPlayer ---
+
+private fun lerpPath(start: List<PathNode>, stop: List<PathNode>, fraction: Float): List<PathNode> {
+    return start.mapIndexed { index, startNode ->
+        val stopNode = stop[index]
+        when (startNode) {
+            is PathNode.MoveTo -> {
+                val stopMoveTo = stopNode as PathNode.MoveTo
+                PathNode.MoveTo(
+                    lerpFloat(startNode.x, stopMoveTo.x, fraction),
+                    lerpFloat(startNode.y, stopMoveTo.y, fraction)
+                )
+            }
+            is PathNode.CurveTo -> {
+                val stopCurveTo = stopNode as PathNode.CurveTo
+                PathNode.CurveTo(
+                    lerpFloat(startNode.x1, stopCurveTo.x1, fraction),
+                    lerpFloat(startNode.y1, stopCurveTo.y1, fraction),
+                    lerpFloat(startNode.x2, stopCurveTo.x2, fraction),
+                    lerpFloat(startNode.y2, stopCurveTo.y2, fraction),
+                    lerpFloat(startNode.x3, stopCurveTo.x3, fraction),
+                    lerpFloat(startNode.y3, stopCurveTo.y3, fraction)
+                )
+            }
+            else -> startNode
+        }
+    }
+}
+
+private fun lerpFloat(start: Float, stop: Float, fraction: Float): Float {
+    return start + (stop - start) * fraction
+}
+
+private fun List<PathNode>.toPath(): Path = Path().apply {
+    this@toPath.forEach { node ->
+        when (node) {
+            is PathNode.MoveTo -> moveTo(node.x, node.y)
+            is PathNode.LineTo -> lineTo(node.x, node.y)
+            is PathNode.CurveTo -> cubicTo(node.x1, node.y1, node.x2, node.y2, node.x3, node.y3)
+            is PathNode.Close -> close()
+            else -> {}
+        }
+    }
+}
+
+private fun makePathsCompatible(nodes1: MutableList<PathNode>, nodes2: MutableList<PathNode>): Pair<MutableList<PathNode>, MutableList<PathNode>> {
+    while (nodes1.size < nodes2.size) {
+        nodes1.add(nodes1.size - 1, nodes1[nodes1.size - 2])
+    }
+    while (nodes2.size < nodes1.size) {
+        nodes2.add(nodes2.size - 1, nodes2[nodes2.size - 2])
+    }
+    return nodes1 to nodes2
+}
+
+private fun createVectorNotePathNodes(targetSize: Float): MutableList<PathNode> {
+    val pathData = "M239.5,1.9c-4.6,1.1 -8.7,3.6 -12.2,7.3 -6.7,6.9 -6.3,-2.5 -6.3,151.9 0,76.9 -0.3,140 -0.7,140.2 -0.5,0.3 -4.2,-0.9 -8.3,-2.5 -48.1,-19.3 -102.8,-8.3 -138.6,27.7 -35.8,36.1 -41.4,85.7 -13.6,120.7 18.6,23.4 52.8,37.4 86.2,35.3 34.8,-2.1 65.8,-16 89.5,-39.9 14.5,-14.6 24.9,-31.9 30.7,-50.6l2.3,-7.5 0.2,-133c0.2,-73.2 0.5,-133.6 0.8,-134.2 0.8,-2.4 62,28.5 84.3,42.4 22.4,14.1 34.1,30.4 37.2,51.9 2.4,16.5 -2.2,34.5 -13,50.9 -6,9.1 -7,12.1 -4.8,14.3 2.2,2.2 5.3,1.2 13.8,-4.5 26.4,-17.9 45.6,-48 50,-78.2 1.9,-12.9 0.8,-34.3 -2.4,-46.1 -8.7,-31.7 -30.4,-58 -64.1,-77.8 -64.3,-37.9 -116,-67.3 -119.6,-68.1 -5,-1.2 -7.1,-1.2 -11.4,-0.2z"
+    val parser = PathParser().parsePathString(pathData)
+
+    val groupScale = 0.253f
+    val bounds = Path().apply { parser.toPath(this) }.getBounds()
+    val maxDimension = max(bounds.width, bounds.height)
+    val scale = if (maxDimension > 0f) targetSize / (maxDimension * groupScale) else 1f
+
+    val matrix = Matrix()
+    matrix.translate(x = -bounds.left, y = -bounds.top)
+    matrix.scale(x = groupScale * scale, y = groupScale * scale)
+    val finalWidth = bounds.width * groupScale * scale
+    val finalHeight = bounds.height * groupScale * scale
+
+    matrix.translate(x = -finalWidth / 2f, y = -finalHeight / 2f)
+
+    return parser.toNodes().toAbsolute().transform(matrix).toCurvesOnly()
+}
+
+private fun createCirclePathNodes(radius: Float): MutableList<PathNode> {
+    val kappa = 0.552284749831f
+    val rk = radius * kappa
+    return mutableListOf(
+        PathNode.MoveTo(0f, -radius),
+        PathNode.CurveTo(rk, -radius, radius, -rk, radius, 0f),
+        PathNode.CurveTo(radius, rk, rk, radius, 0f, radius),
+        PathNode.CurveTo(-rk, radius, -radius, rk, -radius, 0f),
+        PathNode.CurveTo(-radius, -rk, -rk, -radius, 0f, -radius),
+        PathNode.Close
+    )
+}
+
+private fun List<PathNode>.toAbsolute(): MutableList<PathNode> {
+    val absoluteNodes = mutableListOf<PathNode>()
+    var currentX = 0f
+    var currentY = 0f
+    this.forEach { node ->
+        when (node) {
+            is PathNode.MoveTo -> { currentX = node.x; currentY = node.y; absoluteNodes.add(node) }
+            is PathNode.RelativeMoveTo -> { currentX += node.dx; currentY += node.dy; absoluteNodes.add(PathNode.MoveTo(currentX, currentY)) }
+            is PathNode.LineTo -> { currentX = node.x; currentY = node.y; absoluteNodes.add(node) }
+            is PathNode.RelativeLineTo -> { currentX += node.dx; currentY += node.dy; absoluteNodes.add(PathNode.LineTo(currentX, currentY)) }
+            is PathNode.CurveTo -> { currentX = node.x3; currentY = node.y3; absoluteNodes.add(node) }
+            is PathNode.RelativeCurveTo -> {
+                absoluteNodes.add(PathNode.CurveTo(currentX + node.dx1, currentY + node.dy1, currentX + node.dx2, currentY + node.dy2, currentX + node.dx3, currentY + node.dy3))
+                currentX += node.dx3; currentY += node.dy3
+            }
+            is PathNode.Close -> absoluteNodes.add(node)
+            else -> {}
+        }
+    }
+    return absoluteNodes
+}
+
+private fun MutableList<PathNode>.toCurvesOnly(): MutableList<PathNode> {
+    val curveNodes = mutableListOf<PathNode>()
+    var lastX = 0f
+    var lastY = 0f
+
+    this.forEach { node ->
+        when(node) {
+            is PathNode.MoveTo -> { curveNodes.add(node); lastX = node.x; lastY = node.y }
+            is PathNode.LineTo -> { curveNodes.add(PathNode.CurveTo(lastX, lastY, node.x, node.y, node.x, node.y)); lastX = node.x; lastY = node.y }
+            is PathNode.CurveTo -> { curveNodes.add(node); lastX = node.x3; lastY = node.y3 }
+            is PathNode.Close -> curveNodes.add(node)
+            else -> {}
+        }
+    }
+    return curveNodes
+}
+
+private fun List<PathNode>.transform(matrix: Matrix): MutableList<PathNode> {
+    return this.map { node ->
+        when (node) {
+            is PathNode.MoveTo -> {
+                val p = matrix.map(Offset(node.x, node.y))
+                PathNode.MoveTo(p.x, p.y)
+            }
+            is PathNode.LineTo -> {
+                val p = matrix.map(Offset(node.x, node.y))
+                PathNode.LineTo(p.x, p.y)
+            }
+            is PathNode.CurveTo -> {
+                val p1 = matrix.map(Offset(node.x1, node.y1))
+                val p2 = matrix.map(Offset(node.x2, node.y2))
+                val p3 = matrix.map(Offset(node.x3, node.y3))
+                PathNode.CurveTo(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y)
+            }
+            else -> node
+        }
+    }.toMutableList()
 }

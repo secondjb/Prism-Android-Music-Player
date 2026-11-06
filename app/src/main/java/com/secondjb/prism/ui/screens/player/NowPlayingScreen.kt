@@ -538,42 +538,44 @@ fun NowPlayingScreen(
                     }
                 } else null
 
-                if (sleepTimerText != null) {
-                    Text(
-                        text = sleepTimerText,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 8.dp)
-                            .clickable { showSleepTimer = true }
-                    )
-                } else {
-                    Spacer(Modifier.weight(1f))
-                }
+                Spacer(Modifier.weight(1f))
 
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Sleep Timer Button (clean, no badge, standard primary coloring)
-                    FilledIconButton(
-                        onClick = { showSleepTimer = true },
-                        shape = CircleShape,
-                        modifier = Modifier.size(40.dp),
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        )
+                    // Sleep Timer Button with adjacent text aligned so left side of text is close to sleep timer button
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.clickable { showSleepTimer = true }
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Timer,
-                            contentDescription = "Sleep Timer",
-                            modifier = Modifier.size(20.dp)
-                        )
+                        FilledIconButton(
+                            onClick = { showSleepTimer = true },
+                            shape = CircleShape,
+                            modifier = Modifier.size(40.dp),
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Timer,
+                                contentDescription = "Sleep Timer",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        if (sleepTimerText != null) {
+                            Text(
+                                text = sleepTimerText,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
 
                     // Full Screen Lyrics Button (between Sleep Timer & Queue)

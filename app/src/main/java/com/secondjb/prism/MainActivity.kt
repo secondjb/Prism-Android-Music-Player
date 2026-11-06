@@ -113,7 +113,11 @@ class MainActivity : ComponentActivity() {
 			val audioOutputHelper = remember { com.secondjb.prism.core.util.AudioOutputDeviceHelper(context) }
 			val isBluetoothConnected by audioOutputHelper.isBluetoothConnected.collectAsState()
 			val bluetoothDeviceName by audioOutputHelper.bluetoothDeviceName.collectAsState()
-			val sleepTimerManager = remember { com.secondjb.prism.core.playback.SleepTimerManager(playbackEngine) }
+			val sleepTimerManager = remember {
+				com.secondjb.prism.core.playback.SleepTimerManager(playbackEngine).apply {
+					isDrivenExternally = true
+				}
+			}
 			val sleepTimerState by sleepTimerManager.timerState.collectAsState()
 			val discoveryManager = remember { NsdDiscoveryManager(context) }
 			val syncViewModel = remember {
@@ -282,8 +286,8 @@ class MainActivity : ComponentActivity() {
 					playbackEngine.pause()
 				}
 				sleepTimerManager.onStartSleepTimerCallback = { mode, value ->
-					if (isDesktopConnected) {
-						syncViewModel.sendSleepTimerCommand(if (mode == com.secondjb.prism.core.playback.SleepTimerMode.TRACKS) "tracks" else "time", value)
+					if (isDesktopConnected && mode == com.secondjb.prism.core.playback.SleepTimerMode.TIME) {
+						syncViewModel.sendSleepTimerCommand("time", value)
 					}
 				}
 				sleepTimerManager.onCancelSleepTimerCallback = {
@@ -687,7 +691,7 @@ class MainActivity : ComponentActivity() {
 			}
 
 			// Feed effective playback state to sleepTimerManager so both local and remote tracks count down and pause properly
-			LaunchedEffect(effectivePlaybackState.currentTrack?.id, effectivePlaybackState.positionMs, effectivePlaybackState.isPlaying, effectivePlaybackState.durationMs) {
+			LaunchedEffect(effectivePlaybackState.currentTrack?.title, effectivePlaybackState.positionMs / 1000L, effectivePlaybackState.isPlaying, effectivePlaybackState.durationMs) {
 				sleepTimerManager.handlePlaybackStateUpdate(effectivePlaybackState)
 			}
 

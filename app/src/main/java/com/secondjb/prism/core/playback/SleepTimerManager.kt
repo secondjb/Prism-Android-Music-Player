@@ -41,25 +41,34 @@ class SleepTimerManager(
     private var countdownJob: Job? = null
     private var lastObservedTrackKey: String? = null
 
+    var isDrivenExternally: Boolean = false
+
     var onStopPlaybackCallback: (() -> Unit)? = null
     var onStartSleepTimerCallback: ((SleepTimerMode, Long) -> Unit)? = null
     var onCancelSleepTimerCallback: (() -> Unit)? = null
 
     init {
-        // Observe playback controller state changes to count track completions
+        // Observe playback controller state changes (active for standalone use & unit tests)
         scope.launch {
             playbackController.playbackState.collect { state ->
-                handlePlaybackStateUpdate(state)
+                if (!isDrivenExternally) {
+                    handlePlaybackStateUpdate(state)
+                }
             }
         }
     }
 
     private fun getTrackKey(track: Track?): String? {
         if (track == null) return null
-        val title = track.title.trim().lowercase()
-        val artist = track.artist.trim().lowercase()
+        var title = track.title.trim().lowercase()
+        title = title.replace(Regex("""^\d{1,3}[\s.\-_]+"""), "")
         if (title.isNotEmpty()) {
-            return "$title|$artist"
+            return title
+        }
+        val uriFilename = (track.filePath ?: track.uri).substringAfterLast('/').substringAfterLast('\\').trim().lowercase()
+        val cleanFilename = uriFilename.replace(Regex("""^\d{1,3}[\s.\-_]+"""), "")
+        if (cleanFilename.isNotEmpty()) {
+            return cleanFilename
         }
         return track.id
     }
@@ -135,7 +144,8 @@ class SleepTimerManager(
         cancelTimer()
 
         // Snapshot current track key so we only count down when a track actually finishes
-        lastObservedTrackKey = getTrackKey(playbackController.playbackState.value.currentTrack)
+        val currentTrack = playbackController.playbackState.value.currentTrack
+        lastObservedTrackKey = getTrackKey(currentTrack)
 
         _timerState.value = SleepTimerState(
             isActive = true,
