@@ -8,24 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.0] - 2026-11-11
 
 ### Added
-- Library sorting modes (title, artist, album, duration, date added, and desktop device-family order), dedicated Album and Artist views, and configurable startup screen setting.
-- Custom playlist cover art, 4-tile playlist cover collages, and bidirectional playlist/cover sync with Prism Desktop.
-- Two-tier queue (custom priority queue vs context queue) with drag-to-reorder handles, damped swipe gestures (swipe right to add next, swipe left to remove), and batch multi-selection queue actions.
-- Seamless atomic device handoff preserving queue, playback position, and state, plus multi-room synchronized playback.
-- Word-by-word and syllable-synced romanization (`Replace` and `Below` modes) in `ModernLyricsView` and `FullScreenLyricsPage`.
-- Animated instrumental interlude indicator with 3-dot bubble-to-note canvas transitions matching Prism Desktop timing.
-- Redesigned sleep timer modal with minute, track-count, and end-of-queue countdowns plus a live bottom-bar countdown label.
+- Peer-to-peer companion sync with Prism Desktop over LAN (mDNS discovery, QR code scanner, manual `host:port:token` pairing) and ADB USB reverse proxy, secured with 32-character token authentication and SHA-256 CTR stream encryption.
+- Bidirectional synchronization for playback state, two-tier queue, playlists, custom covers, sleep timer, and SQLite listening stats, plus atomic device handoff (preserving queue and position), multi-room playback, and smart file transfer from desktop.
+- Library sorting modes (title, artist, album, duration, date added, and desktop order), dedicated Album and Artist views, custom playlist cover art/collages, fast-scroller sidebar, and configurable startup screen.
+- Two-tier queue with drag-to-reorder handles, swipe-right to queue next, swipe-left to remove, and multi-select batch actions.
+- Word-by-word and syllable-synced lyrics with romanization (`Replace` and `Below` modes), translations, and animated bubble-to-note instrumental interlude indicators.
+- Sleep timer modal supporting minute, track-count, and end-of-queue countdowns with a bottom-bar countdown label.
+- GitHub release update checker on launch and in Settings.
 
 ### Fixed
-- Fixed repeat mode transitions on manual skip, position resumption across restarts, and persistent Media3 notification skip controls.
-- Eliminated screen-wake volume ducking, rogue cold-start remote commands, multi-room play/pause phase inversion, and queue sync clobbering.
-- Improved LAN/subnet auto-reconnection, mDNS endpoint auto-healing on DHCP changes, and LRCLIB query sanitization.
-- Mapped Material 3 error color tokens to the dynamic album primary color for consistent artwork-derived theming.
+- Repeat mode transitions on manual skip, playback position resumption across restarts, and persistent Media3 notification skip controls.
+- Screen-wake volume ducking, audio focus resumption, and LRCLIB query sanitization.
+- Dynamic palette contrast and Material 3 color mapping over album artwork backdrops.
 
 ## [0.1.0] - 2026-10-24
 
 ### Added
-- Initial release of Prism Android Music Player.
-- Local playback powered by AndroidX Media3 (ExoPlayer) with audio focus and noisy-audio handling.
-- MediaStore library indexing, embedded tag/format badge extraction, and dynamic album-art Palette theming.
-- Synchronized LRC/TTML/LRCLIB lyrics viewer, local SQLite listening statistics, and P2P companion sync with Prism Desktop.
+- Initial baseline of the native Kotlin/Compose Prism Android Music Player with AndroidX Media3 (ExoPlayer) playback, MediaStore indexing, embedded tag/format badges, dynamic Palette theming, LRC/TTML lyrics, and local SQLite listening stats.
