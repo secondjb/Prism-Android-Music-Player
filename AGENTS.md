@@ -30,6 +30,8 @@
   * [`ui/screens/settings/SettingsScreen.kt`](app/src/main/java/com/secondjb/prism/ui/screens/settings/SettingsScreen.kt): App settings, paired desktop companion list, connection clear buttons, listening stats collection toggles, and prevent-double-counting options.
 * **Stats & Leaderboards**:
   * [`ui/screens/stats/StatsScreen.kt`](app/src/main/java/com/secondjb/prism/ui/screens/stats/StatsScreen.kt): Mobile listening analytics, time vs plays selector, and top tracks/artists leaderboards.
+* **Compose Previews**:
+  * [`ui/previews/PrismScreenPreviews.kt`](app/src/main/java/com/secondjb/prism/ui/previews/PrismScreenPreviews.kt): Standalone `@Preview` fixtures using `DemoDataProvider` for `MainScreen`, `LibraryScreen`, `StatsScreen`, `SettingsScreen`, `FullScreenLyricsPage`, and `FloatingNowPlayingBar` (in addition to `NowPlayingScreenPixelPreview` in `MainActivity.kt`), usable with the **Android Compose Preview** sidecar (`gradle://.?:app@debug`).
 
 ---
 

@@ -25,7 +25,8 @@ Prism Android is a modern, high-fidelity music player and companion controller b
 |     │     ├── [WordSyncedLyricsHelper.kt] Shared Word/Syllable Romanized Sync     |
 |     │     └── [InstrumentalDotsIndicator.kt] Material 3 Instrumental 3-Dot Animation |
 |     ├── [StatsScreen.kt] Listening Analytics (Time vs Plays Leaderboards)         |
-|     └── [SettingsScreen.kt] Companion Pairing, Double-Counting, Storage Clears    |
+|     ├── [SettingsScreen.kt] Companion Pairing, Double-Counting, Storage Clears    |
+|     └── [PrismScreenPreviews.kt] Standalone @Preview Fixtures (Compose Preview)   |
 |                                                                                   |
 |  Theming: [Theme.kt] (Material 3 Dynamic Palette from Album Art; error = primary)  |
 |  State Holders: [LibraryViewModel], [SyncViewModel], [StatsViewModel]             |
