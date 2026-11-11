@@ -21,7 +21,9 @@
   * [`ui/screens/library/LibraryViewModel.kt`](app/src/main/java/com/secondjb/prism/ui/screens/library/LibraryViewModel.kt): Library state, playlist management, and search filtering.
 * **Lyrics System**:
   * [`ui/components/lyrics/ModernLyricsView.kt`](app/src/main/java/com/secondjb/prism/ui/components/lyrics/ModernLyricsView.kt): Preview lyrics card anchored beneath the player controls on the Now Playing screen. Ensures title text is white and legible over dynamic artwork gradients.
-  * [`ui/components/lyrics/FullScreenLyricsPage.kt`](app/src/main/java/com/secondjb/prism/ui/components/lyrics/FullScreenLyricsPage.kt): Dedicated fullscreen lyrics page with romanization modes (Hiragana, Katakana, Romaji, Cyrillic, Pinyin), translations, and adjustable font scale.
+  * [`ui/components/lyrics/LrcParser.kt`](app/src/main/java/com/secondjb/prism/ui/components/lyrics/LrcParser.kt): LRC/TTML parser with NFKC normalization, per-syllable romanization (`romanizedText`), and whitespace-accurate word boundaries.
+  * [`ui/components/lyrics/WordSyncedLyricsHelper.kt`](app/src/main/java/com/secondjb/prism/ui/components/lyrics/WordSyncedLyricsHelper.kt): Shared word-by-word `AnnotatedString` builder for original and romanized (`REPLACE` and `BELOW`) lyrics across preview and fullscreen views.
+  * [`ui/screens/player/FullScreenLyricsPage.kt`](app/src/main/java/com/secondjb/prism/ui/screens/player/FullScreenLyricsPage.kt): Dedicated fullscreen lyrics page with romanization modes, translations, word-by-word sync, and adjustable font scale.
   * [`ui/components/lyrics/LyricDisplayMode.kt`](app/src/main/java/com/secondjb/prism/ui/components/lyrics/LyricDisplayMode.kt): Shared lyric settings enums persisted across preview and fullscreen views.
 * **Companion Pairing & Settings**:
   * [`ui/screens/sync/SyncViewModel.kt`](app/src/main/java/com/secondjb/prism/ui/screens/sync/SyncViewModel.kt): Handles mDNS companion discovery, CameraX QR scanner, WebSocket client connection, and command dispatching.

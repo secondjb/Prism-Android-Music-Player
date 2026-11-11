@@ -1,12 +1,14 @@
 package com.secondjb.prism.ui.components.lyrics
 
 import android.os.Build
+import java.text.Normalizer
 
 data class LyricSyllable(
     val timeMs: Long,
     val durationMs: Long,
     val text: String,
-    val hasTrailingSpace: Boolean = true
+    val hasTrailingSpace: Boolean = true,
+    val romanizedText: String? = null
 )
 
 data class LyricLine(
@@ -22,6 +24,7 @@ data class LyricLine(
 
 object LrcParser {
     private val LRC_LINE_REGEX = Regex("""\[(\d{1,2}):(\d{2})(?:[.:](\d{2,3}))?](.*)""")
+    private val INLINE_TAG_ONLY_REGEX = Regex("""<(\d{1,2}):(\d{2})(?:[.:](\d{2,3}))?>""")
     private val INLINE_WORD_TAG_REGEX = Regex("""<(\d{1,2}):(\d{2})(?:[.:](\d{2,3}))?>([^<]*)""")
     private val INLINE_TRANSLATION_REGEX = Regex("""^(.+?)(?:\s*(?://|／／)\s*|\s+[/|／]\s+)(.+)$""")
 
@@ -177,17 +180,24 @@ object LrcParser {
         return lines.joinToString("\n")
     }
 
+    private fun parseFractionMs(fractionStr: String): Long = when (fractionStr.length) {
+        2 -> (fractionStr.toLongOrNull() ?: 0L) * 10L
+        1 -> (fractionStr.toLongOrNull() ?: 0L) * 100L
+        else -> fractionStr.toLongOrNull() ?: 0L
+    }
+
     fun parse(content: String): List<LyricLine> {
         if (content.isBlank()) return emptyList()
 
-        // Handle TTML XML lyrics (Apple Music style)
+        // Handle TTML XML lyrics (Apple Music style) and normalize with NFKC like Windows
         val processedContent = if (isTtmlContent(content)) {
             convertTtmlToLrc(content)
         } else {
             content
         }
+        val normalizedContent = Normalizer.normalize(processedContent, Normalizer.Form.NFKC)
 
-        val rawLines = processedContent.lines()
+        val rawLines = normalizedContent.lines()
         val tempLines = mutableListOf<Pair<Long, String>>()
 
         for (line in rawLines) {
@@ -196,12 +206,7 @@ object LrcParser {
             if (match != null) {
                 val min = match.groupValues[1].toLongOrNull() ?: 0L
                 val sec = match.groupValues[2].toLongOrNull() ?: 0L
-                val fractionStr = match.groupValues[3]
-                val fractionMs = when (fractionStr.length) {
-                    2 -> (fractionStr.toLongOrNull() ?: 0L) * 10
-                    1 -> (fractionStr.toLongOrNull() ?: 0L) * 100
-                    else -> fractionStr.toLongOrNull() ?: 0L
-                }
+                val fractionMs = parseFractionMs(match.groupValues[3])
                 val timestampMs = min * 60_000L + sec * 1_000L + fractionMs
                 val text = match.groupValues[4].trim()
                 if (text.isNotEmpty()) {
@@ -224,13 +229,13 @@ object LrcParser {
         while (i < tempLines.size) {
             val (timeMs, rawText) = tempLines[i]
             val nextTimeMs = if (i < tempLines.lastIndex) tempLines[i + 1].first else timeMs + 4000L
-            val lineDurationMs = (nextTimeMs - timeMs).coerceIn(1200L, 15000L)
+            val fallbackDurationMs = (nextTimeMs - timeMs).coerceIn(1200L, 15000L)
 
             // Split out any inline translation (delimited by //, /, or |)
             val inlineSepMatch = INLINE_TRANSLATION_REGEX.find(rawText)
             var (primaryBody, inlineTranslation) = if (inlineSepMatch != null) {
                 val prim = inlineSepMatch.groupValues[1].trim()
-                val trans = inlineSepMatch.groupValues[2].replace(INLINE_WORD_TAG_REGEX, "").trim()
+                val trans = inlineSepMatch.groupValues[2].replace(INLINE_TAG_ONLY_REGEX, "").trim()
                 prim to (if (trans.isNotBlank()) trans else null)
             } else {
                 rawText to null
@@ -241,7 +246,7 @@ object LrcParser {
                 val nextEntry = tempLines[i + 1]
                 if (Math.abs(nextEntry.first - timeMs) <= 150L && nextEntry.second.trim() != rawText.trim()) {
                     var trans = nextEntry.second
-                        .replace(INLINE_WORD_TAG_REGEX, "")
+                        .replace(INLINE_TAG_ONLY_REGEX, "")
                         .replace(Regex("""\[\d{1,2}:\d{2}(?:[.:]\d{2,3})?]"""), "")
                         .trim()
                     if (trans.startsWith("//") || trans.startsWith("／／")) {
@@ -262,37 +267,49 @@ object LrcParser {
                     val m = inlineMatches[j]
                     val sMin = m.groupValues[1].toLongOrNull() ?: 0L
                     val sSec = m.groupValues[2].toLongOrNull() ?: 0L
-                    val sFracStr = m.groupValues[3]
-                    val sFrac = when (sFracStr.length) {
-                        2 -> (sFracStr.toLongOrNull() ?: 0L) * 10
-                        1 -> (sFracStr.toLongOrNull() ?: 0L) * 100
-                        else -> sFracStr.toLongOrNull() ?: 0L
-                    }
+                    val sFrac = parseFractionMs(m.groupValues[3])
                     val sTimeMs = sMin * 60_000L + sSec * 1_000L + sFrac
-                    val sText = m.groupValues[4]
+                    val rawSylText = m.groupValues[4]
+                    val trimmedSylText = rawSylText.trim()
+                    if (trimmedSylText.isEmpty()) continue
+
                     val nextSylTime = if (j < inlineMatches.lastIndex) {
                         val nm = inlineMatches[j + 1]
                         val nMin = nm.groupValues[1].toLongOrNull() ?: 0L
                         val nSec = nm.groupValues[2].toLongOrNull() ?: 0L
-                        val nFracStr = nm.groupValues[3]
-                        val nFrac = when (nFracStr.length) {
-                            2 -> (nFracStr.toLongOrNull() ?: 0L) * 10
-                            else -> nFracStr.toLongOrNull() ?: 0L
-                        }
+                        val nFrac = parseFractionMs(nm.groupValues[3])
                         nMin * 60_000L + nSec * 1_000L + nFrac
                     } else {
-                        timeMs + lineDurationMs
+                        timeMs + fallbackDurationMs
                     }
-                    val sDur = (nextSylTime - sTimeMs).coerceAtLeast(100L)
-                    sylList.add(LyricSyllable(sTimeMs, sDur, sText, j < inlineMatches.lastIndex))
+                    val sDur = (nextSylTime - sTimeMs).coerceAtLeast(150L)
+                    val hasTrailingSpace =
+                        rawSylText.endsWith(' ') || rawSylText.startsWith(' ') || rawSylText.contains(' ')
+                    val sylRomanized = romanizeText(trimmedSylText)
+                    sylList.add(
+                        LyricSyllable(
+                            timeMs = sTimeMs,
+                            durationMs = sDur,
+                            text = trimmedSylText,
+                            hasTrailingSpace = hasTrailingSpace,
+                            romanizedText = sylRomanized
+                        )
+                    )
                 }
                 sylList
             } else {
                 emptyList()
             }
 
+            val lineDurationMs = if (syllables.isNotEmpty()) {
+                val lastSyl = syllables.last()
+                maxOf(1200L, lastSyl.timeMs + lastSyl.durationMs - timeMs)
+            } else {
+                fallbackDurationMs
+            }
+
             val cleanText = if (inlineMatches.isNotEmpty()) {
-                syllables.joinToString("") { it.text }.trim()
+                primaryBody.replace(INLINE_TAG_ONLY_REGEX, "").trim()
             } else {
                 primaryBody
             }
@@ -308,7 +325,7 @@ object LrcParser {
                     translation = inlineTranslation,
                     syllables = syllables,
                     hasSyllables = syllables.isNotEmpty(),
-                    hasExplicitSyllables = inlineMatches.isNotEmpty()
+                    hasExplicitSyllables = syllables.isNotEmpty()
                 )
             )
             i++
@@ -404,6 +421,28 @@ object LrcParser {
                 sb.append(initials.getOrElse(initialIdx) { "" })
                 sb.append(vowels.getOrElse(vowelIdx) { "" })
                 sb.append(finals.getOrElse(finalIdx) { "" })
+                i++
+                continue
+            }
+
+            // Japanese sokuon (っ/ッ) doubles the initial consonant of the following kana
+            if ((c == 'っ' || c == 'ッ') && i < text.length - 1) {
+                val nextCompound = if (i < text.length - 2) KANA_COMPOUND_ROMAJI_MAP[text.substring(i + 1, i + 3)] else null
+                val nextRomaji = nextCompound ?: KANA_SINGLE_ROMAJI_MAP[text[i + 1].toString()]
+                val firstChar = nextRomaji?.firstOrNull()
+                if (firstChar != null && firstChar !in "aeiou") {
+                    sb.append(firstChar)
+                }
+                i++
+                continue
+            }
+
+            // Japanese prolonged sound mark (ー)
+            if (c == 'ー') {
+                val prevVowel = sb.lastOrNull()
+                if (prevVowel != null && prevVowel in "aeiou") {
+                    sb.append(prevVowel)
+                }
                 i++
                 continue
             }

@@ -701,7 +701,7 @@ fun SettingsScreen(
                     OutlinedButton(
                         onClick = onClearStatsHistory,
                         modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                         shape = MaterialTheme.shapes.small
                     ) {
@@ -940,7 +940,7 @@ fun SettingsScreen(
                                 Text(
                                     text = "Update check failed: ${status.message}",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                             }
                         }
@@ -1207,7 +1207,7 @@ private fun PairedDeviceItem(
                     Icon(
                         imageVector = Icons.Default.Delete,
                         contentDescription = "Delete Pairing",
-                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.85f),
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
                         modifier = Modifier.size(20.dp)
                     )
                 }

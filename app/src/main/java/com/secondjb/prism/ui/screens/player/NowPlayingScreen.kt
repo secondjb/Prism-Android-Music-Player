@@ -96,6 +96,8 @@ import com.secondjb.prism.ui.theme.PillShape
 import androidx.compose.material.icons.outlined.Timer
 import com.secondjb.prism.core.playback.SleepTimerMode
 import com.secondjb.prism.core.playback.SleepTimerState
+import com.secondjb.prism.core.playback.calculateCustomQueueRemainingSeconds
+import com.secondjb.prism.core.playback.formatSleepTimerEstimate
 import com.secondjb.prism.ui.screens.player.SleepTimerModal
 
 @Composable
@@ -511,11 +513,12 @@ fun NowPlayingScreen(
                             maxOf(1, ((totalMs + 59_999L) / 60_000L).toInt())
                         }
                         SleepTimerMode.END_OF_QUEUE -> {
-                            val currentRemainingMs = (playbackState.durationMs - playbackState.positionMs).coerceAtLeast(0L)
-                            val upcomingTracks = playbackState.userQueue + playbackState.queue.drop(playbackState.queueIndex + 1)
-                            val upcomingMs = upcomingTracks.sumOf { if (it.durationMs > 0L) it.durationMs else 210_000L }
-                            val totalMs = currentRemainingMs + upcomingMs
-                            maxOf(1, ((totalMs + 59_999L) / 60_000L).toInt())
+                            val totalSecs = calculateCustomQueueRemainingSeconds(
+                                userQueue = playbackState.userQueue,
+                                currentTrackDurationMs = playbackState.durationMs,
+                                currentTrackPositionMs = playbackState.positionMs
+                            )
+                            maxOf(1, ((totalSecs + 30L) / 60L).toInt())
                         }
                     }
                 } else null
@@ -532,8 +535,17 @@ fun NowPlayingScreen(
                             "$tracks ${if (tracks == 1) "track" else "tracks"} (${mins}m)"
                         }
                         SleepTimerMode.END_OF_QUEUE -> {
-                            val mins = sleepTimerRemainingMinutes ?: 1
-                            "End of queue (${mins}m)"
+                            val totalSecs = calculateCustomQueueRemainingSeconds(
+                                userQueue = playbackState.userQueue,
+                                currentTrackDurationMs = playbackState.durationMs,
+                                currentTrackPositionMs = playbackState.positionMs
+                            )
+                            val estimateStr = formatSleepTimerEstimate(
+                                totalSeconds = totalSecs,
+                                includeTilde = false,
+                                minimumOneMinuteWhenPositive = true
+                            )
+                            "End of queue ($estimateStr)"
                         }
                     }
                 } else null

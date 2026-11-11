@@ -505,16 +505,10 @@ private fun LazyItemScope.QueueTrackRow(
                 val swipeProgress = (abs(currentOffset) / thresholdPx).coerceIn(0f, 1f)
 
                 if (isSwipingRight || isSwipingLeft) {
-                    val bgColor = if (isSwipingRight) {
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = (swipeProgress * 0.95f).coerceIn(0.15f, 0.95f))
-                    } else {
-                        MaterialTheme.colorScheme.errorContainer.copy(alpha = (swipeProgress * 0.95f).coerceIn(0.15f, 0.95f))
-                    }
-                    val iconColor = if (isSwipingRight) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.error
-                    }
+                    val bgColor = MaterialTheme.colorScheme.primaryContainer.copy(
+                        alpha = (swipeProgress * 0.95f).coerceIn(0.15f, 0.95f)
+                    )
+                    val iconColor = MaterialTheme.colorScheme.primary
 
                     Box(
                         modifier = Modifier
@@ -805,12 +799,12 @@ private fun QueueItemMenu(
             }
             HorizontalDivider()
             DropdownMenuItem(
-                text = { Text("Remove from Queue", color = MaterialTheme.colorScheme.error) },
+                text = { Text("Remove from Queue", color = MaterialTheme.colorScheme.primary) },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Outlined.DeleteOutline,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp)
                     )
                 },

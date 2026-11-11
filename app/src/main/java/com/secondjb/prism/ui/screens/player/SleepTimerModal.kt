@@ -58,6 +58,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.secondjb.prism.core.playback.SleepTimerMode
 import com.secondjb.prism.core.playback.SleepTimerState
+import com.secondjb.prism.core.playback.calculateCustomQueueRemainingSeconds
+import com.secondjb.prism.core.playback.formatSleepTimerEstimate
 import com.secondjb.prism.domain.model.Track
 import com.secondjb.prism.ui.theme.PillShape
 import kotlin.math.roundToInt
@@ -123,19 +125,13 @@ fun SleepTimerModal(
 
     // Custom Queue estimation (strictly userQueue tracks PLUS current track progress, NOT the general playlist)
     val userQueueCount = userQueue.size
-    val currentTrackRemainingSecs = ((currentTrackDurationMs - currentTrackPositionMs).coerceAtLeast(0L) / 1000L).coerceAtLeast(0L)
-    val userQueueEstimateStr = remember(userQueue, currentTrackRemainingSecs) {
-        val totalSecs = currentTrackRemainingSecs + userQueue.sumOf { it.durationSecs }
-        if (totalSecs <= 0) "0m"
-        else {
-            val mins = (totalSecs + 30) / 60
-            if (mins < 60) "~${mins}m"
-            else {
-                val hrs = mins / 60
-                val rem = mins % 60
-                if (rem == 0L) "~${hrs}h" else "~${hrs}h ${rem}m"
-            }
-        }
+    val userQueueEstimateStr = remember(userQueue, currentTrackDurationMs, currentTrackPositionMs) {
+        val totalSecs = calculateCustomQueueRemainingSeconds(
+            userQueue = userQueue,
+            currentTrackDurationMs = currentTrackDurationMs,
+            currentTrackPositionMs = currentTrackPositionMs
+        )
+        formatSleepTimerEstimate(totalSecs, includeTilde = true)
     }
 
     fun triggerAutoStart() {
@@ -209,7 +205,7 @@ fun SleepTimerModal(
                                 Icon(
                                     Icons.Default.Delete,
                                     contentDescription = "Clear sleep timer",
-                                    tint = MaterialTheme.colorScheme.error,
+                                    tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(22.dp)
                                 )
                             }

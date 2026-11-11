@@ -1296,9 +1296,9 @@ private fun PlaylistDetailScreen(
                                 }
                         ) {
                             Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                                Icon(Icons.Default.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                                 Spacer(Modifier.width(12.dp))
-                                Text("Reset to default collage", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.error)
+                                Text("Reset to default collage", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
                             }
                         }
                     }

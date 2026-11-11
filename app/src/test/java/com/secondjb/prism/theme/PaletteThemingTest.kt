@@ -56,10 +56,18 @@ class PaletteThemingTest {
         assertNotNull(darkScheme)
         assertNotNull(darkScheme.primary)
         assertNotNull(darkScheme.surface)
+        assertEquals(darkScheme.primary, darkScheme.error)
+        assertEquals(darkScheme.onPrimary, darkScheme.onError)
+        assertEquals(darkScheme.primaryContainer, darkScheme.errorContainer)
+        assertEquals(darkScheme.onPrimaryContainer, darkScheme.onErrorContainer)
 
         val lightScheme = buildDynamicColorScheme(testPalette, isDark = false)
         assertNotNull(lightScheme)
         assertNotNull(lightScheme.primary)
         assertNotNull(lightScheme.surface)
+        assertEquals(lightScheme.primary, lightScheme.error)
+        assertEquals(lightScheme.onPrimary, lightScheme.onError)
+        assertEquals(lightScheme.primaryContainer, lightScheme.errorContainer)
+        assertEquals(lightScheme.onPrimaryContainer, lightScheme.onErrorContainer)
     }
 }

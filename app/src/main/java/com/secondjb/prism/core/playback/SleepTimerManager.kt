@@ -209,3 +209,38 @@ class SleepTimerManager(
         onStopPlaybackCallback?.invoke()
     }
 }
+
+/**
+ * Calculates remaining playback duration in seconds for the custom queue (`userQueue`)
+ * plus the remaining time of the currently playing track.
+ */
+fun calculateCustomQueueRemainingSeconds(
+    userQueue: List<Track>,
+    currentTrackDurationMs: Long,
+    currentTrackPositionMs: Long
+): Long {
+    val currentTrackRemainingSecs =
+        (currentTrackDurationMs - currentTrackPositionMs).coerceAtLeast(0L) / 1000L
+    return currentTrackRemainingSecs + userQueue.sumOf { it.durationSecs }
+}
+
+/**
+ * Formats an estimated sleep timer duration in seconds into a compact display label (e.g. "~5m", "1h 15m").
+ */
+fun formatSleepTimerEstimate(
+    totalSeconds: Long,
+    includeTilde: Boolean = true,
+    minimumOneMinuteWhenPositive: Boolean = false
+): String {
+    if (totalSeconds <= 0L) return "0m"
+    val rawMins = (totalSeconds + 30L) / 60L
+    val mins = if (minimumOneMinuteWhenPositive) maxOf(1L, rawMins) else rawMins
+    val prefix = if (includeTilde) "~" else ""
+    return if (mins < 60L) {
+        "${prefix}${mins}m"
+    } else {
+        val hrs = mins / 60L
+        val rem = mins % 60L
+        if (rem == 0L) "${prefix}${hrs}h" else "${prefix}${hrs}h ${rem}m"
+    }
+}

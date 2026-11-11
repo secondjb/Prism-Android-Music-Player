@@ -208,26 +208,13 @@ class LocalPlaybackEngine(
             }
 
             override fun onRepeatModeChanged(repeatModeInt: Int) {
-                val mode = when (repeatModeInt) {
-                    Player.REPEAT_MODE_ALL -> RepeatMode.ALL
-                    Player.REPEAT_MODE_ONE -> RepeatMode.ONE
-                    else -> RepeatMode.OFF
-                }
-                _playbackState.update { it.copy(repeatMode = mode) }
+                // LocalPlaybackEngine owns repeatMode while keeping ExoPlayer's internal repeatMode OFF.
             }
         })
     }
 
     private fun syncFromController(controller: MediaController, isInitialSync: Boolean = false) {
-        val repeatMode = if (isInitialSync) {
-            _playbackState.value.repeatMode
-        } else {
-            when (controller.repeatMode) {
-                Player.REPEAT_MODE_ALL -> RepeatMode.ALL
-                Player.REPEAT_MODE_ONE -> RepeatMode.ONE
-                else -> RepeatMode.OFF
-            }
-        }
+        val repeatMode = _playbackState.value.repeatMode
 
         val activeTrack = _playbackState.value.currentTrack
         val currentItem = controller.currentMediaItem

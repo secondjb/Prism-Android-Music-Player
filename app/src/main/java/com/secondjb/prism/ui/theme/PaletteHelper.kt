@@ -144,21 +144,12 @@ fun extractPaletteFromBitmap(bitmap: Bitmap): PrismAlbumPalette {
  * for vibrant accents (primary, primaryContainer, secondary, tertiary).
  */
 fun buildDynamicColorScheme(palette: PrismAlbumPalette, isDark: Boolean): ColorScheme {
-    val (h, _, _) = palette.primary.toHsl()
-    // Harmonize destructive / error hue with album artwork: subtle tint toward warm rose/crimson
-    val errorHue = if (h in 345f..360f || h in 0f..25f) (h + 8f) % 360f else ((h * 0.12f + 16f * 0.88f) % 360f)
-    val errorDark = hslToColor(errorHue, 0.62f, 0.72f)
-    val errorContainerDark = hslToColor(errorHue, 0.38f, 0.22f)
-    val onErrorContainerDark = hslToColor(errorHue, 0.50f, 0.90f)
-
-    val errorLight = hslToColor(errorHue, 0.65f, 0.46f)
-    val errorContainerLight = hslToColor(errorHue, 0.40f, 0.92f)
-    val onErrorContainerLight = hslToColor(errorHue, 0.65f, 0.22f)
-
     return if (isDark) {
         // Guarantee accessible primary color with high contrast on dark surface (Tone ~80)
         val primary = palette.primary.adjustLuminance(1.15f).clampLightness(minL = 0.68f, maxL = 0.88f)
+        val onPrimary = primary.contrastContentColor()
         val primaryContainer = palette.primary.adjustLuminance(0.28f).clampLightness(minL = 0.18f, maxL = 0.32f)
+        val onPrimaryContainer = Color(0xFFEDEAEF)
         val secondary = palette.secondary.adjustLuminance(1.1f).clampLightness(minL = 0.60f, maxL = 0.85f)
         val secondaryContainer = palette.secondary.adjustLuminance(0.24f).clampLightness(minL = 0.15f, maxL = 0.30f)
 
@@ -169,9 +160,9 @@ fun buildDynamicColorScheme(palette: PrismAlbumPalette, isDark: Boolean): ColorS
 
         darkColorScheme(
             primary = primary,
-            onPrimary = primary.contrastContentColor(),
+            onPrimary = onPrimary,
             primaryContainer = primaryContainer,
-            onPrimaryContainer = Color(0xFFEDEAEF),
+            onPrimaryContainer = onPrimaryContainer,
             secondary = secondary,
             onSecondary = secondary.contrastContentColor(),
             secondaryContainer = secondaryContainer,
@@ -187,21 +178,23 @@ fun buildDynamicColorScheme(palette: PrismAlbumPalette, isDark: Boolean): ColorS
             surfaceContainer = surfaceContainer,
             surfaceContainerHigh = Color(0xFF2A2C34),
             surfaceContainerHighest = Color(0xFF33353E),
-            error = errorDark,
-            onError = Color(0xFF1E0A0E),
-            errorContainer = errorContainerDark,
-            onErrorContainer = onErrorContainerDark
+            error = primary,
+            onError = onPrimary,
+            errorContainer = primaryContainer,
+            onErrorContainer = onPrimaryContainer
         )
     } else {
         val primary = palette.primary.adjustLuminance(0.85f)
+        val onPrimary = primary.contrastContentColor()
         val primaryContainer = palette.primary.adjustLuminance(0.92f)
+        val onPrimaryContainer = palette.primary.adjustLuminance(0.2f)
         val secondary = palette.secondary.adjustLuminance(0.80f)
 
         lightColorScheme(
             primary = primary,
-            onPrimary = primary.contrastContentColor(),
+            onPrimary = onPrimary,
             primaryContainer = primaryContainer,
-            onPrimaryContainer = palette.primary.adjustLuminance(0.2f),
+            onPrimaryContainer = onPrimaryContainer,
             secondary = secondary,
             onSecondary = secondary.contrastContentColor(),
             secondaryContainer = palette.secondary.adjustLuminance(0.92f),
@@ -217,10 +210,10 @@ fun buildDynamicColorScheme(palette: PrismAlbumPalette, isDark: Boolean): ColorS
             surfaceContainer = Color(0xFFF0EFF6),
             surfaceContainerHigh = Color(0xFFEAE9F0),
             surfaceContainerHighest = Color(0xFFE4E3EA),
-            error = errorLight,
-            onError = Color.White,
-            errorContainer = errorContainerLight,
-            onErrorContainer = onErrorContainerLight
+            error = primary,
+            onError = onPrimary,
+            errorContainer = primaryContainer,
+            onErrorContainer = onPrimaryContainer
         )
     }
 }

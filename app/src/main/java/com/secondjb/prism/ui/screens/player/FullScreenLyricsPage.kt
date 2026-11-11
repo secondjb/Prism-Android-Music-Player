@@ -1,722 +1,743 @@
-package com.secondjb.prism.ui.screens.player
-
-import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ElevatedCard
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material.icons.filled.TextIncrease
-import androidx.compose.foundation.interaction.DragInteraction
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.Translate
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.launch
-import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.foundation.basicMarquee
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material.icons.filled.Refresh
-import com.secondjb.prism.ui.theme.PillShape
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
-import com.secondjb.prism.domain.model.PlaybackState
-import com.secondjb.prism.domain.model.Track
-import com.secondjb.prism.ui.components.FluidArtworkBackground
-import com.secondjb.prism.ui.components.WavySeekBar
-import com.secondjb.prism.ui.components.lyrics.LyricDisplayMode
-import com.secondjb.prism.ui.components.lyrics.LyricLine
-import com.secondjb.prism.ui.components.lyrics.LrcParser
-import com.secondjb.prism.ui.components.lyrics.InstrumentalDotsIndicator
-import com.secondjb.prism.ui.components.lyrics.computeLyricInterludes
-import kotlinx.coroutines.delay
-
-/**
- * Dedicated Full-Screen Lyrics Page matching PixelPlayer aesthetic and Prism Windows functionality:
- * - Fluid animated artwork backdrop with deep frosted blur scrim.
- * - Word-by-word synced highlighting and romanization / translation sublines.
- * - Auto-fades controls after idle, reappears instantly on tap or scroll.
- * - Status bars and navigation bars padding for unobstructed touch targets.
- */
-
-
-@Composable
-fun FullScreenLyricsPage(
-    track: Track,
-    playbackState: PlaybackState,
-    lyricsText: String?,
-    onSeek: (Long) -> Unit,
-    onTogglePlayPause: () -> Unit,
-    onSkipNext: () -> Unit,
-    onSkipPrevious: () -> Unit,
-    onDismiss: () -> Unit,
-    initialRomanizationMode: LyricDisplayMode = LyricDisplayMode.OFF,
-    initialTranslationMode: LyricDisplayMode = LyricDisplayMode.OFF,
-    initialFontScale: Float = 1.0f,
-    onUpdateRomanizationMode: (LyricDisplayMode) -> Unit = {},
-    onUpdateTranslationMode: (LyricDisplayMode) -> Unit = {},
-    onUpdateFontScale: (Float) -> Unit = {},
-    onFetchOnlineLyrics: () -> Unit = {},
-    modifier: Modifier = Modifier
-) {
-    BackHandler(enabled = true) {
-        onDismiss()
-    }
-
-    var showControls by remember { mutableStateOf(true) }
-    var romanizationMode by remember(initialRomanizationMode) { mutableStateOf(initialRomanizationMode) }
-    var translationMode by remember(initialTranslationMode) { mutableStateOf(initialTranslationMode) }
-    var fontScale by remember(initialFontScale) { mutableFloatStateOf(initialFontScale) }
-
-    val listState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
-    var isUserScrolled by remember { mutableStateOf(false) }
-
-    LaunchedEffect(track.id) {
-        isUserScrolled = false
-    }
-
-    var lastInteractionTime by remember { mutableStateOf(System.currentTimeMillis()) }
-
-    fun resetControlsTimer() {
-        lastInteractionTime = System.currentTimeMillis()
-        showControls = true
-    }
-
-    // Detect manual user touch drag gestures (distinguishing user interaction from programmatic scroll)
-    LaunchedEffect(listState.interactionSource) {
-        listState.interactionSource.interactions.collect { interaction ->
-            if (interaction is DragInteraction.Start) {
-                isUserScrolled = true
-                resetControlsTimer()
-            }
-        }
-    }
-
-    // When the user is scrolling manually, reveal playback controls immediately and keep them alive!
-    LaunchedEffect(listState.isScrollInProgress, isUserScrolled) {
-        if (listState.isScrollInProgress && isUserScrolled) {
-            resetControlsTimer()
-        }
-    }
-
-    // Auto-fade controls only after 7.5 seconds of complete inactivity (no scrolling, tapping, or scrubbing)
-    LaunchedEffect(showControls, lastInteractionTime, listState.isScrollInProgress) {
-        if (showControls && !listState.isScrollInProgress) {
-            while (true) {
-                val elapsed = System.currentTimeMillis() - lastInteractionTime
-                val remaining = 7500L - elapsed
-                if (remaining <= 0) {
-                    showControls = false
-                    break
-                }
-                delay(remaining)
-            }
-        }
-    }
-
-    val parsedLines = remember(lyricsText) {
-        if (!lyricsText.isNullOrBlank()) LrcParser.parse(lyricsText) else emptyList()
-    }
-
-    val interludeList = remember(parsedLines) { computeLyricInterludes(parsedLines) }
-
-    val activeInterlude by remember(playbackState.positionMs, interludeList) {
-        derivedStateOf {
-            interludeList.find { playbackState.positionMs in it.startMs until it.endMs }
-        }
-    }
-
-    val activeIndex by remember(playbackState.positionMs, parsedLines) {
-        derivedStateOf {
-            val idx = parsedLines.indexOfLast { it.timestampMs <= playbackState.positionMs }
-            if (idx == -1 && parsedLines.isNotEmpty()) 0 else idx
-        }
-    }
-
-    // Smooth auto-scroll keeping active lyric line or interlude near center when user hasn't manually scrolled away
-    LaunchedEffect(activeIndex, activeInterlude?.key, isUserScrolled) {
-        if (!isUserScrolled) {
-            val currentInterlude = activeInterlude
-            if (currentInterlude != null) {
-                val targetScroll = (currentInterlude.insertIndex - 1).coerceAtLeast(0)
-                listState.animateScrollToItem(targetScroll)
-            } else if (activeIndex in parsedLines.indices) {
-                val targetScroll = (activeIndex - 2).coerceAtLeast(0)
-                listState.animateScrollToItem(targetScroll)
-            }
-        }
-    }
-
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = {
-                        if (!showControls) resetControlsTimer() else showControls = false
-                    }
-                )
-            }
-    ) {
-        // Fluid Ambient Artwork Backdrop
-        FluidArtworkBackground(artworkUri = track.artworkUri)
-
-        // Dark Frosted Glass Scrim
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.58f))
-        )
-
-        // Center Lyrics Stream
-        if (parsedLines.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.padding(24.dp)
-                ) {
-                    // Continuous instrumental 3-dot animation for tracks without lyrics
-                    InstrumentalDotsIndicator(
-                        startMs = 0L,
-                        endMs = playbackState.durationMs.coerceAtLeast(1000L),
-                        currentPositionMs = playbackState.positionMs,
-                        isPlaying = playbackState.isPlaying,
-                        isActive = true,
-                        isContinuous = true
-                    )
-                    Text(
-                        text = "Could not find lyrics",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.White.copy(alpha = 0.75f)
-                    )
-                    Button(
-                        onClick = onFetchOnlineLyrics,
-                        shape = PillShape,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        )
-                    ) {
-                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Search & Fetch Lyrics (LRCLIB)")
-                    }
-                }
-            }
-        } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(top = 120.dp, bottom = 200.dp, start = 24.dp, end = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp)
-            ) {
-                itemsIndexed(parsedLines, key = { index, line -> "$index-${line.timestampMs}" }) { index, line ->
-                    val interludeBefore = interludeList.find { it.insertIndex == index }
-                    if (interludeBefore != null) {
-                        val isInterludeActive = playbackState.positionMs in interludeBefore.startMs until interludeBefore.endMs
-                        if (isInterludeActive || (index == 0 && playbackState.positionMs < interludeBefore.endMs)) {
-                            InstrumentalDotsIndicator(
-                                startMs = interludeBefore.startMs,
-                                endMs = interludeBefore.endMs,
-                                currentPositionMs = playbackState.positionMs,
-                                isPlaying = playbackState.isPlaying,
-                                isActive = true,
-                                onSeek = {
-                                    onSeek(interludeBefore.startMs)
-                                    isUserScrolled = false
-                                    resetControlsTimer()
-                                }
-                            )
-                        }
-                    }
-
-                    val isActive = index == activeIndex && activeInterlude == null
-                    val isPast = index < activeIndex
-
-                    val targetAlpha = when {
-                        isActive -> 1.0f
-                        isPast -> 0.40f
-                        else -> 0.60f
-                    }
-
-                    LyricLineRow(
-                        line = line,
-                        isActive = isActive,
-                        currentPosMs = playbackState.positionMs,
-                        alpha = targetAlpha,
-                        fontScale = fontScale,
-                        romanizationMode = romanizationMode,
-                        translationMode = translationMode,
-                        onClick = {
-                            onSeek(line.timestampMs)
-                            isUserScrolled = false
-                            resetControlsTimer()
-                        }
-                    )
-                }
-            }
-        }
-
-        // Top Floating Pill Header (Opaque pill matching FloatingNowPlayingBar aesthetic & colors)
-        AnimatedVisibility(
-            visible = showControls,
-            enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
-            exit = fadeOut() + slideOutVertically(targetOffsetY = { -it }),
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .statusBarsPadding()
-                .padding(horizontal = 14.dp, vertical = 8.dp)
-                .zIndex(10f)
-        ) {
-            ElevatedCard(
-                shape = CircleShape,
-                colors = CardDefaults.elevatedCardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                ),
-                elevation = CardDefaults.elevatedCardElevation(defaultElevation = 8.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(
-                        width = 1.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
-                        shape = CircleShape
-                    )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Close / Exit Button (naked icon, no background circle)
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.size(38.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Exit Fullscreen Lyrics",
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    // Track Title & Artist
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 8.dp)
-                    ) {
-                        Text(
-                            text = track.title,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = track.artist,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    // Utility Action Buttons Row (Naked icons without circular background; color indicates ON/OFF)
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        // Font Size Cycle Toggle
-                        IconButton(
-                            onClick = {
-                                resetControlsTimer()
-                                val nextScale = when (fontScale) {
-                                    1.0f -> 1.15f
-                                    1.15f -> 1.30f
-                                    else -> 1.0f
-                                }
-                                fontScale = nextScale
-                                onUpdateFontScale(nextScale)
-                            },
-                            modifier = Modifier.size(38.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.TextIncrease,
-                                contentDescription = "Cycle Font Size",
-                                tint = if (fontScale > 1.0f) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        // Romanization Toggle (Ternary: OFF -> BELOW -> REPLACE -> OFF)
-                        val romanizationTint = when (romanizationMode) {
-                            LyricDisplayMode.OFF -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
-                            LyricDisplayMode.BELOW -> MaterialTheme.colorScheme.secondary
-                            LyricDisplayMode.REPLACE -> MaterialTheme.colorScheme.primary
-                        }
-
-                        IconButton(
-                            onClick = {
-                                resetControlsTimer()
-                                val nextMode = romanizationMode.next()
-                                romanizationMode = nextMode
-                                onUpdateRomanizationMode(nextMode)
-                            },
-                            modifier = Modifier.size(38.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Language,
-                                contentDescription = "Romanization (${romanizationMode.name.lowercase()})",
-                                tint = romanizationTint,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        // Translation Toggle (Ternary: OFF -> BELOW -> REPLACE -> OFF)
-                        val translationTint = when (translationMode) {
-                            LyricDisplayMode.OFF -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
-                            LyricDisplayMode.BELOW -> MaterialTheme.colorScheme.secondary
-                            LyricDisplayMode.REPLACE -> MaterialTheme.colorScheme.primary
-                        }
-
-                        IconButton(
-                            onClick = {
-                                resetControlsTimer()
-                                val nextMode = translationMode.next()
-                                translationMode = nextMode
-                                onUpdateTranslationMode(nextMode)
-                            },
-                            modifier = Modifier.size(38.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Translate,
-                                contentDescription = "Translation (${translationMode.name.lowercase()})",
-                                tint = translationTint,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Floating "Sync to lyrics" pill button when user has scrolled away from the active line
-        AnimatedVisibility(
-            visible = isUserScrolled && parsedLines.isNotEmpty(),
-            enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
-            exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 }),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = if (showControls) 180.dp else 40.dp)
-                .navigationBarsPadding()
-                .zIndex(15f)
-        ) {
-            androidx.compose.material3.Surface(
-                onClick = {
-                    isUserScrolled = false
-                    resetControlsTimer()
-                    coroutineScope.launch {
-                        if (activeIndex in parsedLines.indices) {
-                            val targetScroll = (activeIndex - 2).coerceAtLeast(0)
-                            listState.animateScrollToItem(targetScroll)
-                        }
-                    }
-                },
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.primaryContainer,
-                shadowElevation = 8.dp
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Sync,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text(
-                        text = "Sync to lyrics",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            }
-        }
-
-        // Bottom Floating Player Controls & Wavy Seekbar (With gradient scrim, safely above navigation bars)
-        AnimatedVisibility(
-            visible = showControls,
-            enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
-            exit = fadeOut() + slideOutVertically(targetOffsetY = { it }),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .zIndex(10f)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                Color.Transparent,
-                                Color.Black.copy(alpha = 0.65f),
-                                Color.Black.copy(alpha = 0.90f)
-                            )
-                        )
-                    )
-                    .navigationBarsPadding()
-                    .padding(horizontal = 24.dp, vertical = 16.dp)
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    // Wavy Animated Seekbar
-                    WavySeekBar(
-                        positionMs = playbackState.positionMs,
-                        durationMs = playbackState.durationMs,
-                        isPlaying = playbackState.isPlaying,
-                        onSeek = { resetControlsTimer(); onSeek(it) },
-                        isTranslucent = true,
-                        trackKey = track.id,
-                        primaryColor = MaterialTheme.colorScheme.primary,
-                        secondaryColor = MaterialTheme.colorScheme.secondary,
-                        tertiaryColor = MaterialTheme.colorScheme.tertiary
-                    )
-
-                    Spacer(Modifier.height(12.dp))
-
-                    // Playback Buttons Row
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(
-                            onClick = { resetControlsTimer(); onSkipPrevious() },
-                            modifier = Modifier
-                                .size(50.dp)
-                                .clip(CircleShape)
-                                .background(Color.White.copy(alpha = 0.10f))
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.SkipPrevious,
-                                contentDescription = "Previous Track",
-                                tint = Color.White,
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
-
-                        FilledIconButton(
-                            onClick = { resetControlsTimer(); onTogglePlayPause() },
-                            modifier = Modifier.size(64.dp),
-                            shape = CircleShape,
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            )
-                        ) {
-                            Icon(
-                                imageVector = if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = if (playbackState.isPlaying) "Pause" else "Play",
-                                modifier = Modifier.size(34.dp)
-                            )
-                        }
-
-                        IconButton(
-                            onClick = { resetControlsTimer(); onSkipNext() },
-                            modifier = Modifier
-                                .size(50.dp)
-                                .clip(CircleShape)
-                                .background(Color.White.copy(alpha = 0.10f))
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.SkipNext,
-                                contentDescription = "Next Track",
-                                tint = Color.White,
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun LyricLineRow(
-    line: LyricLine,
-    isActive: Boolean,
-    currentPosMs: Long,
-    alpha: Float,
-    fontScale: Float,
-    romanizationMode: LyricDisplayMode,
-    translationMode: LyricDisplayMode,
-    onClick: () -> Unit
-) {
-    val activeBaseSize = (28f * fontScale).sp
-    val inactiveBaseSize = (22f * fontScale).sp
-    val activeLineHeight = (36f * fontScale).sp
-    val inactiveLineHeight = (30f * fontScale).sp
-
-    val hasTranslation = !line.translation.isNullOrBlank()
-    val hasRomanized = !line.romanized.isNullOrBlank()
-
-    // Priority: Translation overrides romanization if both are set to replace and track supports it
-    val isTranslationReplacing = translationMode == LyricDisplayMode.REPLACE && hasTranslation
-    val isRomanizationReplacing = !isTranslationReplacing && romanizationMode == LyricDisplayMode.REPLACE && hasRomanized
-
-    val displayText = when {
-        isTranslationReplacing -> line.translation!!
-        isRomanizationReplacing -> line.romanized!!
-        else -> line.text
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 4.dp),
-        horizontalAlignment = Alignment.Start
-    ) {
-        // Main Text: If original text with word-by-word syllable timings, render syllable animation
-        if (isActive && line.hasExplicitSyllables && line.hasSyllables && !isTranslationReplacing && !isRomanizationReplacing) {
-            val annotated = buildAnnotatedString {
-                for (syl in line.syllables) {
-                    val isPastSyl = currentPosMs >= syl.timeMs + syl.durationMs
-                    val isCurrentSyl = currentPosMs in syl.timeMs until (syl.timeMs + syl.durationMs)
-
-                    val sylColor = when {
-                        isPastSyl || isCurrentSyl -> Color.White
-                        else -> Color.White.copy(alpha = 0.40f)
-                    }
-
-                    withStyle(
-                        style = SpanStyle(
-                            color = sylColor,
-                            fontWeight = if (isCurrentSyl) FontWeight.ExtraBold else FontWeight.Bold,
-                            fontSize = activeBaseSize,
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.SansSerif
-                        )
-                    ) {
-                        append(syl.text)
-                        if (syl.hasTrailingSpace && !syl.text.endsWith(" ")) append(" ")
-                    }
-                }
-            }
-
-            Text(
-                text = annotated,
-                lineHeight = activeLineHeight
-            )
-        } else {
-            Text(
-                text = displayText,
-                fontSize = if (isActive) activeBaseSize else inactiveBaseSize,
-                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
-                color = if (isActive) Color.White else Color.White.copy(alpha = alpha),
-                lineHeight = if (isActive) activeLineHeight else inactiveLineHeight
-            )
-        }
-
-        // Romanization Subline (Phonetic pronunciation): shown when in BELOW mode, or if REPLACE was overridden by translation
-        val showRomanizationBelow = (romanizationMode == LyricDisplayMode.BELOW || (romanizationMode == LyricDisplayMode.REPLACE && isTranslationReplacing)) && hasRomanized
-        if (showRomanizationBelow) {
-            Spacer(Modifier.height(3.dp))
-            Text(
-                text = line.romanized!!,
-                fontSize = ((if (isActive) 15f else 13f) * fontScale).sp,
-                fontWeight = FontWeight.Normal,
-                color = if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.35f),
-                lineHeight = (18f * fontScale).sp
-            )
-        }
-
-        // Translation Subline: shown when in BELOW mode
-        val showTranslationBelow = translationMode == LyricDisplayMode.BELOW && hasTranslation
-        if (showTranslationBelow) {
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = line.translation!!,
-                fontSize = ((if (isActive) 15f else 13f) * fontScale).sp,
-                fontWeight = FontWeight.Normal,
-                color = if (isActive) MaterialTheme.colorScheme.secondary.copy(alpha = 0.90f) else Color.White.copy(alpha = 0.35f),
-                lineHeight = (18f * fontScale).sp
-            )
-        }
-    }
-}
+package com.secondjb.prism.ui.screens.player
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.TextIncrease
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.filled.Refresh
+import com.secondjb.prism.ui.theme.PillShape
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
+import com.secondjb.prism.domain.model.PlaybackState
+import com.secondjb.prism.domain.model.Track
+import com.secondjb.prism.ui.components.FluidArtworkBackground
+import com.secondjb.prism.ui.components.WavySeekBar
+import com.secondjb.prism.ui.components.lyrics.LyricDisplayMode
+import com.secondjb.prism.ui.components.lyrics.LyricLine
+import com.secondjb.prism.ui.components.lyrics.LrcParser
+import com.secondjb.prism.ui.components.lyrics.InstrumentalDotsIndicator
+import com.secondjb.prism.ui.components.lyrics.WordSyncedLyricsHelper
+import com.secondjb.prism.ui.components.lyrics.computeLyricInterludes
+import kotlinx.coroutines.delay
+
+/**
+ * Dedicated Full-Screen Lyrics Page matching PixelPlayer aesthetic and Prism Windows functionality:
+ * - Fluid animated artwork backdrop with deep frosted blur scrim.
+ * - Word-by-word synced highlighting and romanization / translation sublines.
+ * - Auto-fades controls after idle, reappears instantly on tap or scroll.
+ * - Status bars and navigation bars padding for unobstructed touch targets.
+ */
+
+
+@Composable
+fun FullScreenLyricsPage(
+    track: Track,
+    playbackState: PlaybackState,
+    lyricsText: String?,
+    onSeek: (Long) -> Unit,
+    onTogglePlayPause: () -> Unit,
+    onSkipNext: () -> Unit,
+    onSkipPrevious: () -> Unit,
+    onDismiss: () -> Unit,
+    initialRomanizationMode: LyricDisplayMode = LyricDisplayMode.OFF,
+    initialTranslationMode: LyricDisplayMode = LyricDisplayMode.OFF,
+    initialFontScale: Float = 1.0f,
+    onUpdateRomanizationMode: (LyricDisplayMode) -> Unit = {},
+    onUpdateTranslationMode: (LyricDisplayMode) -> Unit = {},
+    onUpdateFontScale: (Float) -> Unit = {},
+    onFetchOnlineLyrics: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    BackHandler(enabled = true) {
+        onDismiss()
+    }
+
+    var showControls by remember { mutableStateOf(true) }
+    var romanizationMode by remember(initialRomanizationMode) { mutableStateOf(initialRomanizationMode) }
+    var translationMode by remember(initialTranslationMode) { mutableStateOf(initialTranslationMode) }
+    var fontScale by remember(initialFontScale) { mutableFloatStateOf(initialFontScale) }
+
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+    var isUserScrolled by remember { mutableStateOf(false) }
+
+    LaunchedEffect(track.id) {
+        isUserScrolled = false
+    }
+
+    var lastInteractionTime by remember { mutableStateOf(System.currentTimeMillis()) }
+
+    fun resetControlsTimer() {
+        lastInteractionTime = System.currentTimeMillis()
+        showControls = true
+    }
+
+    // Detect manual user touch drag gestures (distinguishing user interaction from programmatic scroll)
+    LaunchedEffect(listState.interactionSource) {
+        listState.interactionSource.interactions.collect { interaction ->
+            if (interaction is DragInteraction.Start) {
+                isUserScrolled = true
+                resetControlsTimer()
+            }
+        }
+    }
+
+    // When the user is scrolling manually, reveal playback controls immediately and keep them alive!
+    LaunchedEffect(listState.isScrollInProgress, isUserScrolled) {
+        if (listState.isScrollInProgress && isUserScrolled) {
+            resetControlsTimer()
+        }
+    }
+
+    // Auto-fade controls only after 7.5 seconds of complete inactivity (no scrolling, tapping, or scrubbing)
+    LaunchedEffect(showControls, lastInteractionTime, listState.isScrollInProgress) {
+        if (showControls && !listState.isScrollInProgress) {
+            while (true) {
+                val elapsed = System.currentTimeMillis() - lastInteractionTime
+                val remaining = 7500L - elapsed
+                if (remaining <= 0) {
+                    showControls = false
+                    break
+                }
+                delay(remaining)
+            }
+        }
+    }
+
+    val parsedLines = remember(lyricsText) {
+        if (!lyricsText.isNullOrBlank()) LrcParser.parse(lyricsText) else emptyList()
+    }
+
+    val interludeList = remember(parsedLines) { computeLyricInterludes(parsedLines) }
+
+    val activeInterlude by remember(playbackState.positionMs, interludeList) {
+        derivedStateOf {
+            interludeList.find { playbackState.positionMs in it.startMs until it.endMs }
+        }
+    }
+
+    val activeIndex by remember(playbackState.positionMs, parsedLines) {
+        derivedStateOf {
+            val idx = parsedLines.indexOfLast { it.timestampMs <= playbackState.positionMs }
+            if (idx == -1 && parsedLines.isNotEmpty()) 0 else idx
+        }
+    }
+
+    // Smooth auto-scroll keeping active lyric line or interlude near center when user hasn't manually scrolled away
+    LaunchedEffect(activeIndex, activeInterlude?.key, isUserScrolled) {
+        if (!isUserScrolled) {
+            val currentInterlude = activeInterlude
+            if (currentInterlude != null) {
+                val targetScroll = (currentInterlude.insertIndex - 1).coerceAtLeast(0)
+                listState.animateScrollToItem(targetScroll)
+            } else if (activeIndex in parsedLines.indices) {
+                val targetScroll = (activeIndex - 2).coerceAtLeast(0)
+                listState.animateScrollToItem(targetScroll)
+            }
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = {
+                        if (!showControls) resetControlsTimer() else showControls = false
+                    }
+                )
+            }
+    ) {
+        // Fluid Ambient Artwork Backdrop
+        FluidArtworkBackground(artworkUri = track.artworkUri)
+
+        // Dark Frosted Glass Scrim
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.58f))
+        )
+
+        // Center Lyrics Stream
+        if (parsedLines.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.padding(24.dp)
+                ) {
+                    // Continuous instrumental 3-dot animation for tracks without lyrics
+                    InstrumentalDotsIndicator(
+                        startMs = 0L,
+                        endMs = playbackState.durationMs.coerceAtLeast(1000L),
+                        currentPositionMs = playbackState.positionMs,
+                        isPlaying = playbackState.isPlaying,
+                        isActive = true,
+                        isContinuous = true
+                    )
+                    Text(
+                        text = "Could not find lyrics",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White.copy(alpha = 0.75f)
+                    )
+                    Button(
+                        onClick = onFetchOnlineLyrics,
+                        shape = PillShape,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Search & Fetch Lyrics (LRCLIB)")
+                    }
+                }
+            }
+        } else {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = 120.dp, bottom = 200.dp, start = 24.dp, end = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(24.dp)
+            ) {
+                itemsIndexed(parsedLines, key = { index, line -> "$index-${line.timestampMs}" }) { index, line ->
+                    val interludeBefore = interludeList.find { it.insertIndex == index }
+                    if (interludeBefore != null) {
+                        val isInterludeActive = playbackState.positionMs in interludeBefore.startMs until interludeBefore.endMs
+                        if (isInterludeActive || (index == 0 && playbackState.positionMs < interludeBefore.endMs)) {
+                            InstrumentalDotsIndicator(
+                                startMs = interludeBefore.startMs,
+                                endMs = interludeBefore.endMs,
+                                currentPositionMs = playbackState.positionMs,
+                                isPlaying = playbackState.isPlaying,
+                                isActive = true,
+                                onSeek = {
+                                    onSeek(interludeBefore.startMs)
+                                    isUserScrolled = false
+                                    resetControlsTimer()
+                                }
+                            )
+                        }
+                    }
+
+                    val isActive = index == activeIndex && activeInterlude == null
+                    val isPast = index < activeIndex
+
+                    val targetAlpha = when {
+                        isActive -> 1.0f
+                        isPast -> 0.40f
+                        else -> 0.60f
+                    }
+
+                    LyricLineRow(
+                        line = line,
+                        isActive = isActive,
+                        currentPosMs = playbackState.positionMs,
+                        alpha = targetAlpha,
+                        fontScale = fontScale,
+                        romanizationMode = romanizationMode,
+                        translationMode = translationMode,
+                        onClick = {
+                            onSeek(line.timestampMs)
+                            isUserScrolled = false
+                            resetControlsTimer()
+                        }
+                    )
+                }
+            }
+        }
+
+        // Top Floating Pill Header (Opaque pill matching FloatingNowPlayingBar aesthetic & colors)
+        AnimatedVisibility(
+            visible = showControls,
+            enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { -it }),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(horizontal = 14.dp, vertical = 8.dp)
+                .zIndex(10f)
+        ) {
+            ElevatedCard(
+                shape = CircleShape,
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                ),
+                elevation = CardDefaults.elevatedCardElevation(defaultElevation = 8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
+                        shape = CircleShape
+                    )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Close / Exit Button (naked icon, no background circle)
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(38.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Exit Fullscreen Lyrics",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // Track Title & Artist
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp)
+                    ) {
+                        Text(
+                            text = track.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = track.artist,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    // Utility Action Buttons Row (Naked icons without circular background; color indicates ON/OFF)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        // Font Size Cycle Toggle
+                        IconButton(
+                            onClick = {
+                                resetControlsTimer()
+                                val nextScale = when (fontScale) {
+                                    1.0f -> 1.15f
+                                    1.15f -> 1.30f
+                                    else -> 1.0f
+                                }
+                                fontScale = nextScale
+                                onUpdateFontScale(nextScale)
+                            },
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.TextIncrease,
+                                contentDescription = "Cycle Font Size",
+                                tint = if (fontScale > 1.0f) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        // Romanization Toggle (Ternary: OFF -> BELOW -> REPLACE -> OFF)
+                        val romanizationTint = when (romanizationMode) {
+                            LyricDisplayMode.OFF -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                            LyricDisplayMode.BELOW -> MaterialTheme.colorScheme.secondary
+                            LyricDisplayMode.REPLACE -> MaterialTheme.colorScheme.primary
+                        }
+
+                        IconButton(
+                            onClick = {
+                                resetControlsTimer()
+                                val nextMode = romanizationMode.next()
+                                romanizationMode = nextMode
+                                onUpdateRomanizationMode(nextMode)
+                            },
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Language,
+                                contentDescription = "Romanization (${romanizationMode.name.lowercase()})",
+                                tint = romanizationTint,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        // Translation Toggle (Ternary: OFF -> BELOW -> REPLACE -> OFF)
+                        val translationTint = when (translationMode) {
+                            LyricDisplayMode.OFF -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                            LyricDisplayMode.BELOW -> MaterialTheme.colorScheme.secondary
+                            LyricDisplayMode.REPLACE -> MaterialTheme.colorScheme.primary
+                        }
+
+                        IconButton(
+                            onClick = {
+                                resetControlsTimer()
+                                val nextMode = translationMode.next()
+                                translationMode = nextMode
+                                onUpdateTranslationMode(nextMode)
+                            },
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Translate,
+                                contentDescription = "Translation (${translationMode.name.lowercase()})",
+                                tint = translationTint,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Floating "Sync to lyrics" pill button when user has scrolled away from the active line
+        AnimatedVisibility(
+            visible = isUserScrolled && parsedLines.isNotEmpty(),
+            enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 }),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = if (showControls) 180.dp else 40.dp)
+                .navigationBarsPadding()
+                .zIndex(15f)
+        ) {
+            androidx.compose.material3.Surface(
+                onClick = {
+                    isUserScrolled = false
+                    resetControlsTimer()
+                    coroutineScope.launch {
+                        if (activeIndex in parsedLines.indices) {
+                            val targetScroll = (activeIndex - 2).coerceAtLeast(0)
+                            listState.animateScrollToItem(targetScroll)
+                        }
+                    }
+                },
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shadowElevation = 8.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Sync,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "Sync to lyrics",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+        }
+
+        // Bottom Floating Player Controls & Wavy Seekbar (With gradient scrim, safely above navigation bars)
+        AnimatedVisibility(
+            visible = showControls,
+            enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { it }),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .zIndex(10f)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.65f),
+                                Color.Black.copy(alpha = 0.90f)
+                            )
+                        )
+                    )
+                    .navigationBarsPadding()
+                    .padding(horizontal = 24.dp, vertical = 16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Wavy Animated Seekbar
+                    WavySeekBar(
+                        positionMs = playbackState.positionMs,
+                        durationMs = playbackState.durationMs,
+                        isPlaying = playbackState.isPlaying,
+                        onSeek = { resetControlsTimer(); onSeek(it) },
+                        isTranslucent = true,
+                        trackKey = track.id,
+                        primaryColor = MaterialTheme.colorScheme.primary,
+                        secondaryColor = MaterialTheme.colorScheme.secondary,
+                        tertiaryColor = MaterialTheme.colorScheme.tertiary
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    // Playback Buttons Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = { resetControlsTimer(); onSkipPrevious() },
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.10f))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SkipPrevious,
+                                contentDescription = "Previous Track",
+                                tint = Color.White,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+
+                        FilledIconButton(
+                            onClick = { resetControlsTimer(); onTogglePlayPause() },
+                            modifier = Modifier.size(64.dp),
+                            shape = CircleShape,
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            )
+                        ) {
+                            Icon(
+                                imageVector = if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (playbackState.isPlaying) "Pause" else "Play",
+                                modifier = Modifier.size(34.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { resetControlsTimer(); onSkipNext() },
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.10f))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SkipNext,
+                                contentDescription = "Next Track",
+                                tint = Color.White,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LyricLineRow(
+    line: LyricLine,
+    isActive: Boolean,
+    currentPosMs: Long,
+    alpha: Float,
+    fontScale: Float,
+    romanizationMode: LyricDisplayMode,
+    translationMode: LyricDisplayMode,
+    onClick: () -> Unit
+) {
+    val activeBaseSize = (28f * fontScale).sp
+    val inactiveBaseSize = (22f * fontScale).sp
+    val activeLineHeight = (36f * fontScale).sp
+    val inactiveLineHeight = (30f * fontScale).sp
+
+    val hasTranslation = !line.translation.isNullOrBlank()
+    val hasRomanized = !line.romanized.isNullOrBlank()
+
+    // Priority: Translation overrides romanization if both are set to replace and track supports it
+    val isTranslationReplacing = translationMode == LyricDisplayMode.REPLACE && hasTranslation
+    val isRomanizationReplacing = !isTranslationReplacing && romanizationMode == LyricDisplayMode.REPLACE && hasRomanized
+
+    val displayText = when {
+        isTranslationReplacing -> line.translation!!
+        isRomanizationReplacing -> line.romanized!!
+        else -> line.text
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.Start
+    ) {
+        // Main Text: Word-by-word sync when line has explicit syllables (supports both original and romanized REPLACE mode)
+        val hasWordSync = line.hasExplicitSyllables && line.hasSyllables
+        if (hasWordSync && !isTranslationReplacing && (isActive || isRomanizationReplacing)) {
+            val annotated = if (isRomanizationReplacing) {
+                WordSyncedLyricsHelper.buildRomanizedSyncedAnnotatedString(
+                    line = line,
+                    currentPosMs = currentPosMs,
+                    isActive = isActive,
+                    activeColor = Color.White,
+                    upcomingColor = Color.White.copy(alpha = 0.40f),
+                    inactiveColor = Color.White.copy(alpha = alpha),
+                    fontSize = if (isActive) activeBaseSize else inactiveBaseSize,
+                    fontWeightNormal = if (isActive) FontWeight.Bold else FontWeight.Medium,
+                    fontWeightCurrent = FontWeight.ExtraBold
+                )
+            } else {
+                WordSyncedLyricsHelper.buildSyllableSyncedAnnotatedString(
+                    syllables = line.syllables,
+                    currentPosMs = currentPosMs,
+                    isActive = true,
+                    useRomanized = false,
+                    activeColor = Color.White,
+                    upcomingColor = Color.White.copy(alpha = 0.40f),
+                    inactiveColor = Color.White.copy(alpha = alpha),
+                    fontSize = activeBaseSize,
+                    fontWeightNormal = FontWeight.Bold,
+                    fontWeightCurrent = FontWeight.ExtraBold
+                )
+            }
+
+            Text(
+                text = annotated,
+                lineHeight = if (isActive) activeLineHeight else inactiveLineHeight
+            )
+        } else {
+            Text(
+                text = displayText,
+                fontSize = if (isActive) activeBaseSize else inactiveBaseSize,
+                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
+                color = if (isActive) Color.White else Color.White.copy(alpha = alpha),
+                lineHeight = if (isActive) activeLineHeight else inactiveLineHeight
+            )
+        }
+
+        // Romanization Subline (Phonetic pronunciation): shown when in BELOW mode, or if REPLACE was overridden by translation
+        val showRomanizationBelow = (romanizationMode == LyricDisplayMode.BELOW || (romanizationMode == LyricDisplayMode.REPLACE && isTranslationReplacing)) && hasRomanized
+        if (showRomanizationBelow) {
+            Spacer(Modifier.height(3.dp))
+            val subRomSize = ((if (isActive) 15f else 13f) * fontScale).sp
+            if (hasWordSync) {
+                val annotatedSubRom = WordSyncedLyricsHelper.buildRomanizedSyncedAnnotatedString(
+                    line = line,
+                    currentPosMs = currentPosMs,
+                    isActive = isActive,
+                    activeColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.95f),
+                    upcomingColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                    inactiveColor = Color.White.copy(alpha = 0.35f),
+                    fontSize = subRomSize,
+                    fontWeightNormal = FontWeight.Normal,
+                    fontWeightCurrent = FontWeight.Bold
+                )
+                Text(
+                    text = annotatedSubRom,
+                    lineHeight = (18f * fontScale).sp
+                )
+            } else {
+                Text(
+                    text = line.romanized!!,
+                    fontSize = subRomSize,
+                    fontWeight = FontWeight.Normal,
+                    color = if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.35f),
+                    lineHeight = (18f * fontScale).sp
+                )
+            }
+        }
+
+        // Translation Subline: shown when in BELOW mode
+        val showTranslationBelow = translationMode == LyricDisplayMode.BELOW && hasTranslation
+        if (showTranslationBelow) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = line.translation!!,
+                fontSize = ((if (isActive) 15f else 13f) * fontScale).sp,
+                fontWeight = FontWeight.Normal,
+                color = if (isActive) MaterialTheme.colorScheme.secondary.copy(alpha = 0.90f) else Color.White.copy(alpha = 0.35f),
+                lineHeight = (18f * fontScale).sp
+            )
+        }
+    }
+}

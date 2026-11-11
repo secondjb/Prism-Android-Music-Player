@@ -1,8 +1,13 @@
 package com.secondjb.prism.ui.lyrics
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
 import com.secondjb.prism.domain.model.DemoDataProvider
 import com.secondjb.prism.ui.components.lyrics.LrcParser
+import com.secondjb.prism.ui.components.lyrics.LyricLine
+import com.secondjb.prism.ui.components.lyrics.WordSyncedLyricsHelper
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -115,5 +120,72 @@ class LrcParserTest {
 
         assertEquals(16238L, parsed[1].timestampMs)
         assertEquals("결국에", parsed[1].text)
+        assertEquals("gyeolguke", parsed[1].syllables[0].romanizedText)
+        assertEquals(parsed[1].romanized, parsed[1].syllables[0].romanizedText)
+    }
+
+    @Test
+    fun testWordSyncedSyllableRomanizationAndContiguousGrouping() {
+        // Contiguous Japanese kana without spaces should NOT force spaces between syllables,
+        // while space-delimited words keep hasTrailingSpace = true.
+        val lrc = "[00:10.00]<00:10.00>さ<00:10.30>く<00:10.60>ら <00:11.00>ま<00:11.30>う"
+        val parsed = LrcParser.parse(lrc)
+        assertEquals(1, parsed.size)
+        val line = parsed[0]
+        assertTrue(line.hasExplicitSyllables)
+        assertEquals(5, line.syllables.size)
+
+        assertEquals("sa", line.syllables[0].romanizedText)
+        assertFalse(line.syllables[0].hasTrailingSpace)
+        assertEquals("ku", line.syllables[1].romanizedText)
+        assertFalse(line.syllables[1].hasTrailingSpace)
+        assertEquals("ra", line.syllables[2].romanizedText)
+        assertTrue(line.syllables[2].hasTrailingSpace)
+        assertEquals("ma", line.syllables[3].romanizedText)
+        assertFalse(line.syllables[3].hasTrailingSpace)
+        assertEquals("u", line.syllables[4].romanizedText)
+        assertFalse(line.syllables[4].hasTrailingSpace)
+
+        val annotated = WordSyncedLyricsHelper.buildRomanizedSyncedAnnotatedString(
+            line = line,
+            currentPosMs = 10400L,
+            isActive = true,
+            activeColor = Color.White,
+            upcomingColor = Color.Gray,
+            inactiveColor = Color.DarkGray,
+            fontSize = 20.sp
+        )
+        assertEquals("sakura mau", annotated.text)
+        assertEquals(5, annotated.spanStyles.size)
+        // First two syllables ("sa", "ku") are past/active -> White; upcoming ("ra") -> Gray
+        assertEquals(Color.White, annotated.spanStyles[0].item.color)
+        assertEquals(Color.White, annotated.spanStyles[1].item.color)
+        assertEquals(Color.Gray, annotated.spanStyles[2].item.color)
+    }
+
+    @Test
+    fun testWordTimedRomanizedFallbackWhenSyllablesLackRomanizedText() {
+        val line = LyricLine(
+            timestampMs = 10_000L,
+            durationMs = 3_000L,
+            text = "한글 가사 테스트",
+            romanized = "hangeul gasa teseuteu",
+            hasExplicitSyllables = true,
+            hasSyllables = true
+        )
+        val annotated = WordSyncedLyricsHelper.buildRomanizedSyncedAnnotatedString(
+            line = line,
+            currentPosMs = 11_500L,
+            isActive = true,
+            activeColor = Color.White,
+            upcomingColor = Color.Gray,
+            inactiveColor = Color.DarkGray,
+            fontSize = 18.sp
+        )
+        assertEquals("hangeul gasa teseuteu", annotated.text)
+        assertEquals(3, annotated.spanStyles.size)
+        assertEquals(Color.White, annotated.spanStyles[0].item.color)
+        assertEquals(Color.White, annotated.spanStyles[1].item.color)
+        assertEquals(Color.Gray, annotated.spanStyles[2].item.color)
     }
 }

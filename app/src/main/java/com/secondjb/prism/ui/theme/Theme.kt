@@ -35,7 +35,11 @@ private val DefaultDarkColorScheme = darkColorScheme(
     surfaceVariant = PrismSurfaceVariantDark,
     onBackground = PrismOnSurfaceDark,
     onSurface = PrismOnSurfaceDark,
-    onSurfaceVariant = PrismOnSurfaceVariantDark
+    onSurfaceVariant = PrismOnSurfaceVariantDark,
+    error = PrismPrimaryDark,
+    onError = PrismOnPrimaryDark,
+    errorContainer = PrismPrimaryContainerDark,
+    onErrorContainer = PrismOnPrimaryContainerDark
 )
 
 private val DefaultLightColorScheme = lightColorScheme(
@@ -52,7 +56,11 @@ private val DefaultLightColorScheme = lightColorScheme(
     surfaceVariant = PrismSurfaceVariantLight,
     onBackground = PrismOnSurfaceLight,
     onSurface = PrismOnSurfaceLight,
-    onSurfaceVariant = PrismOnSurfaceVariantLight
+    onSurfaceVariant = PrismOnSurfaceVariantLight,
+    error = PrismPrimaryLight,
+    onError = PrismOnPrimaryLight,
+    errorContainer = PrismPrimaryContainerLight,
+    onErrorContainer = PrismOnPrimaryContainerLight
 )
 
 /**
@@ -75,7 +83,13 @@ fun PrismTheme(
             buildDynamicColorScheme(albumPalette, isDark = darkTheme)
         }
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            val base = if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            base.copy(
+                error = base.primary,
+                onError = base.onPrimary,
+                errorContainer = base.primaryContainer,
+                onErrorContainer = base.onPrimaryContainer
+            )
         }
         darkTheme -> DefaultDarkColorScheme
         else -> DefaultLightColorScheme

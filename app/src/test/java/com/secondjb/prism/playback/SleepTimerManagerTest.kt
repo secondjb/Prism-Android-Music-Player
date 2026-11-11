@@ -2,6 +2,8 @@ package com.secondjb.prism.playback
 
 import com.secondjb.prism.core.playback.SleepTimerManager
 import com.secondjb.prism.core.playback.SleepTimerMode
+import com.secondjb.prism.core.playback.calculateCustomQueueRemainingSeconds
+import com.secondjb.prism.core.playback.formatSleepTimerEstimate
 import com.secondjb.prism.domain.model.PlaybackState
 import com.secondjb.prism.domain.model.RepeatMode
 import com.secondjb.prism.domain.model.Track
@@ -112,5 +114,23 @@ class SleepTimerManagerTest {
         controller.transitionToTrack(track2)
         assertTrue(controller.pauseCalled)
         assertFalse(manager.timerState.value.isActive)
+    }
+
+    @Test
+    fun testCustomQueueRemainingCalculationIgnoresContextQueue() {
+        // track1 has 180s total, 60s elapsed -> 120s remaining
+        // userQueue has track2 (200s) -> total should be 320s (~5m), NOT including track3 in context queue
+        val remainingSecs = calculateCustomQueueRemainingSeconds(
+            userQueue = listOf(track2),
+            currentTrackDurationMs = 180_000L,
+            currentTrackPositionMs = 60_000L
+        )
+        assertEquals(320L, remainingSecs)
+        assertEquals("~5m", formatSleepTimerEstimate(remainingSecs, includeTilde = true))
+        assertEquals("5m", formatSleepTimerEstimate(remainingSecs, includeTilde = false, minimumOneMinuteWhenPositive = true))
+
+        // Over 1 hour formatting
+        assertEquals("~1h 15m", formatSleepTimerEstimate(4500L, includeTilde = true))
+        assertEquals("1h 15m", formatSleepTimerEstimate(4500L, includeTilde = false, minimumOneMinuteWhenPositive = true))
     }
 }

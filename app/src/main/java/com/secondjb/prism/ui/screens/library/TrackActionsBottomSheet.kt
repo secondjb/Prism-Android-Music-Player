@@ -187,7 +187,7 @@ fun TrackActionsBottomSheet(
                         icon = Icons.Default.Delete,
                         title = "Remove from Playlist",
                         subtitle = "Remove this song from the current playlist",
-                        tint = MaterialTheme.colorScheme.error,
+                        tint = MaterialTheme.colorScheme.primary,
                         onClick = {
                             onDismiss()
                             onRemoveFromPlaylist()

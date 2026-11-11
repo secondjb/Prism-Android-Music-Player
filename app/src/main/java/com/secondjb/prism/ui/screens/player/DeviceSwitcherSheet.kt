@@ -219,7 +219,7 @@ fun DeviceSwitcherSheet(
                                 color = if (isDesktopConnected) {
                                     MaterialTheme.colorScheme.onSurfaceVariant
                                 } else {
-                                    MaterialTheme.colorScheme.error
+                                    MaterialTheme.colorScheme.primary
                                 }
                             )
                         }
@@ -232,7 +232,7 @@ fun DeviceSwitcherSheet(
                                 Icon(
                                     imageVector = Icons.Default.Close,
                                     contentDescription = "Disconnect from PC",
-                                    tint = MaterialTheme.colorScheme.error,
+                                    tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -410,7 +410,7 @@ fun DeviceSwitcherSheet(
                                 Icon(
                                     imageVector = Icons.Default.DeleteOutline,
                                     contentDescription = "Delete Pairing",
-                                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
                                     modifier = Modifier.size(18.dp)
                                 )
                             }

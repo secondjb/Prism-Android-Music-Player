@@ -22,11 +22,12 @@ Prism Android is a modern, high-fidelity music player and companion controller b
 |     │     ├── [DeviceSwitcherSheet.kt] Local vs Desktop Output Routing & Disconnect |
 |     │     └── [QueueBottomSheet.kt] Queue Inspector, Drag Handles & Reorder Menu   |
 |     ├── [FullScreenLyricsPage.kt] Syllable/Line Synced Lyrics + Romanization      |
+|     │     ├── [WordSyncedLyricsHelper.kt] Shared Word/Syllable Romanized Sync     |
 |     │     └── [InstrumentalDotsIndicator.kt] Material 3 Instrumental 3-Dot Animation |
 |     ├── [StatsScreen.kt] Listening Analytics (Time vs Plays Leaderboards)         |
 |     └── [SettingsScreen.kt] Companion Pairing, Double-Counting, Storage Clears    |
 |                                                                                   |
-|  Theming: [Theme.kt] (Material 3 Dynamic Palette from Album Art + Dark Glass)     |
+|  Theming: [Theme.kt] (Material 3 Dynamic Palette from Album Art; error = primary)  |
 |  State Holders: [LibraryViewModel], [SyncViewModel], [StatsViewModel]             |
 +-----------------------------------------▲-----------------------------------------+
                                           │ StateFlow / Coroutines
@@ -69,7 +70,7 @@ Playback is powered by **AndroidX Media3 (ExoPlayer)**:
 - Supports 3 modes:
   1. **Time-Based**: Countdown by minutes.
   2. **Track-Based**: Countdown by remaining track completions using normalized composite keys (`title|artist`) to prevent duplicate transitions across multi-room state echoes.
-  3. **End-of-Queue**: Stops playback once the active queue runs out.
+  3. **End-of-Queue**: Stops playback once the active custom queue (`userQueue`) runs out; remaining duration is computed via shared `calculateCustomQueueRemainingSeconds` / `formatSleepTimerEstimate` helpers.
 - Options:
   - `finishLastSong`: Waits for the currently playing track to finish before executing the pause.
 - Coordinates pause events locally and dispatches remote pause commands to the paired desktop over WebSocket with a 3-second multi-room sync latch (`sleepTimerJustPaused`) to prevent rapid pause/play oscillation.
