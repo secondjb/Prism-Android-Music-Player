@@ -39,7 +39,7 @@ sealed interface UpdateResult {
 }
 
 object UpdateChecker {
-    const val CURRENT_VERSION = "0.1.0"
+    const val CURRENT_VERSION = "0.2.0"
     const val GITHUB_REPO = "secondjb/Prism-Android-Music-Player"
     const val LATEST_RELEASE_API_URL = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
     const val RELEASES_PAGE_URL = "https://github.com/$GITHUB_REPO/releases"

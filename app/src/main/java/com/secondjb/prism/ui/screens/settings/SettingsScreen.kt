@@ -834,7 +834,7 @@ fun SettingsScreen(
                         }
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Prism Companion for Android", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                            Text("Version 0.1.0 • AndroidX Media3 ExoPlayer Engine", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Version ${UpdateChecker.CURRENT_VERSION} • AndroidX Media3 ExoPlayer Engine", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
 
@@ -931,7 +931,7 @@ fun SettingsScreen(
                             }
                             is UpdateResult.UpToDate -> {
                                 Text(
-                                    text = "Prism is up to date (v0.1.0)",
+                                    text = "Prism is up to date (v${UpdateChecker.CURRENT_VERSION})",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

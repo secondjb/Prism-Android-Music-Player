@@ -32,6 +32,7 @@
   - [Prerequisites](#prerequisites)
   - [Building from Source](#building-from-source)
   - [Running Unit Tests](#running-unit-tests)
+- [Changelog & Releases](#changelog--releases)
 - [Related Repositories](#related-repositories)
 - [License](#license)
 
@@ -42,11 +43,13 @@
 Prism Android is a modern, standalone local audio player designed for audiophile-grade playback and direct ecosystem synchronization with [Prism Desktop](https://github.com/secondjb/Prism-Music-Player).
 
 Key capabilities:
-- **Direct Local Playback**: Native media playback powered by AndroidX Media3 (ExoPlayer) with automatic audio focus handling, gapless track transitions, and headset disconnection safety.
+- **Direct Local Playback**: Native media playback powered by AndroidX Media3 (ExoPlayer) with automatic audio focus handling, gapless track transitions, persistent notification controls, position resumption, and headset disconnection safety.
 - **Embedded Tag Extraction**: Extracts FLAC Vorbis comments, ID3v2 tags, embedded sample rates, bit depths, and bitrates to display real-time audio quality badges (such as `FLAC · 24-bit / 192 kHz · 5264 kbps`).
 - **Real-Time Dynamic Theming**: Uses AndroidX Palette to sample dominant, vibrant, and muted tones directly from current album artwork, dynamically tinting the entire UI, glassmorphic player backgrounds, and wave components.
-- **Syllable and Line Synced Lyrics**: Parses embedded USLT/Vorbis lyrics, local `.lrc` and `.ttml` sidecar files, and pulls from LRCLIB with full romanization and English translation support.
-- **P2P Companion Sync**: Pairs with Prism Desktop over local Wi-Fi (mDNS discovery or QR code scanner) or USB reverse proxy. Enables seamless playback handover, dual-device volume/queue sync, and remote desktop playback control.
+- **Library Organization & Two-Tier Queue**: Swipeable library tabs (Playlists, Artists, Songs, Albums) with configurable startup screen, multi-criteria sorting (including desktop order sync), custom playlist cover art/collages, drag-to-reorder queue handles, and swipe gestures to queue next or dismiss.
+- **Syllable and Line Synced Lyrics**: Parses embedded USLT/Vorbis lyrics, local `.lrc` and `.ttml` sidecar files, and queries LRCLIB with word-by-word romanization (`Replace` and `Below` modes), English translations, and animated instrumental interlude indicators.
+- **P2P Companion Sync & Device Handoff**: Pairs with Prism Desktop over local Wi-Fi (mDNS discovery or QR code scanner) or USB reverse proxy. Supports seamless atomic playback handoff with queue/position preservation, multi-room synchronized playback, bidirectional playlist/cover sync, and remote desktop control.
+- **Sleep Timer**: Supports minute countdowns, track completion countdowns, and end-of-queue stopping with a live bottom-bar countdown indicator and finish-last-song support.
 - **Listening Analytics Engine**: Locally tracks play counts, total listening time, and format metrics with customizable period filters and leaderboard views without external telemetry.
 
 ---
@@ -124,20 +127,19 @@ Key capabilities:
 ### Synchronized Lyrics Engine
 
 - **Multi-Source Resolution**: Checks embedded Vorbis comments and ID3 USLT frames first, scans local storage for `.lrc` and `.ttml` sidecar files, and queries LRCLIB as a network fallback.
-- **Real-Time Scrolling**: Automatically tracks track playback position and smoothly scrolls the active lyric into view.
-- **Romanization and Translation**: Built-in support for synchronized translations and pronunciation romanization for Japanese, Korean, and Chinese tracks.
+- **Word-by-Word Sync & Interludes**: Highlights words and syllables smoothly in sync with playback and renders animated bubble-to-note instrumental interlude indicators during breaks.
+- **Romanization and Translation**: Built-in support for synchronized translations and word-by-word pronunciation romanization (`Replace` and `Below` modes) for Japanese, Korean, and Chinese tracks.
 - **Custom Font Controls**: Live font size scaling persisted across app restarts via DataStore.
 
 ### Desktop Companion and LAN Synchronization Protocol
 
-- **Local Discovery**: Uses Network Service Discovery (`NsdManager`) to resolve `_prism-sync._tcp` services broadcast by Prism Desktop on the local network.
-- **QR Pairing Scanner**: Built-in CameraX scanner powered by ZXing to instantly pair with desktop instances by scanning host/token QR codes.
+- **Local Discovery & Auto-Reconnect**: Uses Network Service Discovery (`NsdManager`) to resolve `_prism._tcp` / `_prism-sync._tcp` services broadcast by Prism Desktop, with dynamic endpoint auto-healing and fast subnet reconnection.
+- **QR Pairing Scanner**: Built-in CameraX scanner powered by ZXing to instantly pair with desktop instances by scanning `prism://pair?...` QR codes or entering `host:port:token`.
 - **USB Reverse Proxy**: Fallback mode for high-interference Wi-Fi environments via `127.0.0.1:9876` ADB reverse forwarding.
 - **SyncFrame Protocol**: Serialized over WebSocket using `kotlinx.serialization`:
   - `handshake_req` / `handshake_resp`: Authenticates client and server tokens.
-  - `state_sync`: Synchronizes track metadata, position, playback state, and duration in real time.
-  - `queue_sync`: Synchronizes play queue order and active index.
-  - `command`: Dispatches remote actions (`play`, `pause`, `skip_next`, `skip_previous`, `seek`).
+  - `state_sync` / `queue_sync`: Synchronizes track metadata, position, playback state, playlists, covers, and two-tier queue state in real time.
+  - `command` / `swap_device` / `output_routing`: Dispatches remote actions (`PLAY`, `PAUSE`, `SKIP_NEXT`, `SKIP_PREVIOUS`, `SEEK`, `PLAY_TRACK`, `PLAY_NEXT`, `ADD_TO_QUEUE`, `REORDER`, `REMOVE_FROM_QUEUE`, `CLEAR_QUEUE`) and executes atomic device handoff or multi-room playback.
   - `stats_sync`: Bidirectionally syncs listening history while preventing duplicate play counts.
 
 ### Local Listening Statistics and Analytics
@@ -209,6 +211,12 @@ Run the complete regression test suite:
 ```bash
 ./gradlew testDebugUnitTest
 ```
+
+---
+
+## Changelog & Releases
+
+See [CHANGELOG.md](CHANGELOG.md) and [GitHub Releases](https://github.com/secondjb/Prism-Android-Music-Player/releases) for version history and pre-built APKs.
 
 ---
 

@@ -133,16 +133,16 @@ class MainActivity : ComponentActivity() {
 			}
 
 			val mainViewModel = remember { MainViewModel(repository, statsRepository) }
-			val initialStartupScreen = preferencesRepository.preferences.value.defaultStartupScreen
-			val initialChip = when (initialStartupScreen) {
-				"Library: Songs" -> com.secondjb.prism.ui.screens.library.LibraryFilterChip.ALL_SONGS
-				"Library: Playlists" -> com.secondjb.prism.ui.screens.library.LibraryFilterChip.PLAYLISTS
-				"Library: Albums" -> com.secondjb.prism.ui.screens.library.LibraryFilterChip.ALBUMS
-				"Library: Artists" -> com.secondjb.prism.ui.screens.library.LibraryFilterChip.ARTISTS
-				else -> com.secondjb.prism.ui.screens.library.LibraryFilterChip.ALL_SONGS
-			}
 			val artistImageRepository = remember { com.secondjb.prism.core.data.ArtistImageRepository(context, preferencesRepository) }
 			val libraryViewModel = remember {
+				val initialStartupScreen = preferencesRepository.preferences.value.defaultStartupScreen
+				val initialChip = when (initialStartupScreen) {
+					"Library: Songs" -> com.secondjb.prism.ui.screens.library.LibraryFilterChip.ALL_SONGS
+					"Library: Playlists" -> com.secondjb.prism.ui.screens.library.LibraryFilterChip.PLAYLISTS
+					"Library: Albums" -> com.secondjb.prism.ui.screens.library.LibraryFilterChip.ALBUMS
+					"Library: Artists" -> com.secondjb.prism.ui.screens.library.LibraryFilterChip.ARTISTS
+					else -> com.secondjb.prism.ui.screens.library.LibraryFilterChip.ALL_SONGS
+				}
 				LibraryViewModel(
 					repository = repository,
 					playlistRepository = playlistRepository,
